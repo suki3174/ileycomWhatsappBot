@@ -5,6 +5,7 @@ import type {
   FlowRequest,
   FlowResponse,
 } from "@/handlers/seller/auth_flowHandler";
+import { findSellerByFlowToken } from "@/repositories/seller_repo";
 
 export async function POST(req: NextRequest) {
   try {
@@ -31,6 +32,7 @@ export async function POST(req: NextRequest) {
         flow_token: parsed?.data?.flow_token ?? parsed?.flow_token,
         screen: parsed.screen,
       });
+      console.log("findSellerByFlowToken:", findSellerByFlowToken(parsed?.data?.flow_token ?? parsed?.flow_token));
     } catch (deErr: unknown) {
       const err =
         typeof deErr === "object" && deErr !== null && "message" in deErr

@@ -3,6 +3,8 @@ export interface Seller {
   email: string;
   code: string | null;
   phone: string;
-  session_active: boolean;
   flow_token: string | null;
+  reset_token?: string | null;
+  reset_token_expiry?: number | null;
+  session_active_until?: number | null
 }

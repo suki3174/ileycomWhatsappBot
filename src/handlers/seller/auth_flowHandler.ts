@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import{isValidEmail } from "@/utils/utilities"
+import { isValidEmail } from "@/utils/utilities"
 import {
   isValidPinCodeFormat,
   sellerHasCode,
@@ -9,6 +9,8 @@ import {
   activateSession
 } from "@/services/auth_service";
 import { findSellerByFlowToken } from "@/repositories/seller_repo";
+import { sendResetEmail } from "@/services/reset_code_service";
+import { error } from "console";
 
 export interface FlowRequest {
   action?: string;
@@ -109,7 +111,7 @@ async function handleSignIn(parsed: FlowRequest): Promise<FlowResponse> {
     return {
       screen: "SUCCESS",
       data: {
-        flow_completed: true,
+        message: "Connexion réussie.",
       },
     };
   } catch (e) {
@@ -130,7 +132,7 @@ async function handleSignUp(parsed: FlowRequest): Promise<FlowResponse> {
   const pin = String(data.pin_code ?? "");
   const confirm = String(data.confirm_pin_code ?? "");
 
-  
+
 
   if (!isValidPinCodeFormat(pin)) {
     return {
@@ -165,11 +167,10 @@ async function handleSignUp(parsed: FlowRequest): Promise<FlowResponse> {
 /* FORGOT PASSWORD */
 /* -------------------------------- */
 
+// authHandler logic
 async function handleForgotPassword(parsed: FlowRequest): Promise<FlowResponse> {
   const data = parsed.data || {};
-  const email = String(data.email ?? "");
-
-  
+  const email = String(data.email ?? "").toLowerCase().trim();
 
   if (!isValidEmail(email)) {
     return {
@@ -178,6 +179,7 @@ async function handleForgotPassword(parsed: FlowRequest): Promise<FlowResponse> 
     };
   }
 
+  // 1. Check if the email is associated with the seller
   const isValid = verifySellerEmail(getFlowToken(parsed), email);
 
   if (!isValid) {
@@ -186,15 +188,32 @@ async function handleForgotPassword(parsed: FlowRequest): Promise<FlowResponse> 
       data: { error_msg: "Email incorrect." },
     };
   }
+console.log(email)
+  // 2. Trigger the email service
+  // We don't await this if we want a fast UI response, 
+  // but usually, it's safer to await to handle SMTP errors.
+  try {
+    const ok = await sendResetEmail(email);
+    if (!ok) {
+ return {
+        screen: "FORGOT_PASSWORD", // Transition to your next screen
+        data: { error_msg: "Lien non envoyé" },
+      };    }
+    else {
+      return {
+        screen: "SUCCESS", // Transition to your next screen
+        data: { message: "Lien de réinitialisation envoyé\nCe lien expire dans 15 minutes." },
+      };
+    }
 
-  // ✅ END FLOW after success
-  return {
-    screen: "SUCCESS",
-    data: {
-      flow_completed: true,
-      reset_allowed: true,
-    },
-  };
+    // 3. Move to the next screen in your flow
+
+  } catch (error) {
+    return {
+      screen: "FORGOT_PASSWORD",
+      data: { error_msg: "Erreur lors de l'envoi de l'email." },
+    };
+  }
 }
 
 /* -------------------------------- */
@@ -206,30 +225,24 @@ export async function handleAuthFlow(
 ): Promise<FlowResponse> {
   const action = (parsed.action || "").toUpperCase();
 
-  if (action === "PING") {
-    return { screen: "PING", data: { status: "active" } };
-  }
+  
 
   if (action === "DATA_EXCHANGE") {
     switch (parsed.screen) {
       case "WELCOME":
-         console.log(findSellerByFlowToken(getFlowToken(parsed)));
 
         return handleWelcome(parsed);
 
 
       case "SIGN_IN":
-                 console.log(findSellerByFlowToken(getFlowToken(parsed)));
 
         return handleSignIn(parsed);
 
       case "SIGN_UP":
-                 console.log(findSellerByFlowToken(getFlowToken(parsed)));
 
         return handleSignUp(parsed);
 
       case "FORGOT_PASSWORD":
-                 console.log(findSellerByFlowToken(getFlowToken(parsed)));
 
         return handleForgotPassword(parsed);
 
@@ -247,7 +260,7 @@ export async function handleAuthFlow(
     screen: "WELCOME",
     data: { error_msg: "" },
   };
- 
+
 }
 
 export default handleAuthFlow;

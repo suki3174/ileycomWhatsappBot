@@ -23,16 +23,13 @@ export function generateFlowtoken(seller:Seller): string {
   // For this example, we'll just use a simple placeholder.
   const token = `flowtoken-${seller.phone}-${Date.now()}`;
   seller.flow_token = token;
-  console.log(seller)
   return token;
 }
 export function findSeller(token: string): Seller | undefined {
-  console.log("find seller", findSellerByFlowToken(normToken(token)), token);                         
   return findSellerByFlowToken(normToken(token));
 } 
 export function sellerHasCode(token: string): boolean {
   const seller = findSeller(normToken(token));
-  console.log("found seller", seller);
   return !!(seller && seller.code !== null && String(seller.code).trim() !== "");
 }
 
@@ -51,12 +48,27 @@ export function verifyCode(token: string, code: string): boolean {
 export function activateSession(token: string): boolean {
   return activateSellerSession(normToken(token));
 }
+export function isSessionActive(token: string): boolean {
+ const seller = findSellerByFlowToken(token);
+  if (!seller) return false;
+
+  if (!seller.session_active_until) return false;
+
+  if (seller.session_active_until < Date.now()) {
+    seller.session_active_until = null; // cleanup
+    return false;
+  }
+
+  return true;
+}
 
 export function verifySellerEmail(token: string, email: string): boolean {
   const seller = findSeller(normToken(token));
   if (!seller) return false;
   const stored = String(seller.email || "").trim().toLowerCase();
   const provided = String(email || "").trim().toLowerCase();
+  console.log ("stored", stored);
+  console.log ("provided", provided);
   return stored !== "" && stored === provided;
 }
 
