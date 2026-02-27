@@ -1,5 +1,6 @@
  import {
   activateSellerSession,
+  desactivateSession,
   findAllSellers,
   findSellerByFlowToken,
   findSellerByPhone,
@@ -55,7 +56,7 @@ export function isSessionActive(token: string): boolean {
   if (!seller.session_active_until) return false;
 
   if (seller.session_active_until < Date.now()) {
-    seller.session_active_until = null; // cleanup
+    desactivateSession(token);
     return false;
   }
 

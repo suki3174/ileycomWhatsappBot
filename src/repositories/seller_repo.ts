@@ -19,7 +19,6 @@ globalThis.sellers = globalThis.sellers || [ {
     email: "sara.kal2004@gmail.com",
     code: "1234",
     phone: "21628997072",
-    session_active: false,
     flow_token: null,
   },];
 
@@ -65,13 +64,13 @@ export function activateSellerSession(token:string): boolean {
   return true;
 }
 
-export function deactivateSellerSession(token : string): Seller | undefined {
+export function desactivateSession(token:string):boolean {
   const seller = findSellerByFlowToken(token);
-  if (seller) {
-    seller.session_active = false;
-    return seller;
-  }
-  return undefined;
+  if (!seller) return false;
+
+  seller.session_active_until = null;
+
+  return true;
 }
 
 
