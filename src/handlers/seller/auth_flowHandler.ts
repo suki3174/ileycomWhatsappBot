@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { isValidEmail } from "@/utils/utilities"
 import {
+  ensureSellerState,
   isValidPinCodeFormat,
   sellerHasCode,
   setSellerCode,
@@ -46,7 +47,7 @@ async function handleWelcome(parsed: FlowRequest): Promise<FlowResponse> {
   // Ensure we correctly determine whether the seller already has a code
   try {
     const token = getFlowToken(parsed);
-    const hasCode = !!token && sellerHasCode(token);
+    const hasCode = !!token && await sellerHasCode(token);
 
     if (hasCode) {
       return {
@@ -97,7 +98,7 @@ async function handleSignIn(parsed: FlowRequest): Promise<FlowResponse> {
     }
 
     const token = getFlowToken(parsed);
-    const isValid = verifyCode(token, pin);
+    const isValid = await verifyCode(token, pin);
 
     if (!isValid) {
       return {
@@ -107,7 +108,7 @@ async function handleSignIn(parsed: FlowRequest): Promise<FlowResponse> {
     }
 
     // ✅ END FLOW on success
-    activateSession(token);
+    await activateSession(token);
     return {
       screen: "SUCCESS",
       data: {
@@ -152,7 +153,26 @@ async function handleSignUp(parsed: FlowRequest): Promise<FlowResponse> {
     };
   }
 
-  setSellerCode(getFlowToken(parsed), pin);
+  const token = getFlowToken(parsed);
+  const stateReady = await ensureSellerState(token);
+  if (!stateReady) {
+    return {
+      screen: "SIGN_UP",
+      data: {
+        error_msg: "Impossible de préparer votre compte. Réessayez."
+      },
+    };
+  }
+
+  const updated = await setSellerCode(token, pin);
+  if (!updated) {
+    return {
+      screen: "SIGN_UP",
+      data: {
+        error_msg: "Impossible d'enregistrer le code. Réessayez."
+      },
+    };
+  }
 
   // ✅ After signup → go to SIGN_IN
   return {
@@ -180,7 +200,7 @@ async function handleForgotPassword(parsed: FlowRequest): Promise<FlowResponse> 
   }
 
   // 1. Check if the email is associated with the seller
-  const isValid = verifySellerEmail(getFlowToken(parsed), email);
+  const isValid = await verifySellerEmail(getFlowToken(parsed), email);
 
   if (!isValid) {
     return {
