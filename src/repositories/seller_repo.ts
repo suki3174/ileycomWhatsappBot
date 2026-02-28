@@ -9,8 +9,10 @@ const timeoutFromEnv = Number(process.env.WP_PLUGIN_TIMEOUT_MS || 5000);
 const PLUGIN_TIMEOUT_MS = Number.isFinite(timeoutFromEnv)
   ? Math.max(timeoutFromEnv, 1000)
   : 5000;
+const FLOW_LOOKUP_TIMEOUT_MS = Math.max(PLUGIN_TIMEOUT_MS, 10000);
+const UPDATE_CODE_TIMEOUT_MS = Math.max(PLUGIN_TIMEOUT_MS, 12000);
 // Use a higher timeout for state insert because WordPress can be slower on first writes.
-const STATE_INSERT_TIMEOUT_MS = Math.max(PLUGIN_TIMEOUT_MS, 15000);
+const STATE_INSERT_TIMEOUT_MS = Math.max(PLUGIN_TIMEOUT_MS, 20000);
 
 // Generic POST helper for plugin routes with per-call timeout override.
 async function pluginPost(
@@ -31,6 +33,39 @@ async function pluginPost(
   });
 }
 
+function isTimeoutError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const candidate = err as { name?: string; code?: number };
+  // AbortSignal.timeout in Node fetch may surface as TimeoutError or DOMException code 23.
+  return candidate.name === "TimeoutError" || candidate.code === 23;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function pluginPostWithRetry(
+  path: string,
+  payload: Record<string, unknown>,
+  options: { timeoutMs?: number; retries?: number; retryDelayMs?: number } = {},
+): Promise<Response> {
+  const retries = Math.max(options.retries ?? 0, 0);
+  const retryDelayMs = Math.max(options.retryDelayMs ?? 250, 0);
+
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      return await pluginPost(path, payload, { timeoutMs: options.timeoutMs });
+    } catch (err) {
+      // Retry only transient timeout failures; preserve non-timeout errors immediately.
+      const canRetry = isTimeoutError(err) && attempt < retries;
+      if (!canRetry) throw err;
+      await delay(retryDelayMs);
+    }
+  }
+
+  throw new Error("pluginPostWithRetry exhausted unexpectedly");
+}
+
 // Reads raw response body safely for diagnostics on non-JSON or aborted responses.
 async function readResponseBodySafe(res: Response): Promise<string> {
   try {
@@ -38,6 +73,60 @@ async function readResponseBodySafe(res: Response): Promise<string> {
   } catch {
     return "";
   }
+}
+
+function tryExtractTrailingJsonObject(raw: string): unknown | undefined {
+  const text = String(raw || "").trim();
+  if (!text) return undefined;
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    // Continue to extraction fallback.
+  }
+
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start < 0 || end <= start) return undefined;
+
+  // Handles cases where PHP warnings/HTML are prepended before the JSON payload.
+  const candidate = text.slice(start, end + 1);
+  try {
+    return JSON.parse(candidate);
+  } catch {
+    return undefined;
+  }
+}
+
+async function parsePluginJsonSafe(
+  res: Response,
+  context: string,
+): Promise<Record<string, unknown> | undefined> {
+  const raw = await readResponseBodySafe(res);
+  const parsed = tryExtractTrailingJsonObject(raw);
+
+  if (!parsed || typeof parsed !== "object") {
+    // Log a short body preview to identify noisy WP/PHP output without flooding logs.
+    console.error(`${context} non-json response`, {
+      status: res.status,
+      statusText: res.statusText,
+      contentType: res.headers.get("content-type") || "",
+      bodyPreview: raw.slice(0, 500),
+    });
+    return undefined;
+  }
+
+  return parsed as Record<string, unknown>;
+}
+
+function extractSellerFromPluginPayload(payload: Record<string, unknown> | undefined): Seller | undefined {
+  if (!payload) return undefined;
+  // Expected plugin shape: { success: true, data: { seller: {...} } }
+  const data = payload.data;
+  if (!data || typeof data !== "object") return undefined;
+  const seller = (data as { seller?: unknown }).seller;
+  if (!seller || typeof seller !== "object") return undefined;
+  return seller as Seller;
 }
 
 // const sellers: Seller[] = [
@@ -86,10 +175,8 @@ export async function findSellerByPhone(phone: string): Promise<Seller | undefin
 
     if (!res.ok) return undefined;
 
-    const data = await res.json();
-    if (!data || !data.data || !data.data.seller) return undefined;
-
-    return data.data.seller as Seller;
+    const data = await parsePluginJsonSafe(res, "plugin by-phone");
+    return extractSellerFromPluginPayload(data);
   } catch {
     return undefined;
   }
@@ -101,14 +188,16 @@ export async function findSellerByFlowToken(token: string): Promise<Seller | und
   if (!normalizedToken) return undefined;
 
   try {
-    const res = await pluginPost("/seller/by-flow-token", { flow_token: normalizedToken });
+    const res = await pluginPostWithRetry(
+      "/seller/by-flow-token",
+      { flow_token: normalizedToken },
+      { timeoutMs: FLOW_LOOKUP_TIMEOUT_MS, retries: 1, retryDelayMs: 250 },
+    );
 
     if (!res.ok) return undefined;
 
-    const data = await res.json();
-    if (!data || !data.data || !data.data.seller) return undefined;
-
-    return data.data.seller as Seller;
+    const data = await parsePluginJsonSafe(res, "plugin by-flow-token");
+    return extractSellerFromPluginPayload(data);
   } catch {
     return undefined;
   }
@@ -120,7 +209,11 @@ export async function updateSellerCode(
   code: string,
 ): Promise<Seller | undefined> {
   try {
-    const res = await pluginPost("/seller/update-code", { flow_token: token, code });
+    const res = await pluginPostWithRetry(
+      "/seller/update-code",
+      { flow_token: token, code },
+      { timeoutMs: UPDATE_CODE_TIMEOUT_MS, retries: 1, retryDelayMs: 300 },
+    );
 
     if (!res.ok) {
       const body = await readResponseBodySafe(res);
@@ -133,14 +226,15 @@ export async function updateSellerCode(
       return undefined;
     }
 
-    const data = await res.json();
+    const data = await parsePluginJsonSafe(res, "plugin update-code");
 
-    if (!data || !data.data || !data.data.seller) {
+    const seller = extractSellerFromPluginPayload(data);
+    if (!seller) {
       console.error("plugin update-code invalid response shape", { data });
       return undefined;
     }
 
-    return data.data.seller as Seller;
+    return seller;
   } catch (err) {
     console.error("plugin update-code exception", err);
     return undefined;
@@ -163,7 +257,6 @@ export async function insertSellerState(
 
   try {
 
-  // Activates seller session and sets expiration to now + 24h.
     // Build request payload with required fields only.
     const payload: Record<string, unknown> = {
       phone,
@@ -176,7 +269,11 @@ export async function insertSellerState(
     }
 
     // Call state/insert with extended timeout for slow WordPress writes.
-    const res = await pluginPost("/seller/state/insert", payload, { timeoutMs: STATE_INSERT_TIMEOUT_MS });
+    const res = await pluginPostWithRetry(
+      "/seller/state/insert",
+      payload,
+      { timeoutMs: STATE_INSERT_TIMEOUT_MS, retries: 1, retryDelayMs: 400 },
+    );
 
     if (!res.ok) {
       const body = await readResponseBodySafe(res);
@@ -189,13 +286,14 @@ export async function insertSellerState(
       return undefined;
     }
 
-    const data = await res.json();
-    if (!data || !data.data || !data.data.seller) {
+    const data = await parsePluginJsonSafe(res, "plugin state-insert");
+    const seller = extractSellerFromPluginPayload(data);
+    if (!seller) {
       console.error("plugin state-insert invalid response shape", { data });
       return undefined;
     }
 
-    return data.data.seller as Seller;
+    return seller;
   } catch (err) {
     console.error("plugin state-insert exception", err);
     return undefined;
@@ -215,8 +313,8 @@ export async function activateSellerSession(token:string): Promise<boolean> {
 
     if (!res.ok) return false;
 
-    const data = await res.json();
-    return !!(data && data.data && data.data.seller);
+    const data = await parsePluginJsonSafe(res, "plugin session-activate");
+    return !!extractSellerFromPluginPayload(data);
   } catch {
     return false;
   }
@@ -228,12 +326,9 @@ export async function desactivateSellerSession(token : string): Promise<Seller |
     const res = await pluginPost("/seller/session/deactivate", { flow_token: token });
 
     if (!res.ok) return undefined;
-// Stores password reset token payload for seller identified by email.
 
-    const data = await res.json();
-    if (!data || !data.data || !data.data.seller) return undefined;
-
-    return data.data.seller as Seller;
+    const data = await parsePluginJsonSafe(res, "plugin session-deactivate");
+    return extractSellerFromPluginPayload(data);
   } catch {
     return undefined;
   }
@@ -254,10 +349,8 @@ export async function setResetToken(
 
     if (!res.ok) return undefined;
 
-    const data = await res.json();
-    if (!data || !data.data || !data.data.seller) return undefined;
-
-    return data.data.seller as Seller;
+    const data = await parsePluginJsonSafe(res, "plugin reset-token-set");
+    return extractSellerFromPluginPayload(data);
   } catch {
     return undefined;
   }
