@@ -8,7 +8,7 @@ export async function sendResetEmail(email: string): Promise<boolean> {
   const token = generateResetToken();
   const expiry = Date.now() + 1000 * 60 * 15; // 15 min
 
-  const seller =  setResetToken(email, token, expiry);
+  const seller = await setResetToken(email, token, expiry);
 console.log(seller)
   // If seller doesn't exist, we return false but don't crash 
   // (Standard security practice to prevent email enumeration)
