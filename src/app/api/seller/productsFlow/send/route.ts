@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
     try {
       // 1. Generate the unique token for THIS specific seller
       const token = generateFlowtoken(seller);
-      console.log(seller)
+      
 
       const response = await fetch(
         `https://graph.facebook.com/v19.0/${process.env.PHONE_NUMBER_ID}/messages`,
@@ -21,22 +21,14 @@ export async function POST(req: NextRequest) {
           },
           body: JSON.stringify({
             messaging_product: "whatsapp",
-            to: "seller.phone", // 🔹 Corrected to use current seller's phone
+            to: seller.phone, // 🔹 Corrected to use current seller's phone
             type: "template",
+            mode: "published",
             template: {
-              name: "authflowseller_message",
+              name: "sellerproductsflow2",
               language: { code: "fr" },
               components: [
-                {
-                  type: "header",
-                  parameters: [
-                    {
-                      type: "text",
-                      parameter_name: "seller_name", 
-                      text: seller.name || "Vendeur"
-                    },
-                  ],
-                },
+               
                 {
                   type: "button",
                   sub_type: "flow",

@@ -1,4 +1,4 @@
-import type { Seller } from "@/models/seller.model";
+import type { Seller } from "@/models/seller_model";
 
 // Base URL for WordPress plugin REST endpoints.
 const PLUGIN_BASE_URL: string = process.env.WP_PLUGIN_BASE_URL || "http://localhost/wp-json/whatsapp-bot/v1";
@@ -144,13 +144,15 @@ declare global {
 }
 
 // In-memory fallback seed seller used outside plugin-backed flows.
-globalThis.sellers = globalThis.sellers || [ {
-    name: "Taher",
+globalThis.sellers = globalThis.sellers || [ 
+  {
+    name: "sara",
     email: "gamingafroskull@gmail.com",
     code: "1234",
-    phone: "21650354773",
+    phone: "21628997072",
     flow_token: null,
-  },];
+  }
+  ];
 
 export const sellers: Seller[] = globalThis.sellers;
 

@@ -7,7 +7,7 @@
   insertSellerState,
   updateSellerCode,
 } from "@/repositories/seller_repo";
-import type { Seller } from "@/models/seller.model";
+import type { Seller } from "@/models/seller_model";
 
 // Normalizes flow tokens to avoid lookup mismatches caused by extra whitespace.
 const normToken = (t: string): string => (t ? String(t).trim() : "");
