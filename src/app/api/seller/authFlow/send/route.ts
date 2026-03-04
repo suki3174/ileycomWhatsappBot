@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
           },
           body: JSON.stringify({
             messaging_product: "whatsapp",
-            to: "seller.phone", // 🔹 Corrected to use current seller's phone
+            to: seller.phone, // 🔹 Corrected to use current seller's phone
             type: "template",
             template: {
               name: "authflowseller_message",

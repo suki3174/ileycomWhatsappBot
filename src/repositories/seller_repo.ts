@@ -147,7 +147,7 @@ declare global {
 globalThis.sellers = globalThis.sellers || [ 
   {
     name: "sara",
-    email: "gamingafroskull@gmail.com",
+    email: "sara.kal2004@gmail.com",
     code: "1234",
     phone: "21628997072",
     flow_token: null,

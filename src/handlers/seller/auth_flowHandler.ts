@@ -2,17 +2,16 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { isValidEmail } from "@/utils/utilities"
 import {
+  isPinStrong,
   ensureSellerState,
-  isValidPinCodeFormat,
   sellerHasCode,
   setSellerCode,
   verifyCode,
   verifySellerEmail,
-  activateSession
+  activateSession,
+  cachePendingCode,
 } from "@/services/auth_service";
-import { findSellerByFlowToken } from "@/repositories/seller_repo";
-import { sendResetEmail } from "@/services/reset_code_service";
-import { error } from "console";
+
 
 export interface FlowRequest {
   action?: string;
@@ -35,6 +34,49 @@ function getFlowToken(parsed: FlowRequest): string {
   return typeof t === "string" ? t.trim() : String(t).trim();
 }
 
+interface AuthWarmupEntry {
+  hasCode: boolean;
+  preparedAt: number;
+}
+
+const AUTH_WARMUP_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+declare global {
+  var authWarmupCache: Map<string, AuthWarmupEntry> | undefined;
+}
+
+globalThis.authWarmupCache = globalThis.authWarmupCache || new Map<string, AuthWarmupEntry>();
+const authWarmupCache = globalThis.authWarmupCache;
+
+function getCachedAuthDecision(token: string): AuthWarmupEntry | undefined {
+  const normalized = token ? String(token).trim() : "";
+  if (!normalized) return undefined;
+  const entry = authWarmupCache.get(normalized);
+  if (!entry) return undefined;
+  if (Date.now() - entry.preparedAt > AUTH_WARMUP_TTL_MS) {
+    authWarmupCache.delete(normalized);
+    return undefined;
+  }
+  return entry;
+}
+
+function primeAuthWarmupAsync(token: string): void {
+  const normalized = token ? String(token).trim() : "";
+  if (!normalized) return;
+
+  void (async () => {
+    try {
+      const hasCode = await sellerHasCode(normalized);
+      authWarmupCache.set(normalized, {
+        hasCode,
+        preparedAt: Date.now(),
+      });
+    } catch (err) {
+      console.error("auth warmup failed", err);
+    }
+  })();
+}
+
 
 
 
@@ -48,7 +90,23 @@ async function handleWelcome(parsed: FlowRequest): Promise<FlowResponse> {
   // Ensure we correctly determine whether the seller already has a code
   try {
     const token = getFlowToken(parsed);
-    const hasCode = !!token && await sellerHasCode(token);
+    if (!token) {
+      return {
+        screen: "SIGN_UP",
+        data: { error_msg: "" },
+      };
+    }
+
+    const cached = getCachedAuthDecision(token);
+    const hasCode =
+      cached?.hasCode ?? (await sellerHasCode(token));
+
+    if (cached == null) {
+      authWarmupCache.set(token, {
+        hasCode,
+        preparedAt: Date.now(),
+      });
+    }
 
     if (hasCode) {
       return {
@@ -89,14 +147,7 @@ async function handleSignIn(parsed: FlowRequest): Promise<FlowResponse> {
       };
     }
 
-    if (!isValidPinCodeFormat(pin)) {
-      return {
-        screen: "SIGN_IN",
-        data: {
-          error_msg: "Le code doit contenir exactement 4 chiffres.",
-        },
-      };
-    }
+    
 
     const token = getFlowToken(parsed);
     const isValid = await verifyCode(token, pin);
@@ -136,11 +187,11 @@ async function handleSignUp(parsed: FlowRequest): Promise<FlowResponse> {
 
 
 
-  if (!isValidPinCodeFormat(pin)) {
+  if (!isPinStrong(pin)) {
     return {
       screen: "SIGN_UP",
       data: {
-        error_msg: "Le code doit contenir exactement 4 chiffres."
+        error_msg: "Code pas assez fort. Veuillez choisir un code plus complexe.",
       },
     };
   }
@@ -155,25 +206,28 @@ async function handleSignUp(parsed: FlowRequest): Promise<FlowResponse> {
   }
 
   const token = getFlowToken(parsed);
-  const stateReady = await ensureSellerState(token);
-  if (!stateReady) {
-    return {
-      screen: "SIGN_UP",
-      data: {
-        error_msg: "Impossible de préparer votre compte. Réessayez."
-      },
-    };
-  }
 
-  const updated = await setSellerCode(token, pin);
-  if (!updated) {
-    return {
-      screen: "SIGN_UP",
-      data: {
-        error_msg: "Impossible d'enregistrer le code. Réessayez."
-      },
-    };
-  }
+  // Optimistic, non-blocking signup:
+  // 1) Immediately cache the code in memory so the user can sign in
+  // 2) Persist to WordPress/plugin in the background without blocking Meta
+  cachePendingCode(token, pin);
+
+  void (async () => {
+    try {
+      const stateReady = await ensureSellerState(token);
+      if (!stateReady) {
+        console.error("ensureSellerState failed during signup", { token });
+        return;
+      }
+
+      const updated = await setSellerCode(token, pin);
+      if (!updated) {
+        console.error("setSellerCode failed during signup", { token });
+      }
+    } catch (err) {
+      console.error("async signup persistence failed", err);
+    }
+  })();
 
   // ✅ After signup → go to SIGN_IN
   return {
@@ -244,9 +298,22 @@ console.log(email)
 export async function handleAuthFlow(
   parsed: FlowRequest
 ): Promise<FlowResponse> {
-  const action = (parsed.action || "").toUpperCase();
+  const rawAction = parsed.action || "";
+  const action = rawAction.toUpperCase();
 
-  
+  // INIT / NAVIGATE: warm up seller state and next screen decision without blocking.
+  if (action === "INIT" || action === "NAVIGATE") {
+    const token = getFlowToken(parsed);
+    if (token) {
+      primeAuthWarmupAsync(token);
+      void ensureSellerState(token);
+    }
+
+    return {
+      screen: "WELCOME",
+      data: { error_msg: "" },
+    };
+  }
 
   if (action === "DATA_EXCHANGE") {
     switch (parsed.screen) {

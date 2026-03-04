@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import type { Product } from "@/models/product_model";
 import { ProductType } from "@/models/product_model";
 import {
   getSellerProductsByFlowToken,
@@ -24,26 +25,55 @@ function getFlowToken(parsed: FlowRequest): string {
   const t = parsed?.data?.flow_token ?? parsed?.flow_token ?? "";
   return typeof t === "string" ? t.trim() : String(t).trim();
 }
-export async function handleWelcome(parsed: FlowRequest): Promise<FlowResponse> {
-  const token = getFlowToken(parsed);
-  const data = parsed.data || {};
 
-  // Load the products list
-  const products = await getSellerProductsByFlowToken(token);
+interface ProductListCacheEntry {
+  products: Product[];
+  preparedAt: number;
+}
 
-  // Shape for the PRODUCT_LIST screen
-  const listItems = products.map((p) => ({
-    id: p.id,
-    title: p.name,
-  }));
+const PRODUCT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const PAGE_SIZE = 5;
 
-  // Return the PRODUCT_LIST screen with the products list
-  return {
-    screen: "PRODUCT_LIST",
-    data: {
-      products: listItems,
-    },
-  };
+declare global {
+  var productListCache: Map<string, ProductListCacheEntry> | undefined;
+}
+
+globalThis.productListCache =
+  globalThis.productListCache || new Map<string, ProductListCacheEntry>();
+const productListCache = globalThis.productListCache;
+
+async function loadAndCacheProducts(token: string): Promise<Product[]> {
+  const normalized = token ? String(token).trim() : "";
+  if (!normalized) return [];
+  try {
+    const products = await getSellerProductsByFlowToken(normalized);
+    productListCache.set(normalized, {
+      products,
+      preparedAt: Date.now(),
+    });
+    return products;
+  } catch (err) {
+    console.error("loadAndCacheProducts failed", err);
+    return [];
+  }
+}
+
+async function getProductsForToken(token: string): Promise<Product[]> {
+  const normalized = token ? String(token).trim() : "";
+  if (!normalized) return [];
+
+  const entry = productListCache.get(normalized);
+  if (entry && Date.now() - entry.preparedAt <= PRODUCT_CACHE_TTL_MS) {
+    return entry.products;
+  }
+
+  return loadAndCacheProducts(normalized);
+}
+
+function primeProductsAsync(token: string): void {
+  const normalized = token ? String(token).trim() : "";
+  if (!normalized) return;
+  void loadAndCacheProducts(normalized);
 }
 /* -------------------------------- */
 /* PRODUCT LIST */
@@ -53,30 +83,76 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
   const data = parsed.data || {};
 
-  const products = await getSellerProductsByFlowToken(token);
+  const mode = String(data.action || "").toLowerCase();
+  const requestedPage = Number(data.page ?? 1);
+  let page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+
+  const products = await getProductsForToken(token);
 
   const listItems = products.map((p) => ({
     id: String(p.id),
     title: p.name,
   }));
 
-  const selectedId = String(data.product_id ?? "").trim();
-
-  // If no selection → show list
-  if (!selectedId) {
+  if (listItems.length === 0) {
     return {
       screen: "PRODUCT_LIST",
-      data: { products: listItems },
+      data: {
+        error_msg: "Auccun produit a afficher",
+        products: [],
+        current_page: 1,
+        has_next: false,
+        has_prev: false,
+      },
     };
   }
 
-  const product = await getProductById(selectedId);
+  const totalItems = listItems.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+  if (page > totalPages) page = totalPages;
+
+  const startIndex = (page - 1) * PAGE_SIZE;
+  const pageItems = listItems.slice(startIndex, startIndex + PAGE_SIZE);
+  const hasNext = page < totalPages;
+  const hasPrev = page > 1;
+
+  const baseListData = {
+    error_msg: "",
+    products: pageItems,
+    current_page: page,
+    has_next: hasNext,
+    has_prev: hasPrev,
+  };
+
+  // Pagination actions → stay on PRODUCT_LIST
+  if (mode === "paginate" || !mode) {
+    return {
+      screen: "PRODUCT_LIST",
+      data: baseListData,
+    };
+  }
+
+  // Details action → route to correct detail screen
+  const selectedId = String(data.product_id ?? "").trim();
+  if (!selectedId) {
+    return {
+      screen: "PRODUCT_LIST",
+      data: {
+        ...baseListData,
+        error_msg: "Veuillez sélectionner un produit.",
+      },
+    };
+  }
+
+  const product =
+    products.find((p) => String(p.id) === selectedId) ||
+    (await getProductById(selectedId));
 
   if (!product) {
     return {
       screen: "PRODUCT_LIST",
       data: {
-        products: listItems,
+        ...baseListData,
         error_msg: "Produit introuvable.",
       },
     };
@@ -85,7 +161,6 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
   const categories = (product.categories || []).join(", ");
   const dateCreation = `Créé le: ${product.created_at}`;
 
-  // SIMPLE PRODUCT
   if (product.type === ProductType.SIMPLE && !product.is_variable) {
     return {
       screen: "PRODUCT_DETAIL_SIMPLE",
@@ -103,7 +178,6 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
     };
   }
 
-  // VARIABLE PRODUCT
   return {
     screen: "PRODUCT_DETAIL_VARIABLE",
     data: {
@@ -114,10 +188,7 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
       full_desc: product.full_description,
       categories,
       date_creation: dateCreation,
-
-      // ⚠️ IMPORTANT → persist product_id
       product_id: product.id,
-
       variations:
         product.variations?.map((v) => ({
           id: String(v.id),
@@ -135,15 +206,6 @@ async function handleVariationDetail(
   parsed: FlowRequest,
 ): Promise<FlowResponse> {
   const data = parsed.data || {};
-    // 🔥 SUCCESS TRIGGER
-  if (data.confirm_action) {
-    return {
-      screen: "SUCCESS",
-      data: {
-        message: "Action sur la variation effectuée avec succès !",
-      },
-    };
-  }
 
   const productId = String(data.product_id ?? "").trim();
   const variationId = String(data.variation_id ?? "").trim();
@@ -189,36 +251,6 @@ async function handleVariationDetail(
     },
   };
 }
-async function handleSimpleDetail(
-  parsed: FlowRequest,
-): Promise<FlowResponse> {
-
-  const data = parsed.data || {};
-
-  // 🔥 SUCCESS TRIGGER
-  if (data.confirm_action) {
-    return {
-      screen: "SUCCESS",
-      data: {
-        message: "Action sur le produit effectuée avec succès !",
-      },
-    };
-  }
-
-  // Otherwise just stay on same screen
-  return {
-    screen: "PRODUCT_DETAIL_SIMPLE",
-    data: {},
-  };
-}
-async function handleSuccess(): Promise<FlowResponse> {
-  return {
-    screen: "SUCCESS",
-    data: {
-      message: "Action terminée avec succès !",
-    },
-  };
-}
 
 /* -------------------------------- */
 /* MAIN HANDLER */
@@ -227,35 +259,44 @@ async function handleSuccess(): Promise<FlowResponse> {
 export async function handleProductsFlow(
   parsed: FlowRequest,
 ): Promise<FlowResponse | null> {
-
-  const action = (parsed.action || "").toUpperCase();
+  const rawAction = parsed.action || "";
+  const action = rawAction.toUpperCase();
   const screen = parsed.screen || "";
 
-  if (action === "DATA_EXCHANGE" && screen === "WELCOME_SCREEN") {
-    return handleProductList(parsed);
+  // INIT / NAVIGATE: warm up product list for this seller without blocking Meta.
+  if (action === "INIT" || action === "NAVIGATE") {
+    const token = getFlowToken(parsed);
+    if (token) {
+      primeProductsAsync(token);
+    }
+
+    // Initial screen is the static WELCOME_SCREEN defined in the flow JSON.
+    return {
+      screen: "WELCOME_SCREEN",
+      data: {},
+    };
   }
 
-  if (action === "DATA_EXCHANGE" && screen === "PRODUCT_LIST") {
-    return handleProductList(parsed);
+  if (action === "DATA_EXCHANGE") {
+    switch (screen) {
+      case "WELCOME_SCREEN":
+      case "PRODUCT_LIST":
+        return handleProductList(parsed);
+      case "PRODUCT_DETAIL_VARIABLE":
+      case "VARIATION_DETAIL":
+        return handleVariationDetail(parsed);
+      default:
+        return {
+          screen: "WELCOME_SCREEN",
+          data: {},
+        };
+    }
   }
 
-  if (action === "DATA_EXCHANGE" && screen === "PRODUCT_DETAIL_VARIABLE") {
-    return handleVariationDetail(parsed);
-  }
-
-  if (action === "DATA_EXCHANGE" && screen === "VARIATION_DETAIL") {
-    return handleVariationDetail(parsed);
-  }
-
-  if (action === "DATA_EXCHANGE" && screen === "PRODUCT_DETAIL_SIMPLE") {
-    return handleSimpleDetail(parsed);
-  }
-
-  if (action === "NAVIGATE") {
-    return null;
-  }
-
-  return null;
+  return {
+    screen: "WELCOME_SCREEN",
+    data: {},
+  };
 }
 
 export default handleProductsFlow;

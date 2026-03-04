@@ -3,6 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import styles from "./resetCode.module.css"; 
+import { isPinStrong } from "@/services/auth_service";
 
 export default function ResetPasswordPage() {
   const params = useSearchParams();
@@ -22,6 +23,10 @@ export default function ResetPasswordPage() {
     const pinRegex = /^[0-9]{4}$/;
     if (!pinRegex.test(password)) {
       setError("Le code PIN doit contenir exactement 4 chiffres.");
+      return;
+    }
+    if(isPinStrong(password) === false) {
+      setError("Le code PIN doit être plus fort. Veuillez choisir un code plus complexe.");
       return;
     }
 

@@ -8,9 +8,50 @@
   updateSellerCode,
 } from "@/repositories/seller_repo";
 import type { Seller } from "@/models/seller_model";
+import { hashPin, verifyPin } from "@/utils/pinHash";
 
 // Normalizes flow tokens to avoid lookup mismatches caused by extra whitespace.
 const normToken = (t: string): string => (t ? String(t).trim() : "");
+
+// Ephemeral cache for codes recently set during signup.
+// This lets verifyCode succeed quickly even if the plugin/db write is slow or flaky.
+interface PendingCodeEntry {
+  code: string;
+  expiresAt: number;
+}
+
+const PENDING_CODE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+declare global {
+  var pendingCodes: Map<string, PendingCodeEntry> | undefined;
+}
+
+globalThis.pendingCodes = globalThis.pendingCodes || new Map<string, PendingCodeEntry>();
+const pendingCodes = globalThis.pendingCodes;
+
+export async function cachePendingCode(token: string, code: string): Promise<void> {
+  const normalized = normToken(token);
+  if (!normalized) return;
+  const trimmed = String(code || "").trim();
+  if (!trimmed) return;
+  const hashedCode = await hashPin(trimmed);
+  pendingCodes.set(normalized, {
+    code: hashedCode,
+    expiresAt: Date.now() + PENDING_CODE_TTL_MS,
+  });
+}
+
+function consumePendingCode(token: string): string | undefined {
+  const normalized = normToken(token);
+  if (!normalized) return undefined;
+  const entry = pendingCodes.get(normalized);
+  if (!entry) return undefined;
+  if (Date.now() > entry.expiresAt) {
+    pendingCodes.delete(normalized);
+    return undefined;
+  }
+  return entry.code;
+}
 
 // Returns seller resolved by phone from plugin-backed repository.
 export async function getSellerByPhone(phone: string ): Promise<Seller | undefined> {
@@ -47,9 +88,9 @@ export async function setSellerCode(token: string, code: string): Promise<Seller
   const normalized = normToken(token);
   // Guard clause: empty token cannot be used for plugin lookups/updates.
   if (!normalized) return undefined;
-
+   const hashedCode = await hashPin(code);
   // First attempt: update code directly for this flow token (fast path).
-  const updated = await updateSellerCode(normalized, code);
+  const updated = await updateSellerCode(normalized, hashedCode);
   // If direct update succeeds, return immediately.
   if (updated) return updated;
 
@@ -90,11 +131,18 @@ export async function ensureSellerState(token: string): Promise<boolean> {
 
 // Verifies provided code against the seller code stored in plugin state.
 export async function verifyCode(token: string, code: string): Promise<boolean> {
+  // Fast path: if we have a recent in-memory code for this token, use it.
+  const pending = consumePendingCode(token) ?? "";
+  const provided = String(code).trim();
+  const isVerified = await verifyPin(provided, pending);
+  if (pending && isVerified) {
+    return true;
+  }
+
   const seller = await findSeller(normToken(token));
   if (!seller) return false;
   const stored = seller.code == null ? "" : String(seller.code).trim();
-  const provided = String(code).trim();
-  return stored !== "" && stored === provided;
+  return stored !== "" && isVerified;
 }
 
 // Activates session in background to keep flow transition latency low.
@@ -148,7 +196,36 @@ export async function verifySellerEmail(token: string, email: string): Promise<b
 }
 
 // Validates PIN format: exactly 4 digits.
-export function isValidPinCodeFormat(pin: string): boolean {
-  return /^\d{4}$/.test(pin);
-}
 
+
+export function isPinStrong(pin: string): boolean {
+  // 1. Strict Digit Check
+  if (!/^[0-9]{4}$/.test(pin)) return false;
+
+  const digits = pin.split('').map(Number);
+  
+  // 2. Entropy Check (Variety)
+  // Rejects pins with only 1 or 2 unique digits (e.g., 1111, 1122, 1211)
+  const uniqueDigits = new Set(digits).size;
+  if (uniqueDigits < 3) return false;
+
+  // 3. Step Analysis (Differences between adjacent digits)
+  // Calculate the 'delta' between each digit
+  const deltas = [
+    digits[1] - digits[0],
+    digits[2] - digits[1],
+    digits[3] - digits[2]
+  ];
+
+  // Pattern A: Constant Increments (Sequences)
+  // Rejects 1234 (deltas [1,1,1]), 8642 (deltas [-2,-2,-2]), etc.
+  const isConstantStep = deltas[0] === deltas[1] && deltas[1] === deltas[2];
+  if (isConstantStep) return false;
+
+  // Pattern B: Alternating/Symmetric Patterns
+  // Rejects 1212 (deltas [1,-1,1]), 8989 (deltas [1,-1,1])
+  const isAlternating = deltas[0] === -deltas[1] && deltas[1] === -deltas[2];
+  if (isAlternating) return false;
+
+  return true;
+}
