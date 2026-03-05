@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Product, ProductVariation } from "@/models/product_model";
 import { loadAndCacheProducts } from "@/repositories/poducts_cache";
 import {
