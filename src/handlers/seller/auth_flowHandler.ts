@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { isValidEmail } from "@/utils/utilities"
+import { getFlowToken, isValidEmail } from "@/utils/utilities"
 import {
   isPinStrong,
   ensureSellerState,
@@ -9,76 +9,12 @@ import {
   verifyCode,
   verifySellerEmail,
   activateSession,
-  cachePendingCode,
+  primeAuthWarmupAsync,
 } from "@/services/auth_service";
 import { sendResetEmail } from "@/services/reset_code_service";
-
-
-export interface FlowRequest {
-  action?: string;
-  screen?: string;
-  data?: Record<string, any>;
-  flow_token?: string;
-  version?: string;
-}
-
-export interface FlowResponse {
-  screen: string;
-  data: Record<string, any>;
-}
-
-/* -------------------------------- */
-/* Utilities */
-/* -------------------------------- */
-function getFlowToken(parsed: FlowRequest): string {
-  const t = parsed?.data?.flow_token ?? parsed?.flow_token ?? "";
-  return typeof t === "string" ? t.trim() : String(t).trim();
-}
-
-interface AuthWarmupEntry {
-  hasCode: boolean;
-  preparedAt: number;
-}
-
-const AUTH_WARMUP_TTL_MS = 5 * 60 * 1000; // 5 minutes
-
-declare global {
-  var authWarmupCache: Map<string, AuthWarmupEntry> | undefined;
-}
-
-globalThis.authWarmupCache = globalThis.authWarmupCache || new Map<string, AuthWarmupEntry>();
-const authWarmupCache = globalThis.authWarmupCache;
-
-function getCachedAuthDecision(token: string): AuthWarmupEntry | undefined {
-  const normalized = token ? String(token).trim() : "";
-  if (!normalized) return undefined;
-  const entry = authWarmupCache.get(normalized);
-  if (!entry) return undefined;
-  if (Date.now() - entry.preparedAt > AUTH_WARMUP_TTL_MS) {
-    authWarmupCache.delete(normalized);
-    return undefined;
-  }
-  return entry;
-}
-
-function primeAuthWarmupAsync(token: string): void {
-  const normalized = token ? String(token).trim() : "";
-  if (!normalized) return;
-
-  void (async () => {
-    try {
-      const hasCode = await sellerHasCode(normalized);
-      authWarmupCache.set(normalized, {
-        hasCode,
-        preparedAt: Date.now(),
-      });
-    } catch (err) {
-      console.error("auth warmup failed", err);
-    }
-  })();
-}
-
-
+import { cachePendingCode, getCachedAuthDecision, updateAuthWarmupCache } from "@/repositories/auth_cache";
+import { FlowRequest } from "@/models/flowRequest";
+import { FlowResponse } from "@/models/flowResponse";
 
 
 
@@ -103,7 +39,7 @@ async function handleWelcome(parsed: FlowRequest): Promise<FlowResponse> {
       cached?.hasCode ?? (await sellerHasCode(token));
 
     if (cached == null) {
-      authWarmupCache.set(token, {
+     updateAuthWarmupCache(token, {
         hasCode,
         preparedAt: Date.now(),
       });

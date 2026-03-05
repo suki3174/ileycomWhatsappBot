@@ -1,12 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Product, ProductVariation } from "@/models/product_model";
+import { loadAndCacheProducts } from "@/repositories/poducts_cache";
 import {
   findProductsBySellerFlowToken,
   findProductById,
   findVariationById,
 } from "@/repositories/product_repo";
+import { normToken } from "@/utils/utilities";
 
-const normToken = (t: string): string => (t ? String(t).trim() : "");
 
 export async function getSellerProductsByFlowToken(
   token: string,
@@ -29,3 +30,8 @@ export async function getVariationDetail(
   return await findVariationById(productId, variationId);
 }
 
+export function primeProductsAsync(token: string): void {
+  const normalized = token ? String(token).trim() : "";
+  if (!normalized) return;
+  void loadAndCacheProducts(normalized);
+}

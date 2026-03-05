@@ -9,48 +9,27 @@
 } from "@/repositories/seller_repo";
 import type { Seller } from "@/models/seller_model";
 import { hashPin, verifyPin } from "@/utils/pinHash";
+import { consumePendingCode, updateAuthWarmupCache } from "@/repositories/auth_cache";
+import { normToken } from "@/utils/utilities";
 
 // Normalizes flow tokens to avoid lookup mismatches caused by extra whitespace.
-const normToken = (t: string): string => (t ? String(t).trim() : "");
 
-// Ephemeral cache for codes recently set during signup.
-// This lets verifyCode succeed quickly even if the plugin/db write is slow or flaky.
-interface PendingCodeEntry {
-  code: string;
-  expiresAt: number;
-}
 
-const PENDING_CODE_TTL_MS = 10 * 60 * 1000; // 10 minutes
-
-declare global {
-  var pendingCodes: Map<string, PendingCodeEntry> | undefined;
-}
-
-globalThis.pendingCodes = globalThis.pendingCodes || new Map<string, PendingCodeEntry>();
-const pendingCodes = globalThis.pendingCodes;
-
-export async function cachePendingCode(token: string, code: string): Promise<void> {
-  const normalized = normToken(token);
+export function primeAuthWarmupAsync(token: string): void {
+  const normalized = token ? String(token).trim() : "";
   if (!normalized) return;
-  const trimmed = String(code || "").trim();
-  if (!trimmed) return;
-  const hashedCode = await hashPin(trimmed);
-  pendingCodes.set(normalized, {
-    code: hashedCode,
-    expiresAt: Date.now() + PENDING_CODE_TTL_MS,
-  });
-}
 
-function consumePendingCode(token: string): string | undefined {
-  const normalized = normToken(token);
-  if (!normalized) return undefined;
-  const entry = pendingCodes.get(normalized);
-  if (!entry) return undefined;
-  if (Date.now() > entry.expiresAt) {
-    pendingCodes.delete(normalized);
-    return undefined;
-  }
-  return entry.code;
+  void (async () => {
+    try {
+      const hasCode = await sellerHasCode(normalized);
+      updateAuthWarmupCache(normalized, {
+        hasCode,
+        preparedAt: Date.now(),
+      });
+    } catch (err) {
+      console.error("auth warmup failed", err);
+    }
+  })();
 }
 
 // Returns seller resolved by phone from plugin-backed repository.
@@ -229,3 +208,5 @@ export function isPinStrong(pin: string): boolean {
 
   return true;
 }
+
+export { normToken };

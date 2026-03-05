@@ -1,80 +1,19 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import type { Product } from "@/models/product_model";
+import { FlowRequest } from "@/models/flowRequest";
+import { FlowResponse } from "@/models/flowResponse";
 import { ProductType } from "@/models/product_model";
+import { getProductsForToken } from "@/repositories/poducts_cache";
 import {
-  getSellerProductsByFlowToken,
   getProductById,
   getVariationDetail,
+  primeProductsAsync,
 } from "@/services/products_service";
-import{formatSimplePrices,formatStock}from  "@/utils/utilities"
+import{formatSimplePrices,formatStock, getFlowToken}from  "@/utils/utilities"
 
-export interface FlowRequest {
-  action?: string;
-  screen?: string;
-  data?: Record<string, any>;
-  flow_token?: string;
-  version?: string;
-}
 
-export interface FlowResponse {
-  screen: string;
-  data: Record<string, any>;
-}
 
-function getFlowToken(parsed: FlowRequest): string {
-  const t = parsed?.data?.flow_token ?? parsed?.flow_token ?? "";
-  return typeof t === "string" ? t.trim() : String(t).trim();
-}
-
-interface ProductListCacheEntry {
-  products: Product[];
-  preparedAt: number;
-}
-
-const PRODUCT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const PAGE_SIZE = 5;
 
-declare global {
-  var productListCache: Map<string, ProductListCacheEntry> | undefined;
-}
-
-globalThis.productListCache =
-  globalThis.productListCache || new Map<string, ProductListCacheEntry>();
-const productListCache = globalThis.productListCache;
-
-async function loadAndCacheProducts(token: string): Promise<Product[]> {
-  const normalized = token ? String(token).trim() : "";
-  if (!normalized) return [];
-  try {
-    const products = await getSellerProductsByFlowToken(normalized);
-    productListCache.set(normalized, {
-      products,
-      preparedAt: Date.now(),
-    });
-    return products;
-  } catch (err) {
-    console.error("loadAndCacheProducts failed", err);
-    return [];
-  }
-}
-
-async function getProductsForToken(token: string): Promise<Product[]> {
-  const normalized = token ? String(token).trim() : "";
-  if (!normalized) return [];
-
-  const entry = productListCache.get(normalized);
-  if (entry && Date.now() - entry.preparedAt <= PRODUCT_CACHE_TTL_MS) {
-    return entry.products;
-  }
-
-  return loadAndCacheProducts(normalized);
-}
-
-function primeProductsAsync(token: string): void {
-  const normalized = token ? String(token).trim() : "";
-  if (!normalized) return;
-  void loadAndCacheProducts(normalized);
-}
 /* -------------------------------- */
 /* PRODUCT LIST */
 /* -------------------------------- */
