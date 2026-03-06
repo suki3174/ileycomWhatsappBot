@@ -1,123 +1,16 @@
 import type { Seller } from "@/models/seller_model";
+import { PLUGIN_TIMEOUT_MS, pluginPost, pluginPostWithRetry } from "@/utils/plugin_client";
+import {
+  extractPhoneFromFlowToken,
+  normText,
+  parsePluginJsonSafe,
+  readResponseBodySafe,
+} from "@/utils/repository_utils";
 
-// Base URL for WordPress plugin REST endpoints.
-const PLUGIN_BASE_URL: string = process.env.WP_PLUGIN_BASE_URL || "http://localhost/wp-json/whatsapp-bot/v1";
-// Shared API key expected by plugin middleware.
-const PLUGIN_API_KEY: string = process.env.WP_PLUGIN_API_KEY || "";
-// Global plugin timeout, clamped to a minimum safety floor.
-const timeoutFromEnv = Number(process.env.WP_PLUGIN_TIMEOUT_MS || 5000);
-const PLUGIN_TIMEOUT_MS = Number.isFinite(timeoutFromEnv)
-  ? Math.max(timeoutFromEnv, 1000)
-  : 5000;
 const FLOW_LOOKUP_TIMEOUT_MS = Math.max(PLUGIN_TIMEOUT_MS, 10000);
 const UPDATE_CODE_TIMEOUT_MS = Math.max(PLUGIN_TIMEOUT_MS, 12000);
 // Use a higher timeout for state insert because WordPress can be slower on first writes.
 const STATE_INSERT_TIMEOUT_MS = Math.max(PLUGIN_TIMEOUT_MS, 20000);
-
-// Generic POST helper for plugin routes with per-call timeout override.
-async function pluginPost(
-  path: string,
-  payload: Record<string, unknown>,
-  options: { timeoutMs?: number } = {},
-) {
-  // Resolve per-call timeout (fallback to global timeout if none provided).
-  const timeoutMs = Math.max(options.timeoutMs ?? PLUGIN_TIMEOUT_MS, 1000);
-  return fetch(`${PLUGIN_BASE_URL}${path}`, {
-    method: "POST",
-    signal: AbortSignal.timeout(timeoutMs),
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": PLUGIN_API_KEY,
-    },
-    body: JSON.stringify(payload),
-  });
-}
-
-function isTimeoutError(err: unknown): boolean {
-  if (!err || typeof err !== "object") return false;
-  const candidate = err as { name?: string; code?: number };
-  // AbortSignal.timeout in Node fetch may surface as TimeoutError or DOMException code 23.
-  return candidate.name === "TimeoutError" || candidate.code === 23;
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function pluginPostWithRetry(
-  path: string,
-  payload: Record<string, unknown>,
-  options: { timeoutMs?: number; retries?: number; retryDelayMs?: number } = {},
-): Promise<Response> {
-  const retries = Math.max(options.retries ?? 0, 0);
-  const retryDelayMs = Math.max(options.retryDelayMs ?? 250, 0);
-
-  for (let attempt = 0; attempt <= retries; attempt += 1) {
-    try {
-      return await pluginPost(path, payload, { timeoutMs: options.timeoutMs });
-    } catch (err) {
-      // Retry only transient timeout failures; preserve non-timeout errors immediately.
-      const canRetry = isTimeoutError(err) && attempt < retries;
-      if (!canRetry) throw err;
-      await delay(retryDelayMs);
-    }
-  }
-
-  throw new Error("pluginPostWithRetry exhausted unexpectedly");
-}
-
-// Reads raw response body safely for diagnostics on non-JSON or aborted responses.
-async function readResponseBodySafe(res: Response): Promise<string> {
-  try {
-    return await res.text();
-  } catch {
-    return "";
-  }
-}
-
-function tryExtractTrailingJsonObject(raw: string): unknown | undefined {
-  const text = String(raw || "").trim();
-  if (!text) return undefined;
-
-  try {
-    return JSON.parse(text);
-  } catch {
-    // Continue to extraction fallback.
-  }
-
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start < 0 || end <= start) return undefined;
-
-  // Handles cases where PHP warnings/HTML are prepended before the JSON payload.
-  const candidate = text.slice(start, end + 1);
-  try {
-    return JSON.parse(candidate);
-  } catch {
-    return undefined;
-  }
-}
-
-async function parsePluginJsonSafe(
-  res: Response,
-  context: string,
-): Promise<Record<string, unknown> | undefined> {
-  const raw = await readResponseBodySafe(res);
-  const parsed = tryExtractTrailingJsonObject(raw);
-
-  if (!parsed || typeof parsed !== "object") {
-    // Log a short body preview to identify noisy WP/PHP output without flooding logs.
-    console.error(`${context} non-json response`, {
-      status: res.status,
-      statusText: res.statusText,
-      contentType: res.headers.get("content-type") || "",
-      bodyPreview: raw.slice(0, 500),
-    });
-    return undefined;
-  }
-
-  return parsed as Record<string, unknown>;
-}
 
 function extractSellerFromPluginPayload(payload: Record<string, unknown> | undefined): Seller | undefined {
   if (!payload) return undefined;
@@ -146,24 +39,15 @@ declare global {
 // In-memory fallback seed seller used outside plugin-backed flows.
 globalThis.sellers = globalThis.sellers || [ 
   {
-    name: "sara",
-    email: "sara.kal2004@gmail.com",
+    name: "Taher",
+    email: "gamingafroskull@gmail.com",
     code: "1234",
-    phone: "21628997072",
+    phone: "21650354773",
     flow_token: null,
   }
   ];
 
 export const sellers: Seller[] = globalThis.sellers;
-
-// Extracts normalized phone from token format: flowtoken-<phone>-<timestamp>.
-function extractPhoneFromFlowToken(token: string): string | null {
-  const tok = String(token || "").trim();
-  const match = tok.match(/^flowtoken-(.+)-\d+$/);
-  if (!match || !match[1]) return null;
-  const normalized = String(match[1]).replace(/\D+/g, "");
-  return normalized || null;
-}
 
 // Returns local in-memory sellers.
 export function findAllSellers(): Seller[] {
@@ -186,7 +70,7 @@ export async function findSellerByPhone(phone: string): Promise<Seller | undefin
 
 // Fetches seller by flow token from plugin endpoint.
 export async function findSellerByFlowToken(token: string): Promise<Seller | undefined> {
-  const normalizedToken = String(token || "").trim();
+  const normalizedToken = normText(token);
   if (!normalizedToken) return undefined;
 
   try {
@@ -223,7 +107,7 @@ export async function updateSellerCode(
         status: res.status,
         statusText: res.statusText,
         body,
-        tokenPresent: !!String(token || "").trim(),
+        tokenPresent: !!normText(token),
       });
       return undefined;
     }

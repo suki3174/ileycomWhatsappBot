@@ -1,5 +1,6 @@
 import type { Order } from "@/models/oder_model";
 import { getSellerOrdersByFlowToken } from "@/services/order_service";
+import { normToken } from "@/utils/utilities";
 
 interface OrderListCacheEntry {
   orders: Order[];
@@ -18,7 +19,7 @@ globalThis.orderListCache =
 const orderListCache = globalThis.orderListCache;
 
 export async function loadAndCacheOrders(token: string): Promise<Order[]> {
-  const normalized = token ? String(token).trim() : "";
+  const normalized = normToken(token);
   if (!normalized) return [];
   try {
     const orders = await getSellerOrdersByFlowToken(normalized);
@@ -34,7 +35,7 @@ export async function loadAndCacheOrders(token: string): Promise<Order[]> {
 }
 
 export async function getOrdersForToken(token: string): Promise<Order[]> {
-  const normalized = token ? String(token).trim() : "";
+  const normalized = normToken(token);
   if (!normalized) return [];
 
   const entry = orderListCache.get(normalized);

@@ -1,5 +1,6 @@
 import { Product } from "@/models/product_model";
 import { getSellerProductsByFlowToken } from "@/services/products_service";
+import { normToken } from "@/utils/utilities";
 
 interface ProductListCacheEntry {
   products: Product[];
@@ -19,7 +20,7 @@ const productListCache = globalThis.productListCache;
 // load products for token and save in cache
 
 export async function loadAndCacheProducts(token: string): Promise<Product[]> {
-  const normalized = token ? String(token).trim() : "";
+  const normalized = normToken(token);
   if (!normalized) return [];
   try {
     const products = await getSellerProductsByFlowToken(normalized);
@@ -36,7 +37,7 @@ export async function loadAndCacheProducts(token: string): Promise<Product[]> {
 
 // get products for token, using cache if valid
 export async function getProductsForToken(token: string): Promise<Product[]> {
-  const normalized = token ? String(token).trim() : "";
+  const normalized = normToken(token);
   if (!normalized) return [];
 
   const entry = productListCache.get(normalized);

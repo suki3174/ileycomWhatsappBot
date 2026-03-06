@@ -1,10 +1,8 @@
 import { NextRequest } from "next/server";
 import { decryptFlowPayload, encryptFlowResponse } from "@/utils/crypto";
-import {
-  handleProductsFlow,
-  type FlowRequest,
-  type FlowResponse,
-} from "@/handlers/seller/productsFlow_handler";
+import { handleProductsFlow } from "@/handlers/seller/productsFlow_handler";
+import type { FlowRequest } from "@/models/flowRequest";
+import type { FlowResponse } from "@/models/flowResponse";
 
 export async function POST(req: NextRequest) {
   try {

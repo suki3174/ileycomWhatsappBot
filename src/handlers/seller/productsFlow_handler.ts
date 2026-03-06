@@ -24,6 +24,69 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
   const mode = String(data.action || "").toLowerCase();
   const requestedPage = Number(data.page ?? 1);
   let page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+  const selectedId = String(data.product_id ?? "").trim();
+
+  // Fast path for product click: fetch detail directly and avoid list fetch latency.
+  if (selectedId) {
+    const detailedProduct = await getProductById(selectedId);
+    const product =
+      detailedProduct ||
+      (await getProductsForToken(token)).find((p) => String(p.id) === selectedId);
+
+    if (!product) {
+      return {
+        screen: "PRODUCT_LIST",
+        data: {
+          error_msg: "Produit introuvable.",
+          products: [],
+          current_page: 1,
+          has_next: false,
+          has_prev: false,
+        },
+      };
+    }
+
+    const categories = (product.categories || []).join(", ") || "Sans categorie";
+    const dateCreation = product.created_at
+      ? `Cree le: ${product.created_at}`
+      : "Cree le: non renseigne";
+
+    if (product.type === ProductType.SIMPLE && !product.is_variable) {
+      return {
+        screen: "PRODUCT_DETAIL_SIMPLE",
+        data: {
+          name: product.name,
+          img: product.image_src,
+          id_sku: `ID: ${product.id} | SKU: ${product.sku}`,
+          short_desc: product.short_description || "Description courte non renseignee",
+          full_desc: product.full_description || "Description complete non renseignee",
+          prices: formatSimplePrices(product),
+          stock_info: formatStock(product),
+          categories,
+          date_creation: dateCreation,
+        },
+      };
+    }
+
+    return {
+      screen: "PRODUCT_DETAIL_VARIABLE",
+      data: {
+        name: product.name,
+        img: product.image_src,
+        id_sku: `ID: ${product.id} | SKU: ${product.sku}`,
+        short_desc: product.short_description || "Description courte non renseignee",
+        full_desc: product.full_description || "Description complete non renseignee",
+        categories,
+        date_creation: dateCreation,
+        product_id: product.id,
+        variations:
+          product.variations?.map((v) => ({
+            id: String(v.id),
+            title: v.title,
+          })) ?? [],
+      },
+    };
+  }
 
   const products = await getProductsForToken(token);
 
@@ -62,7 +125,7 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
     has_prev: hasPrev,
   };
 
-  // Pagination actions → stay on PRODUCT_LIST
+  // Pagination actions and empty actions keep list when no product was selected.
   if (mode === "paginate" || !mode) {
     return {
       screen: "PRODUCT_LIST",
@@ -70,69 +133,9 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
     };
   }
 
-  // Details action → route to correct detail screen
-  const selectedId = String(data.product_id ?? "").trim();
-  if (!selectedId) {
-    return {
-      screen: "PRODUCT_LIST",
-      data: {
-        ...baseListData,
-        error_msg: "Veuillez sélectionner un produit.",
-      },
-    };
-  }
-
-  const product =
-    products.find((p) => String(p.id) === selectedId) ||
-    (await getProductById(selectedId));
-
-  if (!product) {
-    return {
-      screen: "PRODUCT_LIST",
-      data: {
-        ...baseListData,
-        error_msg: "Produit introuvable.",
-      },
-    };
-  }
-
-  const categories = (product.categories || []).join(", ");
-  const dateCreation = `Créé le: ${product.created_at}`;
-
-  if (product.type === ProductType.SIMPLE && !product.is_variable) {
-    return {
-      screen: "PRODUCT_DETAIL_SIMPLE",
-      data: {
-        name: product.name,
-        img: product.image_src,
-        id_sku: `ID: ${product.id} | SKU: ${product.sku}`,
-        short_desc: product.short_description,
-        full_desc: product.full_description,
-        prices: formatSimplePrices(product),
-        stock_info: formatStock(product),
-        categories,
-        date_creation: dateCreation,
-      },
-    };
-  }
-
   return {
-    screen: "PRODUCT_DETAIL_VARIABLE",
-    data: {
-      name: product.name,
-      img: product.image_src,
-      id_sku: `ID: ${product.id} | SKU: ${product.sku}`,
-      short_desc: product.short_description,
-      full_desc: product.full_description,
-      categories,
-      date_creation: dateCreation,
-      product_id: product.id,
-      variations:
-        product.variations?.map((v) => ({
-          id: String(v.id),
-          title: v.title,
-        })) ?? [],
-    },
+    screen: "PRODUCT_LIST",
+    data: baseListData,
   };
 }
 
@@ -145,8 +148,12 @@ async function handleVariationDetail(
 ): Promise<FlowResponse> {
   const data = parsed.data || {};
 
-  const productId = String(data.product_id ?? "").trim();
-  const variationId = String(data.variation_id ?? "").trim();
+  const productId = String(
+    data.product_id ?? data.parent_product_id ?? "",
+  ).trim();
+  const variationId = String(
+    data.variation_id ?? data.selected_variation_id ?? data.id ?? "",
+  ).trim();
 
   if (!productId || !variationId) {
     return {
@@ -157,7 +164,15 @@ async function handleVariationDetail(
     };
   }
 
-  const variation = await getVariationDetail(productId, variationId);
+  let variation = await getVariationDetail(productId, variationId);
+
+  // Fallback: reuse product detail payload when variation endpoint misses.
+  if (!variation) {
+    const product = await getProductById(productId);
+    variation = product?.variations?.find(
+      (v) => String(v.id) === String(variationId),
+    );
+  }
 
   if (!variation) {
     return {
@@ -220,6 +235,7 @@ export async function handleProductsFlow(
       case "WELCOME_SCREEN":
       case "PRODUCT_LIST":
         return handleProductList(parsed);
+      case "PRODUCT_DETAIL_SIMPLE":
       case "PRODUCT_DETAIL_VARIABLE":
       case "VARIATION_DETAIL":
         return handleVariationDetail(parsed);

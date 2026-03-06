@@ -8,7 +8,6 @@
   updateSellerCode,
 } from "@/repositories/seller_repo";
 import type { Seller } from "@/models/seller_model";
-import { hashPin, verifyPin } from "@/utils/pinHash";
 import { consumePendingCode, updateAuthWarmupCache } from "@/repositories/auth_cache";
 import { normToken } from "@/utils/utilities";
 
@@ -67,9 +66,8 @@ export async function setSellerCode(token: string, code: string): Promise<Seller
   const normalized = normToken(token);
   // Guard clause: empty token cannot be used for plugin lookups/updates.
   if (!normalized) return undefined;
-   const hashedCode = await hashPin(code);
   // First attempt: update code directly for this flow token (fast path).
-  const updated = await updateSellerCode(normalized, hashedCode);
+  const updated = await updateSellerCode(normalized, code);
   // If direct update succeeds, return immediately.
   if (updated) return updated;
 
@@ -110,18 +108,17 @@ export async function ensureSellerState(token: string): Promise<boolean> {
 
 // Verifies provided code against the seller code stored in plugin state.
 export async function verifyCode(token: string, code: string): Promise<boolean> {
-  // Fast path: if we have a recent in-memory code for this token, use it.
+  // Fast path: if we have a recent cached code for this token, use it.
   const pending = consumePendingCode(token) ?? "";
   const provided = String(code).trim();
-  const isVerified = await verifyPin(provided, pending);
-  if (pending && isVerified) {
+  if (pending && pending === provided) {
     return true;
   }
 
   const seller = await findSeller(normToken(token));
   if (!seller) return false;
   const stored = seller.code == null ? "" : String(seller.code).trim();
-  return stored !== "" && isVerified;
+  return stored !== "" && stored === provided;
 }
 
 // Activates session in background to keep flow transition latency low.

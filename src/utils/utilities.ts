@@ -16,10 +16,17 @@ export function generateResetToken(): string {
 }
 
 export function formatSimplePrices(product: any): string {
-  const euro = product.promo_price_euro ?? product.general_price_euro ?? "";
-  const tnd = product.promo_price_tnd ?? product.general_price_tnd ?? "";
+  const euro = String(
+    product?.promo_price_euro ?? product?.general_price_euro ?? "",
+  ).trim();
+  const tnd = String(
+    product?.promo_price_tnd ?? product?.general_price_tnd ?? "",
+  ).trim();
 
-  return `${euro}€ | ${tnd} TND`;
+  if (!euro && !tnd) return "Prix non renseigne";
+  if (!euro) return `${tnd} TND`;
+  if (!tnd) return `${euro} EUR`;
+  return `${euro} EUR | ${tnd} TND`;
 }
 
 export function formatStock(product: any): string {
