@@ -98,7 +98,10 @@ export function formatOrderStatusCounters(orders: Order[]): {
 }
 
 export function formatOrderListItem(order: Order) {
-  const articlesCount = order.articles.length;
+  const articlesCount =
+    typeof order.articles_count === "number"
+      ? order.articles_count
+      : order.articles.length;
   const metadata = `${order.created_at} · ${articlesCount} article${articlesCount > 1 ? "s" : ""}`;
 console.log("tags:", JSON.stringify(order.tags));
 

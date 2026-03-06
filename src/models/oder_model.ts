@@ -23,6 +23,7 @@ export interface Order {
   currency: string;
   status: OrderStatus;
   tags: string[];
+  articles_count?: number;
   payment_method: string;
   transaction_id: string;
   customer_note: string;

@@ -15,6 +15,7 @@ import {
   filterOrdersForStatus,
   getOrderById,
   getOrderArticles,
+  getOrderStatusCounters,
   primeOrdersAsync,
 } from "@/services/order_service";
 
@@ -109,12 +110,21 @@ function buildOrderListResponse(
 async function handleOrderStatus(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
   const data = parsed.data || {};
-  const orders = await getOrdersForToken(token);
+  const requestedFilter = String(data.status_filter || "all");
 
   // User submitted the status filter form — transition to ORDER_LIST
   if (data.status_filter) {
+    const orders = await getOrdersForToken(token);
     const statusFilter = String(data.status_filter);
     const filtered = filterOrdersForStatus(orders, statusFilter);
+
+    console.log("ordersFlow ORDER_STATUS filter", {
+      tokenSuffix: token.slice(-6),
+      statusFilter,
+      filteredCount: filtered.length,
+      totalOrders: orders.length,
+    });
+
     if (filtered.length === 0) {
       const statuses = formatOrderStatusCounters(orders);
       return {
@@ -125,8 +135,24 @@ async function handleOrderStatus(parsed: FlowRequest): Promise<FlowResponse> {
     return buildOrderListResponse(filtered, 1, statusFilter);
   }
 
-  // Initial render — show status counters
-  const statuses = formatOrderStatusCounters(orders);
+  const counters = await getOrderStatusCounters(token);
+
+  // Prewarm list data while user is on ORDER_STATUS to speed up first filter submit.
+  primeOrdersAsync(token);
+
+  console.log("ordersFlow ORDER_STATUS counters", {
+    tokenSuffix: token.slice(-6),
+    requestedFilter,
+    counters,
+  });
+
+  const statuses = [
+    { id: "all", title: `🗂️ Total  —  ${counters.total}` },
+    { id: "completed", title: `✅ Terminées  —  ${counters.completed}` },
+    { id: "in_delivery", title: `🚚 En livraison  —  ${counters.in_delivery}` },
+    { id: "to_deliver", title: `📦 À Livrer  —  ${counters.to_deliver}` },
+  ];
+
   return {
     screen: "ORDER_STATUS",
     data: { error_msg: "", statuses },
@@ -154,6 +180,15 @@ async function handleOrderList(parsed: FlowRequest): Promise<FlowResponse> {
   const allOrders = await getOrdersForToken(token);
   const filtered = filterOrdersForStatus(allOrders, statusFilter);
 
+  console.log("ordersFlow ORDER_LIST", {
+    tokenSuffix: token.slice(-6),
+    mode,
+    statusFilter,
+    allCount: allOrders.length,
+    filteredCount: filtered.length,
+    page,
+  });
+
   // Explicit noop — empty state item tapped
   if (mode === "noop") {
     return buildOrderListResponse(filtered, page, statusFilter);
@@ -175,9 +210,10 @@ async function handleOrderList(parsed: FlowRequest): Promise<FlowResponse> {
       return buildOrderListResponse(filtered, page, statusFilter);
     }
 
+    const detailOrder = await getOrderById(orderId);
     const order =
-      filtered.find((o: any) => String(o.id) === orderId) ||
-      (await getOrderById(orderId));
+      detailOrder ||
+      filtered.find((o: any) => String(o.id) === orderId);
 
     if (!order) {
       console.log("order not found for id:", orderId);
@@ -214,6 +250,7 @@ async function handleOrderDetail(parsed: FlowRequest): Promise<FlowResponse> {
   }
 
   const orderId = String(data.order_id ?? "").trim();
+  const orderRef = String(data.order_ref ?? "").trim();
   const requestedPage = Number(data.page ?? 1);
   const page =
     Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
@@ -222,15 +259,10 @@ async function handleOrderDetail(parsed: FlowRequest): Promise<FlowResponse> {
     return { screen: "ORDER_DETAIL", data };
   }
 
-  const order = await getOrderById(orderId);
-  if (!order) {
-    return { screen: "ORDER_DETAIL", data };
-  }
-
   const articles = await getOrderArticles(orderId);
   const articlesPage = formatOrderArticlesPage(
-    order.id,
-    order.reference,
+    orderId,
+    orderRef || `Commande #${orderId}`,
     articles,
     page,
     ORDER_ARTICLES_PAGE_SIZE,
@@ -258,12 +290,8 @@ async function handleOrderArticles(
   }
 
   const orderId = String(data.order_id ?? "").trim();
+  const orderRef = String(data.order_ref ?? "").trim();
   if (!orderId) {
-    return { screen: "ORDER_ARTICLES", data };
-  }
-
-  const order = await getOrderById(orderId);
-  if (!order) {
     return { screen: "ORDER_ARTICLES", data };
   }
 
@@ -273,8 +301,8 @@ async function handleOrderArticles(
   console.log("handleOrderArticles — page:", page);
 
   const articlesPage = formatOrderArticlesPage(
-    order.id,
-    order.reference,
+    orderId,
+    orderRef || `Commande #${orderId}`,
     articles,
     page,
     ORDER_ARTICLES_PAGE_SIZE,
