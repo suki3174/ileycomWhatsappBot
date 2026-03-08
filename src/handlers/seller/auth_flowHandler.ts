@@ -3,6 +3,7 @@ import { getFlowToken, isValidEmail } from "@/utils/utilities"
 import {
   isPinStrong,
   ensureSellerState,
+  isSignupPhoneRegistered,
   sellerHasCode,
   setSellerCode,
   verifyCode,
@@ -143,27 +144,53 @@ async function handleSignUp(parsed: FlowRequest): Promise<FlowResponse> {
 
   const token = getFlowToken(parsed);
 
-  // Optimistic, non-blocking signup:
-  // 1) Immediately cache the code in memory so the user can sign in
-  // 2) Persist to WordPress/plugin in the background without blocking Meta
+  // Require phone/token to map to an existing seller before allowing signup.
+  const isRegisteredPhone = await isSignupPhoneRegistered(token);
+  if (!isRegisteredPhone) {
+    return {
+      screen: "SIGN_UP",
+      data: {
+        error_msg: "Numero non reconnu. Veuillez contacter le support.",
+      },
+    };
+  }
+
+  // Ensure state exists before updating code; if this fails, do not move ahead.
+  const stateReady = await ensureSellerState(token);
+  if (!stateReady) {
+    return {
+      screen: "SIGN_UP",
+      data: {
+        error_msg: "Impossible de preparer le compte. Reessayez.",
+      },
+    };
+  }
+
+  // Block duplicate signup after state is linked to this flow token.
+  // This prevents re-signup with new flow tokens for the same phone.
+  const alreadyHasCode = await sellerHasCode(token);
+  if (alreadyHasCode) {
+    return {
+      screen: "SIGN_IN",
+      data: {
+        error_msg: "Compte déja configuré",
+      },
+    };
+  }
+
+  const updated = await setSellerCode(token, pin);
+  if (!updated) {
+    console.error("setSellerCode failed during signup", { token });
+    return {
+      screen: "SIGN_UP",
+      data: {
+        error_msg: "Erreur de sauvegarde du code. Reessayez.",
+      },
+    };
+  }
+
+  // Cache the validated code to keep immediate follow-up SIGN_IN verification fast.
   cachePendingCode(token, pin);
-
-  void (async () => {
-    try {
-      const stateReady = await ensureSellerState(token);
-      if (!stateReady) {
-        console.error("ensureSellerState failed during signup", { token });
-        return;
-      }
-
-      const updated = await setSellerCode(token, pin);
-      if (!updated) {
-        console.error("setSellerCode failed during signup", { token });
-      }
-    } catch (err) {
-      console.error("async signup persistence failed", err);
-    }
-  })();
 
   // ✅ After signup → go to SIGN_IN
   return {

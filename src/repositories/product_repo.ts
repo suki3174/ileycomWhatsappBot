@@ -14,6 +14,8 @@ import {
   toStringArray,
 } from "@/utils/repository_utils";
 
+const PRODUCTS_BY_FLOW_TIMEOUT_MS = Math.max(PLUGIN_TIMEOUT_MS, 20000);
+
 function mapVariation(rawVariation: unknown): ProductVariation | undefined {
   const row = asRecord(rawVariation);
   if (!row) return undefined;
@@ -32,6 +34,8 @@ function mapVariation(rawVariation: unknown): ProductVariation | undefined {
     sku: normText(row.sku),
     title: normText(row.title) || `Variation #${id}`,
     stock: toNum(row.stock, 0),
+    stock_status: normText(row.stock_status).toLowerCase(),
+    manage_stock: toBool(row.manage_stock),
     attributes: normalizedAttributes,
     price_euro: normText(row.price_euro),
     price_tnd: normText(row.price_tnd),
@@ -123,7 +127,7 @@ export async function findProductsBySellerFlowToken(
     const res = await pluginPostWithRetry(
       "/seller/products/by-flow-token",
       { flow_token: token },
-      { timeoutMs: PLUGIN_TIMEOUT_MS, retries: 1, retryDelayMs: 250 },
+      { timeoutMs: PRODUCTS_BY_FLOW_TIMEOUT_MS, retries: 0, retryDelayMs: 0 },
     );
 
     if (!res.ok) {
