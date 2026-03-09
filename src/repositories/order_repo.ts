@@ -16,11 +16,32 @@ export interface OrderStatusCounters {
   to_deliver: number;
 }
 
+export interface OrderSummariesPage {
+  orders: Order[];
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  nextPage?: number;
+  statusFilter: string;
+}
+
 function mapStatus(value: unknown): OrderStatus {
   const normalized = normText(value).toLowerCase();
   if (normalized === OrderStatus.COMPLETED) return OrderStatus.COMPLETED;
   if (normalized === OrderStatus.IN_DELIVERY) return OrderStatus.IN_DELIVERY;
   return OrderStatus.TO_DELIVER;
+}
+
+function cleanOrderText(value: unknown): string {
+  const normalized = normText(value);
+  if (!normalized) return "";
+
+  return normalized
+    .replace(/�/g, "")
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, " ")
+    .replace(/[ \t]*\n[ \t]*/g, "\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
 }
 
 function mapOrderArticle(raw: unknown): OrderArticle | undefined {
@@ -57,20 +78,20 @@ function mapOrder(raw: unknown): Order | undefined {
 
   return {
     id,
-    reference: normText(row.reference),
-    customer_name: normText(row.customer_name),
-    created_at: normText(row.created_at),
+    reference: cleanOrderText(row.reference),
+    customer_name: cleanOrderText(row.customer_name),
+    created_at: cleanOrderText(row.created_at),
     total: toNum(row.total, 0),
-    currency: normText(row.currency),
+    currency: cleanOrderText(row.currency),
     status: mapStatus(row.status),
     tags,
     articles_count: toNum(row.articles_count, articles.length),
-    payment_method: normText(row.payment_method),
-    transaction_id: normText(row.transaction_id),
-    customer_note: normText(row.customer_note),
+    payment_method: cleanOrderText(row.payment_method),
+    transaction_id: cleanOrderText(row.transaction_id),
+    customer_note: cleanOrderText(row.customer_note),
     articles,
-    billing_info: normText(row.billing_info),
-    shipping_info: normText(row.shipping_info),
+    billing_info: cleanOrderText(row.billing_info),
+    shipping_info: cleanOrderText(row.shipping_info),
     subtotal: toNum(row.subtotal, 0),
     shipping_cost: toNum(row.shipping_cost, 0),
   };
@@ -93,7 +114,7 @@ export async function findOrdersBySellerFlowToken(
     const res = await pluginPostWithRetry(
       "/seller/orders/list/by-flow-token",
       { flow_token: token },
-      { timeoutMs: Math.max(PLUGIN_TIMEOUT_MS, 15000), retries: 0, retryDelayMs: 250 },
+      { timeoutMs: Math.max(PLUGIN_TIMEOUT_MS, 10000), retries: 0, retryDelayMs: 250 },
     );
 
     if (!res.ok) {
@@ -139,7 +160,7 @@ export async function findOrderStatusCountersByFlowToken(
     const res = await pluginPostWithRetry(
       "/seller/orders/counters/by-flow-token",
       { flow_token: token },
-      { timeoutMs: Math.max(PLUGIN_TIMEOUT_MS, 12000), retries: 0, retryDelayMs: 250 },
+      { timeoutMs: Math.max(PLUGIN_TIMEOUT_MS, 6000), retries: 0, retryDelayMs: 250 },
     );
 
     if (!res.ok) {
@@ -199,6 +220,94 @@ export async function findOrderById(
   } catch (err) {
     console.error("plugin order/by-id exception", err);
     return undefined;
+  }
+}
+
+export async function findOrderSummariesPageByFlowToken(
+  flowToken: string,
+  statusFilter: string,
+  page = 1,
+  limit = 10,
+): Promise<OrderSummariesPage> {
+  const token = normToken(flowToken);
+  if (!token) {
+    return {
+      orders: [],
+      page: 1,
+      limit: Math.max(1, limit),
+      hasMore: false,
+      statusFilter: "all",
+    };
+  }
+
+  const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+  const safeLimit = Number.isFinite(limit)
+    ? Math.min(25, Math.max(1, Math.floor(limit)))
+    : 10;
+  const safeFilter = normText(statusFilter).toLowerCase() || "all";
+
+  try {
+    const res = await pluginPostWithRetry(
+      "/seller/orders/list/by-flow-token",
+      {
+        flow_token: token,
+        status_filter: safeFilter,
+        page: safePage,
+        limit: safeLimit,
+      },
+      { timeoutMs: Math.max(PLUGIN_TIMEOUT_MS, 10000), retries: 0, retryDelayMs: 250 },
+    );
+
+    if (!res.ok) {
+      const body = await readResponseBodySafe(res);
+      console.error("plugin orders/list/by-flow-token paged failed", {
+        status: res.status,
+        statusText: res.statusText,
+        body,
+      });
+      return {
+        orders: [],
+        page: safePage,
+        limit: safeLimit,
+        hasMore: false,
+        statusFilter: safeFilter,
+      };
+    }
+
+    const payload = await parsePluginJsonSafe(
+      res,
+      "plugin orders/list/by-flow-token paged",
+    );
+    const data = extractDataObject(payload);
+
+    const rawOrders = Array.isArray(data?.orders) ? data.orders : [];
+    const mapped = rawOrders
+      .map((item) => mapOrder(item))
+      .filter((item): item is Order => !!item);
+
+    const parsedPage = toNum(data?.page, safePage) || safePage;
+    const parsedLimit = toNum(data?.limit, safeLimit) || safeLimit;
+    const parsedFilter = normText(data?.status_filter).toLowerCase() || safeFilter;
+    const hasMore = Boolean(data?.has_more);
+    const nextPageNum = toNum(data?.next_page, 0);
+
+    return {
+      orders: mapped,
+      page: parsedPage,
+      limit: parsedLimit,
+      hasMore,
+      nextPage: nextPageNum > 0 ? nextPageNum : undefined,
+      statusFilter: parsedFilter,
+    };
+  } catch (err) {
+    console.error("plugin orders/list/by-flow-token paged exception", err);
+    return {
+      orders: [],
+      page: safePage,
+      limit: safeLimit,
+      hasMore: false,
+      statusFilter: safeFilter,
+    };
   }
 }
 

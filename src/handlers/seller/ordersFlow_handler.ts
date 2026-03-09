@@ -3,70 +3,68 @@ import { FlowRequest } from "@/models/flowRequest";
 import { FlowResponse } from "@/models/flowResponse";
 import {
   getFlowToken,
-  formatOrderStatusCounters,
-  paginateArray,
   formatOrderListItem,
-  formatEmptyOrderListItem,
   formatOrderDetail,
   formatOrderArticlesPage,
 } from "@/utils/utilities";
-import { getOrdersForToken } from "@/repositories/order_cache";
 import {
-  filterOrdersForStatus,
   getOrderById,
   getOrderArticles,
+  getSellerOrderSummariesPage,
   getOrderStatusCounters,
-  primeOrdersAsync,
+  getOrderStatusCountersCached,
+  primeOrderCountersAsync,
 } from "@/services/order_service";
+import { ensureSellerState } from "@/services/auth_service";
 
-const ORDER_LIST_PAGE_SIZE = 5;
+const ORDER_LIST_PAGE_SIZE = 10;
 const ORDER_ARTICLES_PAGE_SIZE = 3;
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function buildNavItems(
-  hasPrev: boolean,
-  hasNext: boolean,
+function buildPaginationItems(
   currentPage: number,
-  totalPages: number,
+  hasMore: boolean,
+  nextPage: number | undefined,
   statusFilter: string,
 ): any[] {
   const items: any[] = [];
 
-  if (hasPrev) {
+  if (currentPage > 1) {
     items.push({
-      id: "nav_prev",
+      id: `fetch_prev_${currentPage - 1}`,
       "main-content": {
-        title: "⬅️ Page Précédente",
-        metadata: `Page ${currentPage - 1} / ${totalPages}`,
+        title: "Page precedente",
+        metadata: "Charger les 10 precedentes",
       },
       "on-click-action": {
         name: "data_exchange",
         payload: {
           page: currentPage - 1,
           status_filter: statusFilter,
-          cmd: "paginate",
+          cmd: "fetch_page",
         },
       },
       end: { title: "", metadata: "" },
     });
   }
 
-  if (hasNext) {
+  if (hasMore) {
+    const targetNext = nextPage && nextPage > 0 ? nextPage : currentPage + 1;
     items.push({
-      id: "nav_next",
+      id: `fetch_more_${targetNext}`,
       "main-content": {
-        title: "Page Suivante ➡️",
-        metadata: `Page ${currentPage} / ${totalPages}`,
+        title: "Voir plus",
+        metadata: "Charger les 10 suivantes",
       },
       "on-click-action": {
         name: "data_exchange",
         payload: {
-          page: currentPage + 1,
+          page: targetNext,
           status_filter: statusFilter,
-          cmd: "paginate",
+          cmd: "fetch_page",
         },
       },
       end: { title: "", metadata: "" },
@@ -77,28 +75,21 @@ function buildNavItems(
 }
 
 function buildOrderListResponse(
-  filtered: any[],
+  orders: any[],
   page: number,
   statusFilter: string,
+  hasMore: boolean,
+  nextPage?: number,
 ): FlowResponse {
-  const listItems = filtered.map(formatOrderListItem);
-  const { pageItems, totalPages, hasNext, hasPrev, currentPage } =
-    paginateArray(listItems, page, ORDER_LIST_PAGE_SIZE);
-
-  const navItems = buildNavItems(
-    hasPrev,
-    hasNext,
-    currentPage,
-    totalPages,
-    statusFilter,
-  );
+  const listItems = orders.map(formatOrderListItem);
+  const navItems = buildPaginationItems(page, hasMore, nextPage, statusFilter);
 
   return {
     screen: "ORDER_LIST",
     data: {
-      current_page: currentPage,
+      current_page: page,
       status_filter: statusFilter,
-      orders: [...pageItems, ...navItems],
+      orders: [...listItems, ...navItems],
     },
   };
 }
@@ -112,33 +103,64 @@ async function handleOrderStatus(parsed: FlowRequest): Promise<FlowResponse> {
   const data = parsed.data || {};
   const requestedFilter = String(data.status_filter || "all");
 
+  // Keep token->seller mapping fresh for order repository resolution.
+  void ensureSellerState(token);
+
+  // Prewarm only counters; list is fetched on-demand page-by-page.
+  primeOrderCountersAsync(token);
+
   // User submitted the status filter form — transition to ORDER_LIST
   if (data.status_filter) {
-    const orders = await getOrdersForToken(token);
     const statusFilter = String(data.status_filter);
-    const filtered = filterOrdersForStatus(orders, statusFilter);
+    const pageResult = await getSellerOrderSummariesPage(
+      token,
+      statusFilter,
+      1,
+      ORDER_LIST_PAGE_SIZE,
+    );
 
     console.log("ordersFlow ORDER_STATUS filter", {
       tokenSuffix: token.slice(-6),
       statusFilter,
-      filteredCount: filtered.length,
-      totalOrders: orders.length,
+      pageCount: pageResult.orders.length,
+      page: pageResult.page,
+      hasMore: pageResult.hasMore,
     });
 
-    if (filtered.length === 0) {
-      const statuses = formatOrderStatusCounters(orders);
+    if (pageResult.orders.length === 0) {
+      const counters = await getOrderStatusCounters(token);
+      const statuses = [
+        { id: "all", title: `🗂️ Total  —  ${counters.total}` },
+        { id: "completed", title: `✅ Terminées  —  ${counters.completed}` },
+        { id: "in_delivery", title: `🚚 En livraison  —  ${counters.in_delivery}` },
+        { id: "to_deliver", title: `📦 À Livrer  —  ${counters.to_deliver}` },
+      ];
       return {
         screen: "ORDER_STATUS",
         data: { error_msg: "Aucune commande avec le statut sélectionné.", statuses },
       };
     }
-    return buildOrderListResponse(filtered, 1, statusFilter);
+    return buildOrderListResponse(
+      pageResult.orders,
+      pageResult.page,
+      pageResult.statusFilter,
+      pageResult.hasMore,
+      pageResult.nextPage,
+    );
   }
 
-  const counters = await getOrderStatusCounters(token);
+  let counters = getOrderStatusCountersCached(token);
 
-  // Prewarm list data while user is on ORDER_STATUS to speed up first filter submit.
-  primeOrdersAsync(token);
+  // Avoid returning transient all-zero counters on cold cache. If the cache is
+  // empty, perform a direct read once so ORDER_STATUS shows meaningful values.
+  if (
+    counters.total === 0 &&
+    counters.completed === 0 &&
+    counters.in_delivery === 0 &&
+    counters.to_deliver === 0
+  ) {
+    counters = await getOrderStatusCounters(token);
+  }
 
   console.log("ordersFlow ORDER_STATUS counters", {
     tokenSuffix: token.slice(-6),
@@ -177,26 +199,41 @@ async function handleOrderList(parsed: FlowRequest): Promise<FlowResponse> {
   const page =
     Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
 
-  const allOrders = await getOrdersForToken(token);
-  const filtered = filterOrdersForStatus(allOrders, statusFilter);
+  const pageResult = await getSellerOrderSummariesPage(
+    token,
+    statusFilter,
+    page,
+    ORDER_LIST_PAGE_SIZE,
+  );
 
   console.log("ordersFlow ORDER_LIST", {
     tokenSuffix: token.slice(-6),
     mode,
     statusFilter,
-    allCount: allOrders.length,
-    filteredCount: filtered.length,
     page,
+    pageCount: pageResult.orders.length,
+    hasMore: pageResult.hasMore,
   });
 
   // Explicit noop — empty state item tapped
   if (mode === "noop") {
-    return buildOrderListResponse(filtered, page, statusFilter);
+    return buildOrderListResponse(
+      pageResult.orders,
+      pageResult.page,
+      pageResult.statusFilter,
+      pageResult.hasMore,
+      pageResult.nextPage,
+    );
   }
 
-  // Paginate — re-render at new page
-  if (mode === "paginate") {
-    return buildOrderListResponse(filtered, page, statusFilter);
+  if (mode === "fetch_page" || mode === "fetch_more" || mode === "fetch_prev") {
+    return buildOrderListResponse(
+      pageResult.orders,
+      pageResult.page,
+      pageResult.statusFilter,
+      pageResult.hasMore,
+      pageResult.nextPage,
+    );
   }
 
   // Order tapped — navigate to detail
@@ -207,17 +244,27 @@ async function handleOrderList(parsed: FlowRequest): Promise<FlowResponse> {
 
     // Guard against empty, missing, or pagination pseudo-IDs
     if (!orderId || orderId.startsWith("nav_")) {
-      return buildOrderListResponse(filtered, page, statusFilter);
+      return buildOrderListResponse(
+        pageResult.orders,
+        pageResult.page,
+        pageResult.statusFilter,
+        pageResult.hasMore,
+        pageResult.nextPage,
+      );
     }
 
     const detailOrder = await getOrderById(orderId);
-    const order =
-      detailOrder ||
-      filtered.find((o: any) => String(o.id) === orderId);
+    const order = detailOrder || pageResult.orders.find((o: any) => String(o.id) === orderId);
 
     if (!order) {
       console.log("order not found for id:", orderId);
-      return buildOrderListResponse(filtered, page, statusFilter);
+      return buildOrderListResponse(
+        pageResult.orders,
+        pageResult.page,
+        pageResult.statusFilter,
+        pageResult.hasMore,
+        pageResult.nextPage,
+      );
     }
 
     const detail = formatOrderDetail(order);
@@ -229,11 +276,23 @@ async function handleOrderList(parsed: FlowRequest): Promise<FlowResponse> {
 
   // Empty action — re-render current page
   if (mode === "") {
-    return buildOrderListResponse(filtered, page, statusFilter);
+    return buildOrderListResponse(
+      pageResult.orders,
+      pageResult.page,
+      pageResult.statusFilter,
+      pageResult.hasMore,
+      pageResult.nextPage,
+    );
   }
 
   // Fallback — unknown action, re-render list
-  return buildOrderListResponse(filtered, page, statusFilter);
+  return buildOrderListResponse(
+    pageResult.orders,
+    pageResult.page,
+    pageResult.statusFilter,
+    pageResult.hasMore,
+    pageResult.nextPage,
+  );
 }
 
 async function handleOrderDetail(parsed: FlowRequest): Promise<FlowResponse> {
@@ -327,12 +386,42 @@ export async function handleOrdersFlow(
   if (action === "INIT" || action === "NAVIGATE") {
     const token = getFlowToken(parsed);
     if (token) {
-      primeOrdersAsync(token);
+      void ensureSellerState(token);
+      primeOrderCountersAsync(token);
     }
     return { screen: "WELCOME_SCREEN", data: {} };
   }
 
   if (action === "DATA_EXCHANGE") {
+    // WhatsApp can occasionally send malformed payloads with empty screen while
+    // still carrying ORDER_LIST pagination data. Recover to ORDER_LIST instead
+    // of resetting the flow to WELCOME_SCREEN.
+    if (!screen) {
+      const data = parsed.data || {};
+      const hasListIntent =
+        Object.prototype.hasOwnProperty.call(data, "status_filter") ||
+        Object.prototype.hasOwnProperty.call(data, "page") ||
+        String(data.cmd || "").toLowerCase().includes("fetch");
+
+      if (hasListIntent) {
+        return handleOrderList({
+          ...parsed,
+          screen: "ORDER_LIST",
+        });
+      }
+
+      const token = getFlowToken(parsed);
+      if (token) {
+        // If WhatsApp sends an incomplete packet (empty screen), keep the user
+        // inside orders flow instead of resetting to WELCOME_SCREEN.
+        return handleOrderStatus({
+          ...parsed,
+          screen: "ORDER_STATUS",
+          data: parsed.data || {},
+        });
+      }
+    }
+
     switch (screen) {
       case "WELCOME_SCREEN":
       case "ORDER_STATUS":

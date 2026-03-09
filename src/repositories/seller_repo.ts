@@ -9,8 +9,8 @@ import {
 
 const FLOW_LOOKUP_TIMEOUT_MS = Math.max(PLUGIN_TIMEOUT_MS, 10000);
 const UPDATE_CODE_TIMEOUT_MS = Math.max(PLUGIN_TIMEOUT_MS, 12000);
-// Use a higher timeout for state insert because WordPress can be slower on first writes.
-const STATE_INSERT_TIMEOUT_MS = Math.max(PLUGIN_TIMEOUT_MS, 20000);
+// Keep signup responsive: state insert must fail fast instead of blocking ~40s.
+const STATE_INSERT_TIMEOUT_MS = Math.max(PLUGIN_TIMEOUT_MS, 8000);
 
 function extractSellerFromPluginPayload(payload: Record<string, unknown> | undefined): Seller | undefined {
   if (!payload) return undefined;
@@ -154,11 +154,11 @@ export async function insertSellerState(
       payload.code = code;
     }
 
-    // Call state/insert with extended timeout for slow WordPress writes.
+    // Call state/insert with bounded timeout and no retry to avoid long signup hangs.
     const res = await pluginPostWithRetry(
       "/seller/state/insert",
       payload,
-      { timeoutMs: STATE_INSERT_TIMEOUT_MS, retries: 1, retryDelayMs: 400 },
+      { timeoutMs: STATE_INSERT_TIMEOUT_MS, retries: 0, retryDelayMs: 250 },
     );
 
     if (!res.ok) {

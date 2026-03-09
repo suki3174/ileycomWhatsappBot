@@ -43,7 +43,7 @@ function buildVariableDetailData(product: {
   return {
     name: normalizeFlowLabel(product.name),
     img: mapImageUrl(product.image_src || ""),
-    id_sku: `ID: ${product.id} | SKU: ${product.sku || ""}`,
+    id_sku: `ID: ${product.id} | SKU: ${product.sku || "non renseigne"}`,
     short_desc: normalizeFlowLabel(
       sanitizeRichText(
         product.short_description || "Description courte non renseignee",
@@ -180,7 +180,7 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
         data: {
           name: normalizeFlowLabel(product.name),
           img: mapImageUrl(product.image_src || ""),
-          id_sku: `ID: ${product.id} | SKU: ${product.sku}`,
+          id_sku: `ID: ${product.id} | SKU: ${product.sku || "non renseigne"}`,
           short_desc: normalizeFlowLabel(
             sanitizeRichText(
               product.short_description || "Description courte non renseignee",

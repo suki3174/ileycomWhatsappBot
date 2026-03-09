@@ -28,6 +28,7 @@ export async function POST(req: NextRequest) {
         version: parsed.version,
         flow_token: parsed?.data?.flow_token ?? parsed?.flow_token,
         screen: parsed.screen,
+        data_error: parsed?.data?.error,
       });
     } catch (deErr: unknown) {
       const err =

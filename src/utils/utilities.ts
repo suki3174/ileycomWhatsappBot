@@ -103,7 +103,6 @@ export function formatOrderListItem(order: Order) {
       ? order.articles_count
       : order.articles.length;
   const metadata = `${order.created_at} · ${articlesCount} article${articlesCount > 1 ? "s" : ""}`;
-console.log("tags:", JSON.stringify(order.tags));
 
   return {
     id: order.id,

@@ -1,6 +1,13 @@
 function looksLikeMojibake(input: string): boolean {
   // Typical sequences from UTF-8 text decoded as latin1/cp1252.
-  return /Ã.|Â.|â[\x80-\xBF]/.test(input) || input.includes("�");
+  // Include common Arabic corruption artifacts (e.g. "Ù…Ø¹Ø²").
+  return /Ã.|Â.|â[\x80-\xBF]|[ØÙ][^\s]/.test(input) || input.includes("�");
+}
+
+function corruptionScore(input: string): number {
+  const markerCount = (input.match(/Ã|Â|â|Ø|Ù|�/g) || []).length;
+  const controlCount = (input.match(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g) || []).length;
+  return markerCount * 4 + controlCount * 8;
 }
 
 function tryRepairMojibake(input: string): string {
@@ -8,9 +15,9 @@ function tryRepairMojibake(input: string): string {
 
   try {
     const repaired = Buffer.from(input, "latin1").toString("utf8");
-    // Keep repair only when it clearly reduces mojibake markers.
-    const beforeScore = (input.match(/Ã|Â|â|�/g) || []).length;
-    const afterScore = (repaired.match(/Ã|Â|â|�/g) || []).length;
+    // Keep repair only when it materially improves text quality.
+    const beforeScore = corruptionScore(input);
+    const afterScore = corruptionScore(repaired);
     return afterScore < beforeScore ? repaired : input;
   } catch {
     return input;
