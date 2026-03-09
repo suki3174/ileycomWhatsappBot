@@ -1,5 +1,4 @@
-import { normToken } from "@/services/auth_service";
-import { hashPin } from "@/utils/pinHash";
+import { normToken } from "@/utils/utilities";
 
 interface AuthWarmupEntry {
   hasCode: boolean;
@@ -31,7 +30,7 @@ const pendingCodes = globalThis.pendingCodes;
 
 //checks in cache if user has code
 export function getCachedAuthDecision(token: string): AuthWarmupEntry | undefined {
-  const normalized = token ? String(token).trim() : "";
+  const normalized = normToken(token);
   if (!normalized) return undefined;
   const entry = authWarmupCache.get(normalized);
   if (!entry) return undefined;
@@ -49,7 +48,14 @@ export function getCachedAuthDecision(token: string): AuthWarmupEntry | undefine
 
 
 // set entry in cache
-export function updateAuthWarmupCache(token: string, entry:AuthWarmupEntry): void {}
+export function updateAuthWarmupCache(token: string, entry: AuthWarmupEntry): void {
+  const normalized = normToken(token);
+  if (!normalized) return;
+  authWarmupCache.set(normalized, {
+    hasCode: !!entry.hasCode,
+    preparedAt: Number(entry.preparedAt || Date.now()),
+  });
+}
 
 
 
@@ -60,9 +66,8 @@ export async function cachePendingCode(token: string, code: string): Promise<voi
   if (!normalized) return;
   const trimmed = String(code || "").trim();
   if (!trimmed) return;
-  const hashedCode = await hashPin(trimmed);
   pendingCodes.set(normalized, {
-    code: hashedCode,
+    code: trimmed,
     expiresAt: Date.now() + PENDING_CODE_TTL_MS,
   });
 }

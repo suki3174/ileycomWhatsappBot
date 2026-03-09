@@ -1,9 +1,7 @@
 import { NextRequest } from "next/server";
 import { decryptFlowPayload, encryptFlowResponse } from "@/utils/crypto";
-import { handleAuthFlow } from "@/handlers/seller/authflow_Handler";
-import type {
-  FlowRequest,
-} from "@/models/flowRequest";
+import { handleAuthFlow } from "@/handlers/seller/auth_flowHandler";
+import type { FlowRequest } from "@/models/flowRequest";
 import type { FlowResponse } from "@/models/flowResponse";
 
 export async function POST(req: NextRequest) {
@@ -30,6 +28,7 @@ export async function POST(req: NextRequest) {
         version: parsed.version,
         flow_token: parsed?.data?.flow_token ?? parsed?.flow_token,
         screen: parsed.screen,
+        data_error: parsed?.data?.error,
       });
     } catch (deErr: unknown) {
       const err =
