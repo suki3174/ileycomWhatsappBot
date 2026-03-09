@@ -8,9 +8,9 @@
   updateSellerCode,
 } from "@/repositories/seller_repo";
 import type { Seller } from "@/models/seller_model";
-import { hashPin, verifyPin } from "@/utils/pinHash";
 import { consumePendingCode, updateAuthWarmupCache } from "@/repositories/auth_cache";
 import { normToken } from "@/utils/utilities";
+import { extractPhoneFromFlowToken } from "@/utils/repository_utils";
 
 // Normalizes flow tokens to avoid lookup mismatches caused by extra whitespace.
 
@@ -67,9 +67,8 @@ export async function setSellerCode(token: string, code: string): Promise<Seller
   const normalized = normToken(token);
   // Guard clause: empty token cannot be used for plugin lookups/updates.
   if (!normalized) return undefined;
-   const hashedCode = await hashPin(code);
   // First attempt: update code directly for this flow token (fast path).
-  const updated = await updateSellerCode(normalized, hashedCode);
+  const updated = await updateSellerCode(normalized, code);
   // If direct update succeeds, return immediately.
   if (updated) return updated;
 
@@ -98,30 +97,29 @@ export async function ensureSellerState(token: string): Promise<boolean> {
   // Guard clause: no token means no state preparation possible.
   if (!normalized) return false;
 
-  // Fire-and-forget state preparation to avoid blocking flow screen transitions.
-  void insertSellerState(normalized, null).catch((err) => {
-    // Log background error for diagnostics without failing the current flow response.
-    console.error("ensureSellerState background error", err);
-  });
-
-  // Return success immediately so flow handler can continue quickly.
-  return true;
+  // Do a blocking insert/read so signup decisions are based on persisted state.
+  try {
+    const seller = await insertSellerState(normalized, null);
+    return !!seller;
+  } catch (err) {
+    console.error("ensureSellerState failed", err);
+    return false;
+  }
 }
 
 // Verifies provided code against the seller code stored in plugin state.
 export async function verifyCode(token: string, code: string): Promise<boolean> {
-  // Fast path: if we have a recent in-memory code for this token, use it.
+  // Fast path: if we have a recent cached code for this token, use it.
   const pending = consumePendingCode(token) ?? "";
   const provided = String(code).trim();
-  const isVerified = await verifyPin(provided, pending);
-  if (pending && isVerified) {
+  if (pending && pending === provided) {
     return true;
   }
 
   const seller = await findSeller(normToken(token));
   if (!seller) return false;
   const stored = seller.code == null ? "" : String(seller.code).trim();
-  return stored !== "" && isVerified;
+  return stored !== "" && stored === provided;
 }
 
 // Activates session in background to keep flow transition latency low.
@@ -172,6 +170,18 @@ export async function verifySellerEmail(token: string, email: string): Promise<b
   console.log ("stored", stored);
   console.log ("provided", provided);
   return stored !== "" && stored === provided;
+}
+
+// Validates that the phone embedded in flow token matches an existing seller.
+export async function isSignupPhoneRegistered(token: string): Promise<boolean> {
+  const normalized = normToken(token);
+  if (!normalized) return false;
+
+  const phone = extractPhoneFromFlowToken(normalized);
+  if (!phone) return false;
+
+  const seller = await findSellerByPhone(phone);
+  return !!seller;
 }
 
 // Validates PIN format: exactly 4 digits.

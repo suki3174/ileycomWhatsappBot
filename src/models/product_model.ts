@@ -15,6 +15,8 @@ export interface ProductVariation {
   sku: string;
   title: string;
   stock: number;
+  stock_status?: string;
+  manage_stock?: boolean;
   attributes: {
     weight?: string;
     size?: string;

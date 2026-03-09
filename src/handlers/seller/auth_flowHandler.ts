@@ -34,15 +34,16 @@ async function handleWelcome(parsed: FlowRequest): Promise<FlowResponse> {
     }
 
     const cached = getCachedAuthDecision(token);
-    const hasCode =
-      cached?.hasCode ?? (await sellerHasCode(token));
+    // Cached true is safe to trust. Cached false can be stale right after signup,
+    // so re-check backend before deciding to stay on SIGN_UP.
+    const hasCode = cached?.hasCode === true
+      ? true
+      : await sellerHasCode(token);
 
-    if (cached == null) {
-     updateAuthWarmupCache(token, {
-        hasCode,
-        preparedAt: Date.now(),
-      });
-    }
+    updateAuthWarmupCache(token, {
+      hasCode,
+      preparedAt: Date.now(),
+    });
 
     if (hasCode) {
       return {
@@ -121,6 +122,17 @@ async function handleSignUp(parsed: FlowRequest): Promise<FlowResponse> {
   const pin = String(data.pin_code ?? "");
   const confirm = String(data.confirm_pin_code ?? "");
 
+  // Some flow definitions reject direct SIGN_UP -> SIGN_IN transitions.
+  // If client reports this, keep user on SIGN_UP with a clear instruction.
+  if (data.error === "invalid-screen-transition") {
+    return {
+      screen: "SIGN_UP",
+      data: {
+        error_msg: "Compte deja configure. Utilisez l'ecran de connexion.",
+      },
+    };
+  }
+
 
 
   if (!isPinStrong(pin)) {
@@ -142,12 +154,14 @@ async function handleSignUp(parsed: FlowRequest): Promise<FlowResponse> {
   }
 
   const token = getFlowToken(parsed);
-
-  // Optimistic, non-blocking signup:
-  // 1) Immediately cache the code in memory so the user can sign in
-  // 2) Persist to WordPress/plugin in the background without blocking Meta
+  // Optimistic signup: cache pin and redirect immediately for better UX latency.
   cachePendingCode(token, pin);
+  updateAuthWarmupCache(token, {
+    hasCode: true,
+    preparedAt: Date.now(),
+  });
 
+  // Persist state and code in background to avoid blocking flow transitions.
   void (async () => {
     try {
       const stateReady = await ensureSellerState(token);
@@ -156,9 +170,26 @@ async function handleSignUp(parsed: FlowRequest): Promise<FlowResponse> {
         return;
       }
 
+      const alreadyHasCode = await sellerHasCode(token);
+      if (alreadyHasCode) {
+        updateAuthWarmupCache(token, {
+          hasCode: true,
+          preparedAt: Date.now(),
+        });
+        console.log("signup skipped: account already configured", {
+          tokenSuffix: String(token || "").slice(-6),
+        });
+        return;
+      }
+
       const updated = await setSellerCode(token, pin);
       if (!updated) {
         console.error("setSellerCode failed during signup", { token });
+      } else {
+        updateAuthWarmupCache(token, {
+          hasCode: true,
+          preparedAt: Date.now(),
+        });
       }
     } catch (err) {
       console.error("async signup persistence failed", err);

@@ -1,10 +1,8 @@
 import { NextRequest } from "next/server";
 import { decryptFlowPayload, encryptFlowResponse } from "@/utils/crypto";
-import {
-  handleProductsFlow,
-  type FlowRequest,
-  type FlowResponse,
-} from "@/handlers/seller/productsFlow_handler";
+import { handleProductsFlow } from "@/handlers/seller/productsFlow_handler";
+import type { FlowRequest } from "@/models/flowRequest";
+import type { FlowResponse } from "@/models/flowResponse";
 
 export async function POST(req: NextRequest) {
   try {
@@ -25,11 +23,22 @@ export async function POST(req: NextRequest) {
       parsed = dec.parsed;
       aesKey = dec.aesKey;
       iv = dec.iv;
+
+      const host = req.headers.get("host") || "";
+      const protoHeader = req.headers.get("x-forwarded-proto") || "";
+      const reqProto = protoHeader || (req.nextUrl.protocol || "https:").replace(":", "");
+      parsed.data = {
+        ...(parsed.data || {}),
+        __request_host: host,
+        __request_proto: reqProto,
+      };
+
       console.log("Decrypted products flow payload:", {
         action: parsed.action,
         version: parsed.version,
         flow_token: parsed?.data?.flow_token ?? parsed?.flow_token,
         screen: parsed.screen,
+        data: parsed?.data || {},
       });
     } catch (deErr: unknown) {
       const err =
