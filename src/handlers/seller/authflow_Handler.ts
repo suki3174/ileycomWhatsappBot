@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { getFlowToken, isValidEmail } from "@/utils/utilities"
 import {
   isPinStrong,

@@ -93,26 +93,26 @@ export function formatOrderStatusCounters(orders: Order[]): {
 export function formatOrderListItem(order: Order) {
   const articlesCount = order.articles.length;
   const metadata = `${order.created_at} · ${articlesCount} article${articlesCount > 1 ? "s" : ""}`;
-console.log("tags:", JSON.stringify(order.tags));
+
+  // Enforce WhatsApp NavigationList character limits
+  const title = String(order.reference ?? "").slice(0, 30);
+  const description = String(order.customer_name ?? "").slice(0, 20);
+  const safeMetadata = metadata.slice(0, 80);
+  const endTitle = String(order.total ?? "").slice(0, 10);
+  const endMetadata = String(order.currency ?? "").slice(0, 10);
+  const safeTags = (order.tags ?? [])
+    .filter((t: string) => typeof t === "string" && t.length > 0)
+    .map((t: string) => t.slice(0, 15))
+    .slice(0, 3);
 
   return {
-    id: order.id,
-    "main-content": {
-      title: order.reference,
-      description: order.customer_name,
-      metadata,
-    },
-    end: {
-      title: String(order.total),
-      metadata: order.currency,
-    },
-    tags: order.tags ?? [],
+    id: String(order.id),
+    "main-content": { title, description, metadata: safeMetadata },
+    end: { title: endTitle, metadata: endMetadata },
+    tags: safeTags,
     "on-click-action": {
       name: "data_exchange",
-      payload: {
-        order_id: order.id,
-        cmd: "order_details",
-      },
+      payload: { order_id: String(order.id), cmd: "order_details" },
     },
   };
 }

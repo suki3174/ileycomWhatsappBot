@@ -37,7 +37,7 @@ export const MOCK_ORDERS: Order[] = [
   {
     id: "3213",
     reference: "Commande #3213",
-    customer_name: "Jean Pierre Mendy",
+    customer_name: "Jean Pierre Mendykkkkkkkkkkkkkkkkkk",
     created_at: "04/03/2026 14:05",
     total: 12000,
     currency: "XOF",

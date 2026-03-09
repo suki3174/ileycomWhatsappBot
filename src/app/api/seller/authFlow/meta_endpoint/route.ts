@@ -3,8 +3,8 @@ import { decryptFlowPayload, encryptFlowResponse } from "@/utils/crypto";
 import { handleAuthFlow } from "@/handlers/seller/authflow_Handler";
 import type {
   FlowRequest,
-  FlowResponse,
-} from "@/handlers/seller/authflow_Handler";
+} from "@/models/flowRequest";
+import type { FlowResponse } from "@/models/flowResponse";
 
 export async function POST(req: NextRequest) {
   try {
