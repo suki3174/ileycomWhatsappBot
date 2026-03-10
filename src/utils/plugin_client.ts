@@ -22,7 +22,8 @@ export async function pluginPost(
   options: PluginPostOptions = {},
 ): Promise<Response> {
   const timeoutMs = Math.max(options.timeoutMs ?? PLUGIN_TIMEOUT_MS, 1000);
-
+ const url = `${PLUGIN_BASE_URL}${path}`;
+  console.log("pluginPost calling:", url); 
   return fetch(`${PLUGIN_BASE_URL}${path}`, {
     method: "POST",
     signal: AbortSignal.timeout(timeoutMs),

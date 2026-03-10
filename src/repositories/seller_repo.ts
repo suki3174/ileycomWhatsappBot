@@ -39,12 +39,13 @@ declare global {
 // In-memory fallback seed seller used outside plugin-backed flows.
 globalThis.sellers = globalThis.sellers || [ 
   {
-    name: "Taher",
+    name: "sara",
     email: "gamingafroskull@gmail.com",
     code: "1234",
-    phone: "21650354773",
+    phone: "21628997072",
     flow_token: null,
-  }
+  },
+  
   ];
 
 export const sellers: Seller[] = globalThis.sellers;

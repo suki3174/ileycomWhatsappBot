@@ -1,5 +1,5 @@
 import type { Product, ProductVariation } from "@/models/product_model";
-import { loadAndCacheProducts } from "@/repositories/poducts_cache";
+import { loadAndCacheProducts, setLastVariableProductId } from "@/repositories/poducts_cache";
 import {
   findProductsBySellerFlowToken,
   findProductById,
@@ -106,4 +106,8 @@ export function primeProductsAsync(token: string): void {
   const normalized = token ? String(token).trim() : "";
   if (!normalized) return;
   void loadAndCacheProducts(normalized);
+}
+
+export function rememberVariableProduct(token: string, productId: string): void {
+  setLastVariableProductId(token, productId);
 }

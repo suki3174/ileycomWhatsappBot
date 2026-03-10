@@ -3,9 +3,7 @@ import { FlowRequest } from "@/models/flowRequest";
 import { FlowResponse } from "@/models/flowResponse";
 import {
   getFlowToken,
-  formatOrderListItem,
-  formatOrderDetail,
-  formatOrderArticlesPage,
+
 } from "@/utils/utilities";
 import {
   getOrderById,
@@ -16,83 +14,13 @@ import {
   primeOrderCountersAsync,
 } from "@/services/order_service";
 import { ensureSellerState } from "@/services/auth_service";
+import { buildOrderListResponse, formatOrderDetail, formatOrderArticlesPage } from "@/utils/oders_flow_utils";
 
 const ORDER_LIST_PAGE_SIZE = 10;
 const ORDER_ARTICLES_PAGE_SIZE = 3;
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
-function buildPaginationItems(
-  currentPage: number,
-  hasMore: boolean,
-  nextPage: number | undefined,
-  statusFilter: string,
-): any[] {
-  const items: any[] = [];
 
-  if (currentPage > 1) {
-    items.push({
-      id: `fetch_prev_${currentPage - 1}`,
-      "main-content": {
-        title: "Page precedente",
-        metadata: "Charger les 10 precedentes",
-      },
-      "on-click-action": {
-        name: "data_exchange",
-        payload: {
-          page: currentPage - 1,
-          status_filter: statusFilter,
-          cmd: "fetch_page",
-        },
-      },
-      end: { title: "", metadata: "" },
-    });
-  }
-
-  if (hasMore) {
-    const targetNext = nextPage && nextPage > 0 ? nextPage : currentPage + 1;
-    items.push({
-      id: `fetch_more_${targetNext}`,
-      "main-content": {
-        title: "Voir plus",
-        metadata: "Charger les 10 suivantes",
-      },
-      "on-click-action": {
-        name: "data_exchange",
-        payload: {
-          page: targetNext,
-          status_filter: statusFilter,
-          cmd: "fetch_page",
-        },
-      },
-      end: { title: "", metadata: "" },
-    });
-  }
-
-  return items;
-}
-
-function buildOrderListResponse(
-  orders: any[],
-  page: number,
-  statusFilter: string,
-  hasMore: boolean,
-  nextPage?: number,
-): FlowResponse {
-  const listItems = orders.map(formatOrderListItem);
-  const navItems = buildPaginationItems(page, hasMore, nextPage, statusFilter);
-
-  return {
-    screen: "ORDER_LIST",
-    data: {
-      current_page: page,
-      status_filter: statusFilter,
-      orders: [...listItems, ...navItems],
-    },
-  };
-}
 
 // ---------------------------------------------------------------------------
 // Screen handlers

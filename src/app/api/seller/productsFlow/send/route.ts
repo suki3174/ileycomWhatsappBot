@@ -21,11 +21,11 @@ export async function POST(req: NextRequest) {
           },
           body: JSON.stringify({
             messaging_product: "whatsapp",
-            to: seller.phone, // 🔹 Corrected to use current seller's phone
+            to: "21628997072", // 🔹 Corrected to use current seller's phone
             type: "template",
             mode: "published",
             template: {
-              name: "sellerproductsflow2",
+              name: "productsflow_message",
               language: { code: "fr" },
               components: [
                

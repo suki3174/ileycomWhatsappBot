@@ -49,6 +49,7 @@ export async function loadAndCacheProducts(token: string): Promise<Product[]> {
       return [];
     }
 
+    console.log(`Products loaded for token: ${products}`);
     productListCache.set(normalized, {
       products,
       preparedAt: Date.now(),

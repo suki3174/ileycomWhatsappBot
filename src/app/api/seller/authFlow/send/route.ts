@@ -1,7 +1,8 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { NextRequest, NextResponse } from "next/server";
 import { generateFlowtoken, getAllSellers } from "@/services/auth_service";
 
-export async function POST(req: NextRequest) {
+export async function POST( req: NextRequest) {
   const sellers = getAllSellers();
   const results = [];
 
