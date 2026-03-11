@@ -1,17 +1,17 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { getFlowToken, isValidEmail } from "@/utils/utilities"
+import { extractPhoneFromFlowToken } from "@/utils/repository_utils";
+import { findSellerStateByPhone } from "@/repositories/seller_repo";
 import {
-  isPinStrong,
-  ensureSellerState,
-  sellerHasCode,
+  prepareSellerState,
+  sellerHasCodeByFlowToken,
   setSellerCode,
   verifyCode,
   verifySellerEmail,
-  activateSession,
-  primeAuthWarmupAsync,
+  startSellerSession,
 } from "@/services/auth_service";
+import { isPinStrong } from "@/utils/auth_utils";
 import { sendResetEmail } from "@/services/reset_code_service";
-import { cachePendingCode, getCachedAuthDecision, updateAuthWarmupCache } from "@/repositories/auth_cache";
 import { FlowRequest } from "@/models/flowRequest";
 import { FlowResponse } from "@/models/flowResponse";
 
@@ -21,9 +21,12 @@ import { FlowResponse } from "@/models/flowResponse";
 /* -------------------------------- */
 /* WELCOME */
 /* -------------------------------- */
-
+/* OPTIMIZATION: Use state-table-only phone lookup (fast path) instead of vendor-joined lookup.
+   This removes dependency on heavy wp_users/wp_usermeta joins and avoids cache misses on first run.
+   Phone 50354773 must be registered in wp_cwsb_seller_state table AND linked to a wp_vendor.
+   See: findSellerStateByPhone() for the direct state-table path.
+*/
 async function handleWelcome(parsed: FlowRequest): Promise<FlowResponse> {
-  // Ensure we correctly determine whether the seller already has a code
   try {
     const token = getFlowToken(parsed);
     if (!token) {
@@ -33,18 +36,24 @@ async function handleWelcome(parsed: FlowRequest): Promise<FlowResponse> {
       };
     }
 
-    const cached = getCachedAuthDecision(token);
-    // Cached true is safe to trust. Cached false can be stale right after signup,
-    // so re-check backend before deciding to stay on SIGN_UP.
-    const hasCode = cached?.hasCode === true
-      ? true
-      : await sellerHasCode(token);
+    // Extract phone from flow token and search seller_state
+    const phone = extractPhoneFromFlowToken(token);
+    
+    if (!phone) {
+      return {
+        screen: "SIGN_UP",
+        data: { error_msg: "" },
+      };
+    }
 
-    updateAuthWarmupCache(token, {
-      hasCode,
-      preparedAt: Date.now(),
-    });
-
+    // OPTIMIZATION: Resolve auth screen directly from state table by phone.
+    // This uses /seller/state/by-phone endpoint which queries only wp_cwsb_seller_state table.
+    // No cache dependency, works on first run after app restart.
+    const seller = await findSellerStateByPhone(phone);
+    const hasCode = !!seller?.code && String(seller.code).trim() !== "";
+    
+    // Route: if seller has a code, they're already registered → SIGN_IN
+    // Otherwise → SIGN_UP to create account and set PIN code
     if (hasCode) {
       return {
         screen: "SIGN_IN",
@@ -52,6 +61,11 @@ async function handleWelcome(parsed: FlowRequest): Promise<FlowResponse> {
       };
     }
 
+    console.log("WELCOME state-table lookup completed", {
+      phone,
+      found: !!seller,
+      hasCode,
+    });
     return {
       screen: "SIGN_UP",
       data: { error_msg: "" },
@@ -71,10 +85,8 @@ async function handleWelcome(parsed: FlowRequest): Promise<FlowResponse> {
 
 async function handleSignIn(parsed: FlowRequest): Promise<FlowResponse> {
   const data = parsed.data || {};
-  const pin = String(data.pin_code ?? "");
+  const pin = String(data.pin_code ?? "").trim();
 
-  // Explicitly log evaluation path for diagnostics
-  // Note: keep logs minimal to avoid leaking secrets
   try {
     // Forgot password clicked
     if (data.user_action === "forgot_password_clicked") {
@@ -84,11 +96,10 @@ async function handleSignIn(parsed: FlowRequest): Promise<FlowResponse> {
       };
     }
 
-    
-
     const token = getFlowToken(parsed);
+    
+    // Verify PIN against seller_state
     const isValid = await verifyCode(token, pin);
-
     if (!isValid) {
       return {
         screen: "SIGN_IN",
@@ -96,16 +107,15 @@ async function handleSignIn(parsed: FlowRequest): Promise<FlowResponse> {
       };
     }
 
-    // ✅ END FLOW on success
-    await activateSession(token);
+    // Update session_active_until timestamp (runs in background)
+    await startSellerSession(token);
+    
     return {
       screen: "SUCCESS",
-      data: {
-        message: "Connexion réussie.",
-      },
+      data: { message: "Connexion réussie." },
     };
   } catch (e) {
-    // On unexpected error, fail safe by staying on SIGN_IN
+    console.error("SIGN_IN handler error", e);
     return {
       screen: "SIGN_IN",
       data: { error_msg: "Une erreur est survenue. Réessayez." },
@@ -119,22 +129,18 @@ async function handleSignIn(parsed: FlowRequest): Promise<FlowResponse> {
 
 async function handleSignUp(parsed: FlowRequest): Promise<FlowResponse> {
   const data = parsed.data || {};
-  const pin = String(data.pin_code ?? "");
-  const confirm = String(data.confirm_pin_code ?? "");
+  const pin = String(data.pin_code ?? "").trim();
+  const confirm = String(data.confirm_pin_code ?? "").trim();
+  const token = getFlowToken(parsed);
 
-  // Some flow definitions reject direct SIGN_UP -> SIGN_IN transitions.
-  // If client reports this, keep user on SIGN_UP with a clear instruction.
-  if (data.error === "invalid-screen-transition") {
+  if (!token) {
     return {
       screen: "SIGN_UP",
-      data: {
-        error_msg: "Compte deja configure. Utilisez l'ecran de connexion.",
-      },
+      data: { error_msg: "Token invalide." },
     };
   }
 
-
-
+  // Validate PIN requirements
   if (!isPinStrong(pin)) {
     return {
       screen: "SIGN_UP",
@@ -153,56 +159,65 @@ async function handleSignUp(parsed: FlowRequest): Promise<FlowResponse> {
     };
   }
 
-  const token = getFlowToken(parsed);
-  // Optimistic signup: cache pin and redirect immediately for better UX latency.
-  cachePendingCode(token, pin);
-  updateAuthWarmupCache(token, {
-    hasCode: true,
-    preparedAt: Date.now(),
-  });
-
-  // Persist state and code in background to avoid blocking flow transitions.
-  void (async () => {
-    try {
-      const stateReady = await ensureSellerState(token);
-      if (!stateReady) {
-        console.error("ensureSellerState failed during signup", { token });
-        return;
-      }
-
-      const alreadyHasCode = await sellerHasCode(token);
-      if (alreadyHasCode) {
-        updateAuthWarmupCache(token, {
-          hasCode: true,
-          preparedAt: Date.now(),
-        });
-        console.log("signup skipped: account already configured", {
-          tokenSuffix: String(token || "").slice(-6),
-        });
-        return;
-      }
-
-      const updated = await setSellerCode(token, pin);
-      if (!updated) {
-        console.error("setSellerCode failed during signup", { token });
-      } else {
-        updateAuthWarmupCache(token, {
-          hasCode: true,
-          preparedAt: Date.now(),
-        });
-      }
-    } catch (err) {
-      console.error("async signup persistence failed", err);
+  try {
+    // OPTIMIZATION: Guard against duplicate signup attempts.
+    // Use flow-token-only check (sellerHasCodeByFlowToken) instead of phone fallback.
+    // This avoids the slow /seller/by-phone lookup (~7-8s) in SIGN_UP critical path.
+    // Phone fallback is removed; only check current flow-token binding.
+    const alreadyRegistered = await sellerHasCodeByFlowToken(token);
+    if (alreadyRegistered) {
+      return {
+        screen: "SIGN_IN",
+        data: { error_msg: "Compte deja inscrit. Connectez-vous avec votre code." },
+      };
     }
-  })();
 
-  // ✅ After signup → go to SIGN_IN
-  return {
-    screen: "SIGN_IN",
-    data: {
-      error_msg: ""
-    },
-  };
+    // Step 1: Insert seller into seller_state (without code).
+    // OPTIMIZATION: upsertSellerState now has state-table-first path that returns state rows directly,
+    // avoiding null response when vendor-join resolution is slow/flaky.
+    // If seller null despite HTTP 200, recovery path does state-by-phone read-back.
+    const stateInsertStartedAt = Date.now();
+    const inserted = await prepareSellerState(token);
+    console.log("SIGN_UP prepareSellerState completed", {
+      inserted,
+      durationMs: Date.now() - stateInsertStartedAt,
+    });
+    if (!inserted) {
+      return {
+        screen: "SIGN_UP",
+        // Clear error message: phone must be registered in DB before signup can proceed.
+        data: { error_msg: "Numero non lie a un vendeur. Contactez l'administrateur pour associer ce numero." },
+      };
+    }
+
+    // Step 2: Update the code for this seller.
+    // OPTIMIZATION: This call is non-blocking in background on success.
+    // Code is hashed before persistence (bcrypt via pinHash utility).
+    const setCodeStartedAt = Date.now();
+    const codeUpdated = await setSellerCode(token, pin);
+    console.log("SIGN_UP setSellerCode completed", {
+      codeUpdated: !!codeUpdated,
+      durationMs: Date.now() - setCodeStartedAt,
+    });
+    if (!codeUpdated) {
+      return {
+        screen: "SIGN_UP",
+        data: { error_msg: "Erreur lors de la configuration du code. Réessayez." },
+      };
+    }
+
+    // Step 3: Go to SIGN_IN
+    return {
+      screen: "SIGN_IN",
+      data: { error_msg: "" },
+    };
+  } catch (err) {
+    console.error("SIGN_UP handler error", err);
+    return {
+      screen: "SIGN_UP",
+      data: { error_msg: "Une erreur est survenue. Réessayez." },
+    };
+  }
 }
 
 /* -------------------------------- */
@@ -268,12 +283,11 @@ export async function handleAuthFlow(
   const rawAction = parsed.action || "";
   const action = rawAction.toUpperCase();
 
-  // INIT / NAVIGATE: warm up seller state and next screen decision without blocking.
+  // INIT / NAVIGATE: warm up seller state without blocking.
   if (action === "INIT" || action === "NAVIGATE") {
     const token = getFlowToken(parsed);
     if (token) {
-      primeAuthWarmupAsync(token);
-      void ensureSellerState(token);
+      void prepareSellerState(token);
     }
 
     return {

@@ -2,11 +2,11 @@
 
 import { FlowResponse } from "@/models/flowResponse";
 import { ProductType, ProductVariation } from "@/models/product_model";
-import { prefetchNavListImages } from "./navlist_image_utils";
+import { prefetchNavListImages, toSizedBase64 } from "./navlist_image_utils";
 import { paginateArray } from "./utilities";
 
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 5;
 
 export function formatSimplePrices(product: any): string {
   const euro = String(
@@ -26,7 +26,7 @@ export function formatStock(product: any): string {
   if (!product.manage_stock) return "Stock non géré";
   return `${product.stock_quantity ?? 0} en stock`;
 }
-export function buildVariableDetailData(product: {
+export async function buildVariableDetailData(product: {
   id: string;
   name: string;
   sku?: string;
@@ -34,10 +34,10 @@ export function buildVariableDetailData(product: {
   short_description?: string;
   full_description?: string;
   categories?: string[];
-  tags?: string[];           // ← add this
+  tags?: string[];
   created_at?: string;
   variations?: Array<{ id: string | number; title: string }>;
-}, mapImageUrl: (rawUrl: string) => string) {
+}, mapImageUrl: (rawUrl: string) => Promise<string>) {
   const categories = (product.categories || []).join(", ") || "Sans categorie";
   const dateCreation = product.created_at
     ? `Cree le: ${product.created_at}`
@@ -46,7 +46,7 @@ export function buildVariableDetailData(product: {
 
   return {
     name: normalizeFlowLabel(product.name),
-    img: mapImageUrl(product.image_src || ""),
+    img: await mapImageUrl(product.image_src || ""),
     id_sku: `ID: ${product.id} | SKU: ${product.sku || "non renseigne"}`,
     short_desc: normalizeFlowLabel(sanitizeRichText(product.short_description || "Description courte non renseignee")),
     full_desc: normalizeFlowLabel(sanitizeRichText(product.full_description || "Description complete non renseignee")),
@@ -132,15 +132,11 @@ export function resolvePageValue(
   return undefined;
 }
 
-export function resolveFlowImageUrl(
+export async function resolveFlowImageUrl(
   rawUrl: string,
-  options: { requestHost?: string; requestProto?: string },
-): string {
-  void rawUrl;
-  void options;
-
-  // Temporary mode: force a simple public placeholder image URL.
-  return "https://placehold.co/640x400/png?text=No+Image";
+  _options: { requestHost?: string; requestProto?: string },
+): Promise<string> {
+  return toSizedBase64(rawUrl, 280);
 }
 export function formatVariationStock(variation: ProductVariation): string {
   const stockStatus = String(variation.stock_status || "").toLowerCase();
@@ -286,7 +282,7 @@ export async function buildProductListResponse(products: any[], page: number): P
     paginateArray(products, page, PAGE_SIZE);
 
   // Fetch and process images for this page in parallel
-  const imageMap = await prefetchNavListImages(rawPage);
+  const imageMap = await prefetchNavListImages(rawPage, 200);
 
   const navItems = rawPage.map((p: any) =>
     formatProductNavItem(p, imageMap.get(String(p.id)) || ""),

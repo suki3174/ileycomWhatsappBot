@@ -94,7 +94,7 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
         screen: "PRODUCT_DETAIL_SIMPLE",
         data: {
           name: normalizeFlowLabel(product.name),
-          img: mapImageUrl(product.image_src || ""),
+          img: await mapImageUrl(product.image_src || ""),
           id_sku: `ID: ${product.id} | SKU: ${product.sku || "non renseigne"}`,
           short_desc: normalizeFlowLabel(sanitizeRichText(product.short_description || "Description courte non renseignee")),
           full_desc: normalizeFlowLabel(sanitizeRichText(product.full_description || "Description complete non renseignee")),
@@ -110,7 +110,7 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
     rememberVariableProduct(token, String(product.id));
     return {
       screen: "PRODUCT_DETAIL_VARIABLE",
-      data: buildVariableDetailData(product, mapImageUrl),
+      data: await buildVariableDetailData(product, mapImageUrl),
     };
   }
 
@@ -139,7 +139,7 @@ async function handleVariationDetail(parsed: FlowRequest): Promise<FlowResponse>
         rememberVariableProduct(token, String(product.id));
         return {
           screen: "PRODUCT_DETAIL_VARIABLE",
-          data: buildVariableDetailData(product, mapImageUrl),
+          data: await buildVariableDetailData(product, mapImageUrl),
         };
       }
     }
@@ -183,7 +183,7 @@ async function handleVariationDetail(parsed: FlowRequest): Promise<FlowResponse>
   return {
     screen: "VARIATION_DETAIL",
     data: {
-      var_img: mapImageUrl(variation.image_src || ""),
+      var_img: await mapImageUrl(variation.image_src || ""),
       var_id_sku: `ID: ${variation.id} | SKU: ${displaySku || "non renseigne"}`,
       stock: formatVariationStock(variation),
       attr: normalizeFlowLabel(formatVariationAttributes(variation.attributes)),

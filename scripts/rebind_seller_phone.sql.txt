@@ -1,0 +1,86 @@
+START TRANSACTION;
+
+-- ===== Parameters =====
+SET @seller_id := NULL;                       -- Example: 123
+SET @seller_login := 'cwsb_test_seller';      -- Example: 'sara'
+SET @seller_email := NULL;                    -- Example: 'seller@example.com'
+SET @new_phone := '21650111222';              -- Digits only preferred
+
+-- ===== Resolve target user =====
+SET @resolved_user_id := COALESCE(
+  NULLIF(@seller_id, 0),
+  (SELECT u.ID FROM wp_users u WHERE BINARY u.user_login = BINARY @seller_login LIMIT 1),
+  (SELECT u.ID FROM wp_users u WHERE BINARY u.user_email = BINARY @seller_email LIMIT 1)
+);
+
+-- Safety check (manual):
+SELECT @resolved_user_id AS resolved_user_id;
+
+-- ===== Update user phone metas =====
+UPDATE wp_usermeta
+SET meta_value = @new_phone
+WHERE user_id = @resolved_user_id
+  AND meta_key IN ('billing_phone', 'phone', 'wcfm_phone');
+
+-- Ensure missing phone meta rows exist
+INSERT INTO wp_usermeta (user_id, meta_key, meta_value)
+SELECT @resolved_user_id, 'billing_phone', @new_phone
+WHERE NOT EXISTS (
+  SELECT 1 FROM wp_usermeta
+  WHERE user_id = @resolved_user_id AND meta_key = 'billing_phone'
+);
+
+INSERT INTO wp_usermeta (user_id, meta_key, meta_value)
+SELECT @resolved_user_id, 'phone', @new_phone
+WHERE NOT EXISTS (
+  SELECT 1 FROM wp_usermeta
+  WHERE user_id = @resolved_user_id AND meta_key = 'phone'
+);
+
+INSERT INTO wp_usermeta (user_id, meta_key, meta_value)
+SELECT @resolved_user_id, 'wcfm_phone', @new_phone
+WHERE NOT EXISTS (
+  SELECT 1 FROM wp_usermeta
+  WHERE user_id = @resolved_user_id AND meta_key = 'wcfm_phone'
+);
+
+-- ===== Update seller bot state =====
+-- Clear old flow token because token contains phone and should be regenerated on next auth flow.
+UPDATE wp_cwsb_seller_state
+SET phone = @new_phone,
+    flow_token = NULL
+WHERE user_id = @resolved_user_id;
+
+COMMIT;
+
+-- ===== Verification =====
+SELECT u.ID, u.user_login, u.user_email
+FROM wp_users u
+WHERE u.ID = @resolved_user_id;
+
+SELECT um.meta_key, um.meta_value
+FROM wp_usermeta um
+WHERE um.user_id = @resolved_user_id
+  AND um.meta_key IN ('billing_phone', 'phone', 'wcfm_phone')
+ORDER BY um.meta_key;
+
+SELECT s.user_id, s.phone, s.flow_token, s.session_active_until
+FROM wp_cwsb_seller_state s
+WHERE s.user_id = @resolved_user_id;
+
+-- Optional: quick sanity checks used by your flows
+-- Product ownership (should show seller products)
+SELECT p.ID AS product_id, p.post_title, p.post_status
+FROM wp_posts p
+WHERE p.post_type = 'product'
+  AND p.post_author = @resolved_user_id
+ORDER BY p.ID DESC;
+
+-- Orders likely linked by billing phone (plugin-dependent)
+SELECT pm.post_id AS order_id, pm.meta_value AS billing_phone
+FROM wp_postmeta pm
+JOIN wp_posts o ON o.ID = pm.post_id
+WHERE o.post_type = 'shop_order'
+  AND pm.meta_key = '_billing_phone'
+  AND BINARY pm.meta_value = BINARY @new_phone
+ORDER BY pm.post_id DESC;

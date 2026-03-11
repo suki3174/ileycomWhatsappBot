@@ -13,10 +13,9 @@ import {
   getOrderStatusCountersCached,
   primeOrderCountersAsync,
 } from "@/services/order_service";
-import { ensureSellerState } from "@/services/auth_service";
 import { buildOrderListResponse, formatOrderDetail, formatOrderArticlesPage } from "@/utils/oders_flow_utils";
 
-const ORDER_LIST_PAGE_SIZE = 10;
+const ORDER_LIST_PAGE_SIZE = 5;
 const ORDER_ARTICLES_PAGE_SIZE = 3;
 
 
@@ -30,9 +29,6 @@ async function handleOrderStatus(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
   const data = parsed.data || {};
   const requestedFilter = String(data.status_filter || "all");
-
-  // Keep token->seller mapping fresh for order repository resolution.
-  void ensureSellerState(token);
 
   // Prewarm only counters; list is fetched on-demand page-by-page.
   primeOrderCountersAsync(token);
@@ -154,7 +150,7 @@ async function handleOrderList(parsed: FlowRequest): Promise<FlowResponse> {
     );
   }
 
-  if (mode === "fetch_page" || mode === "fetch_more" || mode === "fetch_prev") {
+  if (mode === "paginate") {
     return buildOrderListResponse(
       pageResult.orders,
       pageResult.page,
@@ -247,7 +243,7 @@ async function handleOrderDetail(parsed: FlowRequest): Promise<FlowResponse> {
   }
 
   const articles = await getOrderArticles(orderId);
-  const articlesPage = formatOrderArticlesPage(
+  const articlesPage = await formatOrderArticlesPage(
     orderId,
     orderRef || `Commande #${orderId}`,
     articles,
@@ -287,7 +283,7 @@ async function handleOrderArticles(
   const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
   console.log("handleOrderArticles — page:", page);
 
-  const articlesPage = formatOrderArticlesPage(
+  const articlesPage = await formatOrderArticlesPage(
     orderId,
     orderRef || `Commande #${orderId}`,
     articles,
@@ -314,7 +310,6 @@ export async function handleOrdersFlow(
   if (action === "INIT" || action === "NAVIGATE") {
     const token = getFlowToken(parsed);
     if (token) {
-      void ensureSellerState(token);
       primeOrderCountersAsync(token);
     }
     return { screen: "WELCOME_SCREEN", data: {} };
@@ -329,7 +324,7 @@ export async function handleOrdersFlow(
       const hasListIntent =
         Object.prototype.hasOwnProperty.call(data, "status_filter") ||
         Object.prototype.hasOwnProperty.call(data, "page") ||
-        String(data.cmd || "").toLowerCase().includes("fetch");
+        String(data.cmd || "").toLowerCase() === "paginate";
 
       if (hasListIntent) {
         return handleOrderList({
