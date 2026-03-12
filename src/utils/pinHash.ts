@@ -1,36 +1,24 @@
-/**
- * Plain mode helper kept for compatibility with previous call sites.
- */
-// export async function hashPin(pin: string): Promise<string> {
-//   return String(pin ?? "").trim();
-// }
-
-/**
- * Plain mode comparison helper kept for compatibility with previous call sites.
- */
-// export async function verifyPin(pin: string, value: string): Promise<boolean> {
-//   return String(pin ?? "").trim() === String(value ?? "").trim();
-// }
-
-
 import bcrypt from "bcrypt";
 
 // Store this in your .env.local file!
 const PIN_PEPPER = process.env.PIN_PEPPER;
+const PIN_SALT_ROUNDS = 12;
 
 if (!PIN_PEPPER) {
   throw new Error("PIN_PEPPER is not defined in environment variables");
+}
+
+export function isBcryptHash(value: string): boolean {
+  return /^\$2[aby]\$\d{2}\$/.test(String(value || "").trim());
 }
 
 /**
  * Hashes a 4-digit PIN with a high salt round and server-side pepper.
  */
 export async function hashPin(pin: string): Promise<string> {
-  // Higher rounds (12) are better for short PINs to slow down attackers
-  const saltRounds = 12; 
   const pepperedPin = pin + PIN_PEPPER;
   
-  return await bcrypt.hash(pepperedPin, saltRounds);
+  return await bcrypt.hash(pepperedPin, PIN_SALT_ROUNDS);
 }
 
 /**
@@ -39,4 +27,17 @@ export async function hashPin(pin: string): Promise<string> {
 export async function verifyPin(pin: string, hash: string): Promise<boolean> {
   const pepperedPin = pin + PIN_PEPPER;
   return await bcrypt.compare(pepperedPin, hash);
+}
+
+export async function verifyStoredPin(pin: string, storedValue: string): Promise<boolean> {
+  const provided = String(pin ?? "").trim();
+  const stored = String(storedValue ?? "").trim();
+  if (!provided || !stored) return false;
+
+  if (isBcryptHash(stored)) {
+    return await verifyPin(provided, stored);
+  }
+
+  // Backward compatibility for existing plaintext PINs already stored in DB.
+  return stored === provided;
 }

@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Order, OrderArticle } from "@/models/oder_model";
 import { paginateArray } from "./utilities";
+import { toSizedBase64 } from "./navlist_image_utils";
 import { FlowResponse } from "@/models/flowResponse";
 
 
@@ -110,7 +111,7 @@ export function formatOrderDetail(order: Order) {
   };
 }
 
-export function formatOrderArticlesPage(
+export async function formatOrderArticlesPage(
   orderId: string,
   orderRef: string,
   articles: OrderArticle[],
@@ -136,16 +137,16 @@ export function formatOrderArticlesPage(
     has_next: hasNext,
     has_prev: hasPrev,
     page_label: `Page ${safePage} / ${totalPages}`,
-    p1_img: a1?.image ?? "",
+    p1_img: await toSizedBase64(a1?.image ?? "", 120),
     p1_name: a1?.name ?? "",
     p1_sku: a1?.sku ?? "",
     p1_qty_price: a1 ? `${a1.quantity} × ${a1.price} ${a1.currency}` : "",
-    p2_img: a2?.image ?? "",
+    p2_img: a2 ? await toSizedBase64(a2.image ?? "", 120) : "",
     p2_name: a2?.name ?? "",
     p2_sku: a2?.sku ?? "",
     p2_qty_price: a2 ? `${a2.quantity} × ${a2.price} ${a2.currency}` : "",
     p2_visible: !!a2,
-    p3_img: a3?.image ?? "",
+    p3_img: a3 ? await toSizedBase64(a3.image ?? "", 120) : "",
     p3_name: a3?.name ?? "",
     p3_sku: a3?.sku ?? "",
     p3_qty_price: a3 ? `${a3.quantity} × ${a3.price} ${a3.currency}` : "",
@@ -165,14 +166,14 @@ export function buildPaginationItems(
       id: `fetch_prev_${currentPage - 1}`,
       "main-content": {
         title: "Page precedente",
-        metadata: "Charger les 10 precedentes",
+        metadata: "Charger les 5 precedentes",
       },
       "on-click-action": {
         name: "data_exchange",
         payload: {
           page: currentPage - 1,
           status_filter: statusFilter,
-          cmd: "fetch_page",
+          cmd: "paginate",
         },
       },
       end: { title: "", metadata: "" },
@@ -185,14 +186,14 @@ export function buildPaginationItems(
       id: `fetch_more_${targetNext}`,
       "main-content": {
         title: "Voir plus",
-        metadata: "Charger les 10 suivantes",
+        metadata: "Charger les 5 suivantes",
       },
       "on-click-action": {
         name: "data_exchange",
         payload: {
           page: targetNext,
           status_filter: statusFilter,
-          cmd: "fetch_page",
+          cmd: "paginate",
         },
       },
       end: { title: "", metadata: "" },

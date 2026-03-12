@@ -1,14 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { generateFlowtoken, getAllSellers } from "@/services/auth_service";
+import { getAllSellers } from "@/services/auth_service";
+import { generateFlowtoken } from "@/utils/auth_utils";
 
 export async function POST(req: NextRequest) {
   const sellers = getAllSellers();
   const results = [];
+  const recipient = String(process.env.TEST_PHONE_NUMBER || "").trim();
+
+  if (!recipient) {
+    return NextResponse.json({ error: "TEST_PHONE_NUMBER is not configured" }, { status: 500 });
+  }
 
   for (const seller of sellers) {
     try {
-      // 1. Generate the unique token for THIS specific seller
-      const token = generateFlowtoken(seller);
+      const deliverySeller = { ...seller, phone: recipient };
+      const token = generateFlowtoken(deliverySeller);
       
 
       const response = await fetch(
@@ -21,7 +27,7 @@ export async function POST(req: NextRequest) {
           },
           body: JSON.stringify({
             messaging_product: "whatsapp",
-            to: "21628997072", // 🔹 Corrected to use current seller's phone
+            to: recipient,
             type: "template",
             mode: "published",
             template: {
@@ -49,11 +55,11 @@ export async function POST(req: NextRequest) {
       );
 
       const data = await response.json();
-      results.push({ seller: seller.name, status: response.status, data });
+      results.push({ seller: seller.name, recipient, status: response.status, data });
 
     } catch (error) {
       console.error(`Error sending to ${seller.name}:`, error);
-      results.push({ seller: seller.name, error: "Failed to send" });
+      results.push({ seller: seller.name, recipient, error: "Failed to send" });
     }
   }
 
