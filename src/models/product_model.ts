@@ -36,6 +36,7 @@ export interface Product {
   type: ProductType;
   sku: string;
   image_src: string;
+  image_gallery?: string[];
   created_at: string; // ISO Date string ou format "02/03/2026"
   
   // Descriptions
@@ -71,6 +72,7 @@ export const MOCK_PRODUCT_SIMPLE: Product = {
   is_variable: false,
   sku: "VNDSUCREXX55597",
   image_src: "https://example.com/sucre.jpg",
+  image_gallery: ["https://example.com/sucre.jpg"],
   created_at: "02/03/2026",
   short_description: "❀ Poids : 73 g ❀ Style : Élégance et modernité...",
   full_description: "Présentation du produit Le sucre en cubes est l'élément indispensable...",
@@ -94,6 +96,7 @@ export const MOCK_PRODUCT_VARIABLE: Product = {
   is_variable: true,
   sku: "VNDSUCREPACK999",
   image_src: "https://example.com/sucre-pack.jpg",
+  image_gallery: ["https://example.com/sucre-pack.jpg"],
   created_at: "02/03/2026",
   short_description: "❀ Sucre en cubes - différentes variantes de poids.",
   full_description: "Présentation du produit variable avec plusieurs variations de poids.",

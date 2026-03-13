@@ -2,8 +2,10 @@ import type { Product, ProductVariation } from "@/models/product_model";
 import { loadAndCacheProducts, setLastVariableProductId } from "@/repositories/poducts_cache";
 import {
   findProductsBySellerFlowToken,
+  findProductsPageBySellerFlowToken,
   findProductById,
   findVariationById,
+  type ProductsPageResult,
 } from "@/repositories/product_repo";
 import { normToken } from "@/utils/utilities";
 
@@ -45,6 +47,19 @@ export async function getSellerProductsByFlowToken(
   const normalized = normToken(token);
   if (!normalized) return [];
   return await findProductsBySellerFlowToken(normalized);
+}
+
+export async function getSellerProductsPageByFlowToken(
+  token: string,
+  page = 1,
+  perPage = 5,
+): Promise<ProductsPageResult> {
+  const normalized = normToken(token);
+  if (!normalized) {
+    return { products: [], page: 1, perPage: 5, hasMore: false };
+  }
+
+  return await findProductsPageBySellerFlowToken(normalized, page, perPage);
 }
 
 export async function getProductById(
