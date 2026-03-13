@@ -261,7 +261,13 @@ async function handleOrderArticles(
     return { screen: "SUCCESS", data: { message: "Action terminée avec succès !" } };
   }
 
-  if (mode !== "load_articles") {
+  const hasPageIntent =
+    Object.prototype.hasOwnProperty.call(data, "page") ||
+    Object.prototype.hasOwnProperty.call(data, "current_page") ||
+    mode === "load_articles" ||
+    mode === "paginate";
+
+  if (!hasPageIntent) {
     return { screen: "ORDER_ARTICLES", data };
   }
 
@@ -272,7 +278,7 @@ async function handleOrderArticles(
   }
 
   const articles = await getOrderArticles(orderId);
-  const requestedPage = Number(data.page ?? 1);
+  const requestedPage = Number(data.page ?? data.current_page ?? 1);
   const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
   console.log("handleOrderArticles — page:", page);
 
