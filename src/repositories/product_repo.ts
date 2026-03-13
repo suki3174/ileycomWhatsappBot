@@ -16,6 +16,14 @@ import {
 
 const PRODUCTS_BY_FLOW_TIMEOUT_MS = Math.max(PLUGIN_TIMEOUT_MS, 20000);
 
+export interface ProductsPageResult {
+  products: Product[];
+  page: number;
+  perPage: number;
+  hasMore: boolean;
+  nextPage?: number;
+}
+
 function mapVariation(rawVariation: unknown): ProductVariation | undefined {
   const row = asRecord(rawVariation);
   if (!row) return undefined;
@@ -121,13 +129,29 @@ function extractVariationFromPayload(
 export async function findProductsBySellerFlowToken(
   flowToken: string,
 ): Promise<Product[]> {
+  const pageResult = await findProductsPageBySellerFlowToken(flowToken, 1, 200);
+  return pageResult.products;
+}
+
+export async function findProductsPageBySellerFlowToken(
+  flowToken: string,
+  page = 1,
+  perPage = 5,
+): Promise<ProductsPageResult> {
   const token = normText(flowToken);
-  if (!token) return [];
+  if (!token) {
+    return { products: [], page: 1, perPage: 5, hasMore: false };
+  }
+
+  const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+  const safePerPage = Number.isFinite(perPage) && perPage > 0
+    ? Math.min(50, Math.floor(perPage))
+    : 5;
 
   try {
     const res = await pluginPostWithRetry(
       "/seller/products/by-flow-token",
-      { flow_token: token },
+      { flow_token: token, page: safePage, per_page: safePerPage },
       { timeoutMs: PRODUCTS_BY_FLOW_TIMEOUT_MS, retries: 0, retryDelayMs: 0 },
     );
 
@@ -138,14 +162,27 @@ export async function findProductsBySellerFlowToken(
         statusText: res.statusText,
         body,
       });
-      return [];
+      return { products: [], page: safePage, perPage: safePerPage, hasMore: false };
     }
 
     const payload = await parsePluginJsonSafe(res, "plugin products/by-flow-token");
-    return extractProductsFromPayload(payload);
+    const products = extractProductsFromPayload(payload);
+    const data = extractDataObject(payload);
+    const parsedPage = toNum(data?.page, safePage) || safePage;
+    const parsedPerPage = toNum(data?.per_page, safePerPage) || safePerPage;
+    const hasMore = toBool(data?.has_more);
+    const nextPageNum = toNum(data?.next_page, 0);
+
+    return {
+      products,
+      page: parsedPage,
+      perPage: parsedPerPage,
+      hasMore,
+      nextPage: nextPageNum > 0 ? nextPageNum : undefined,
+    };
   } catch (err) {
     console.error("plugin products/by-flow-token exception", err);
-    return [];
+    return { products: [], page: safePage, perPage: safePerPage, hasMore: false };
   }
 }
 

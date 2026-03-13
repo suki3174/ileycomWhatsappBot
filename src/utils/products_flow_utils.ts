@@ -339,3 +339,67 @@ export async function buildProductListResponse(products: any[], page: number): P
     },
   };
 }
+
+export async function buildProductListPagedResponse(
+  pageItems: any[],
+  currentPage: number,
+  hasMore: boolean,
+  nextPage?: number,
+): Promise<FlowResponse> {
+  if (pageItems.length === 0) {
+    return {
+      screen: "PRODUCT_LIST",
+      data: {
+        current_page: Math.max(1, currentPage),
+        products: [formatEmptyProductNavItem()],
+      },
+    };
+  }
+
+  const imageMap = await prefetchNavListImages(pageItems, 200);
+  const navItems = pageItems.map((p: any) =>
+    formatProductNavItem(p, imageMap.get(String(p.id)) || ""),
+  );
+
+  const paginationItems: any[] = [];
+  if (currentPage > 1) {
+    paginationItems.push({
+      id: "nav_prev",
+      "main-content": {
+        title: "⬅️ Page Précédente",
+        metadata: `Page ${currentPage - 1}`,
+      },
+      end: { title: "", metadata: "" },
+      tags: [],
+      "on-click-action": {
+        name: "data_exchange",
+        payload: { page: currentPage - 1, cmd: "paginate" },
+      },
+    });
+  }
+
+  if (hasMore) {
+    const targetNext = nextPage && nextPage > 0 ? nextPage : currentPage + 1;
+    paginationItems.push({
+      id: "nav_next",
+      "main-content": {
+        title: "Page Suivante ➡️",
+        metadata: `Page ${targetNext}`,
+      },
+      end: { title: "", metadata: "" },
+      tags: [],
+      "on-click-action": {
+        name: "data_exchange",
+        payload: { page: targetNext, cmd: "paginate" },
+      },
+    });
+  }
+
+  return {
+    screen: "PRODUCT_LIST",
+    data: {
+      current_page: Math.max(1, currentPage),
+      products: [...navItems, ...paginationItems],
+    },
+  };
+}
