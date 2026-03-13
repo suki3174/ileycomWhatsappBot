@@ -10,8 +10,6 @@ import {
   getOrderArticles,
   getSellerOrderSummariesPage,
   getOrderStatusCounters,
-  getOrderStatusCountersCached,
-  primeOrderCountersAsync,
 } from "@/services/order_service";
 import { buildOrderListResponse, formatOrderDetail, formatOrderArticlesPage } from "@/utils/oders_flow_utils";
 
@@ -29,9 +27,6 @@ async function handleOrderStatus(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
   const data = parsed.data || {};
   const requestedFilter = String(data.status_filter || "all");
-
-  // Prewarm only counters; list is fetched on-demand page-by-page.
-  primeOrderCountersAsync(token);
 
   // User submitted the status filter form — transition to ORDER_LIST
   if (data.status_filter) {
@@ -73,18 +68,7 @@ async function handleOrderStatus(parsed: FlowRequest): Promise<FlowResponse> {
     );
   }
 
-  let counters = getOrderStatusCountersCached(token);
-
-  // Avoid returning transient all-zero counters on cold cache. If the cache is
-  // empty, perform a direct read once so ORDER_STATUS shows meaningful values.
-  if (
-    counters.total === 0 &&
-    counters.completed === 0 &&
-    counters.in_delivery === 0 &&
-    counters.to_deliver === 0
-  ) {
-    counters = await getOrderStatusCounters(token);
-  }
+  const counters = await getOrderStatusCounters(token);
 
   console.log("ordersFlow ORDER_STATUS counters", {
     tokenSuffix: token.slice(-6),
@@ -123,6 +107,53 @@ async function handleOrderList(parsed: FlowRequest): Promise<FlowResponse> {
   const page =
     Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
 
+  // Order tapped — navigate to detail without refetching the list first.
+  if (mode === "order_details") {
+    const orderId = String(rawData.order_id ?? "").trim();
+
+    console.log("order_details — orderId:", orderId);
+
+    // Guard against empty, missing, or pagination pseudo-IDs.
+    if (!orderId || orderId.startsWith("nav_")) {
+      const pageResult = await getSellerOrderSummariesPage(
+        token,
+        statusFilter,
+        page,
+        ORDER_LIST_PAGE_SIZE,
+      );
+      return buildOrderListResponse(
+        pageResult.orders,
+        pageResult.page,
+        pageResult.statusFilter,
+        pageResult.hasMore,
+        pageResult.nextPage,
+      );
+    }
+
+    const detailOrder = await getOrderById(orderId);
+    if (detailOrder) {
+      const detail = formatOrderDetail(detailOrder);
+      return {
+        screen: "ORDER_DETAIL",
+        data: detail,
+      };
+    }
+
+    const pageResult = await getSellerOrderSummariesPage(
+      token,
+      statusFilter,
+      page,
+      ORDER_LIST_PAGE_SIZE,
+    );
+    return buildOrderListResponse(
+      pageResult.orders,
+      pageResult.page,
+      pageResult.statusFilter,
+      pageResult.hasMore,
+      pageResult.nextPage,
+    );
+  }
+
   const pageResult = await getSellerOrderSummariesPage(
     token,
     statusFilter,
@@ -158,44 +189,6 @@ async function handleOrderList(parsed: FlowRequest): Promise<FlowResponse> {
       pageResult.hasMore,
       pageResult.nextPage,
     );
-  }
-
-  // Order tapped — navigate to detail
-  if (mode === "order_details") {
-    const orderId = String(rawData.order_id ?? "").trim();
-
-    console.log("order_details — orderId:", orderId);
-
-    // Guard against empty, missing, or pagination pseudo-IDs
-    if (!orderId || orderId.startsWith("nav_")) {
-      return buildOrderListResponse(
-        pageResult.orders,
-        pageResult.page,
-        pageResult.statusFilter,
-        pageResult.hasMore,
-        pageResult.nextPage,
-      );
-    }
-
-    const detailOrder = await getOrderById(orderId);
-    const order = detailOrder || pageResult.orders.find((o: any) => String(o.id) === orderId);
-
-    if (!order) {
-      console.log("order not found for id:", orderId);
-      return buildOrderListResponse(
-        pageResult.orders,
-        pageResult.page,
-        pageResult.statusFilter,
-        pageResult.hasMore,
-        pageResult.nextPage,
-      );
-    }
-
-    const detail = formatOrderDetail(order);
-    return {
-      screen: "ORDER_DETAIL",
-      data: detail,
-    };
   }
 
   // Empty action — re-render current page
@@ -308,10 +301,6 @@ export async function handleOrdersFlow(
   const screen = parsed.screen || "";
 
   if (action === "INIT" || action === "NAVIGATE") {
-    const token = getFlowToken(parsed);
-    if (token) {
-      primeOrderCountersAsync(token);
-    }
     return { screen: "WELCOME_SCREEN", data: {} };
   }
 
