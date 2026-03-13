@@ -1,20 +1,27 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { getAllSellers } from "@/services/auth_service";
 import { generateFlowtoken } from "@/utils/auth_utils";
 
-export async function POST( req: NextRequest) {
+export async function POST() {
   const sellers = getAllSellers();
-  const results = [];
+  const results: {
+    seller: string;
+    recipient: string;
+    status?: number;
+    data?: unknown;
+    error?: string;
+  }[] = [];
   const recipient = String(process.env.TEST_PHONE_NUMBER || "").trim();
+
   if (!recipient) {
-    return NextResponse.json({ error: "TEST_PHONE_NUMBER is not configured" }, { status: 500 });
+    return NextResponse.json(
+      { error: "TEST_PHONE_NUMBER is not configured" },
+      { status: 500 },
+    );
   }
 
   for (const seller of sellers) {
     try {
-      const limited = seller.name.length > 50 ? seller.name.slice(0, 50) + "..." : seller.name;
-      
       const deliverySeller = { ...seller, phone: recipient };
       const token = generateFlowtoken(deliverySeller);
 
@@ -30,20 +37,11 @@ export async function POST( req: NextRequest) {
             messaging_product: "whatsapp",
             to: recipient,
             type: "template",
+            mode: "published",
             template: {
-              name: "authflowseller_message",
+              name: "addproductflow_message_template",
               language: { code: "fr" },
               components: [
-                {
-                  type: "header",
-                  parameters: [
-                    {
-                      type: "text",
-                      parameter_name: "seller_name", 
-                      text: limited || "Vendeur"
-                    },
-                  ],
-                },
                 {
                   type: "button",
                   sub_type: "flow",
@@ -60,16 +58,31 @@ export async function POST( req: NextRequest) {
               ],
             },
           }),
-        }
+        },
       );
-      const data = await response.json();
-      results.push({ seller: seller.name, recipient, status: response.status, data });
 
+      const data = await response.json();
+      results.push({
+        seller: String((seller as { name?: string }).name ?? ""),
+        recipient,
+        status: response.status,
+        data,
+      });
     } catch (error) {
-      console.error(`Error sending to ${seller.name}:`, error);
-      results.push({ seller: seller.name, recipient, error: "Failed to send" });
+      console.error(
+        `Error sending to ${String(
+          (seller as { name?: string }).name ?? "",
+        )}:`,
+        error,
+      );
+      results.push({
+        seller: String((seller as { name?: string }).name ?? ""),
+        recipient,
+        error: "Failed to send",
+      });
     }
   }
 
   return NextResponse.json({ summary: results }, { status: 200 });
 }
+

@@ -90,14 +90,39 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
     const tags = (product.tags ?? []).join(" · ") || "";
 
     if (product.type === ProductType.SIMPLE && !product.is_variable) {
+      const images = Array.isArray(product.image_src)
+        ? product.image_src
+        : product.image_src
+        ? [product.image_src]
+        : [];
+      const carousel_images = await Promise.all(
+        images.slice(0, 3).map(async (url, idx) => ({
+          src: await mapImageUrl(url),
+          "alt-text":
+            idx === 0
+              ? "Image principale du produit"
+              : `Image ${idx + 1} du produit`,
+        })),
+      );
+
       return {
         screen: "PRODUCT_DETAIL_SIMPLE",
         data: {
           name: normalizeFlowLabel(product.name),
-          img: await mapImageUrl(product.image_src || ""),
+          carousel_images,
           id_sku: `ID: ${product.id} | SKU: ${product.sku || "non renseigne"}`,
-          short_desc: normalizeFlowLabel(sanitizeRichText(product.short_description || "Description courte non renseignee")),
-          full_desc: normalizeFlowLabel(sanitizeRichText(product.full_description || "Description complete non renseignee")),
+          short_desc: normalizeFlowLabel(
+            sanitizeRichText(
+              product.short_description ||
+                "Description courte non renseignee",
+            ),
+          ),
+          full_desc: normalizeFlowLabel(
+            sanitizeRichText(
+              product.full_description ||
+                "Description complete non renseignee",
+            ),
+          ),
           prices: formatSimplePrices(product),
           stock_info: formatStock(product),
           categories: normalizeFlowLabel(categories),
@@ -110,7 +135,7 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
     rememberVariableProduct(token, String(product.id));
     return {
       screen: "PRODUCT_DETAIL_VARIABLE",
-      data: await buildVariableDetailData(product, mapImageUrl),
+      data: await buildVariableDetailData(product),
     };
   }
 
@@ -139,7 +164,7 @@ async function handleVariationDetail(parsed: FlowRequest): Promise<FlowResponse>
         rememberVariableProduct(token, String(product.id));
         return {
           screen: "PRODUCT_DETAIL_VARIABLE",
-          data: await buildVariableDetailData(product, mapImageUrl),
+          data: await buildVariableDetailData(product),
         };
       }
     }

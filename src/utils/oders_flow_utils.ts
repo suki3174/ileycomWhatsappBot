@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Order, OrderArticle } from "@/models/oder_model";
 import { paginateArray } from "./utilities";
-import { toSizedBase64 } from "./navlist_image_utils";
+import { toSizedBase64 } from "./image_utils";
 import { FlowResponse } from "@/models/flowResponse";
 
 

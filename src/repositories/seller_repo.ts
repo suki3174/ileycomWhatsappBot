@@ -42,7 +42,7 @@ globalThis.sellers = globalThis.sellers || [
     name: "Maison & Argile",
     email: "Ktouhemi76@gmail.com",
     code: "1234",
-    phone: "21650354773",
+    phone: "21628997072",
     flow_token: null,
   },
   

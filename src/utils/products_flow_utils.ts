@@ -2,7 +2,7 @@
 
 import { FlowResponse } from "@/models/flowResponse";
 import { ProductType, ProductVariation } from "@/models/product_model";
-import { prefetchNavListImages, toSizedBase64 } from "./navlist_image_utils";
+import { prefetchNavListImages, toCarouselBase64, toSizedBase64 } from "./image_utils";
 import { paginateArray } from "./utilities";
 
 
@@ -26,27 +26,55 @@ export function formatStock(product: any): string {
   if (!product.manage_stock) return "Stock non géré";
   return `${product.stock_quantity ?? 0} en stock`;
 }
+async function buildCarouselImages(
+  rawImageSrc: string | string[] | undefined,
+): Promise<Array<{ src: string; "alt-text": string }>> {
+  const urls = Array.isArray(rawImageSrc)
+    ? rawImageSrc
+    : rawImageSrc
+    ? [rawImageSrc]
+    : [];
+  const limited = urls.filter(Boolean).slice(0, 3);
+  if (limited.length === 0) return [];
+
+  const images: Array<{ src: string; "alt-text": string }> = [];
+  for (let i = 0; i < limited.length; i += 1) {
+    const url = limited[i];
+    const base64 = await toCarouselBase64(url);
+    images.push({
+      src: base64,
+      "alt-text":
+        i === 0
+          ? "Image principale du produit"
+          : `Image ${i + 1} du produit`,
+    });
+  }
+  return images;
+}
+
 export async function buildVariableDetailData(product: {
   id: string;
   name: string;
   sku?: string;
-  image_src?: string;
+  image_src?: string | string[];
   short_description?: string;
   full_description?: string;
   categories?: string[];
   tags?: string[];
   created_at?: string;
   variations?: Array<{ id: string | number; title: string }>;
-}, mapImageUrl: (rawUrl: string) => Promise<string>) {
+}) {
   const categories = (product.categories || []).join(", ") || "Sans categorie";
   const dateCreation = product.created_at
     ? `Cree le: ${product.created_at}`
     : "Cree le: non renseigne";
-  const tags = (product.tags ?? []).join(" · ") || "";   // ← add this
+  const tags = (product.tags ?? []).join(" · ") || "";
+
+  const carousel_images = await buildCarouselImages(product.image_src);
 
   return {
     name: normalizeFlowLabel(product.name),
-    img: await mapImageUrl(product.image_src || ""),
+    carousel_images,
     id_sku: `ID: ${product.id} | SKU: ${product.sku || "non renseigne"}`,
     short_desc: normalizeFlowLabel(sanitizeRichText(product.short_description || "Description courte non renseignee")),
     full_desc: normalizeFlowLabel(sanitizeRichText(product.full_description || "Description complete non renseignee")),
@@ -236,7 +264,7 @@ export function buildNavItems(
       id: "nav_prev",
       "main-content": {
         title: "⬅️ Page Précédente",
-        metadata: `Page ${currentPage - 1} / ${totalPages}`,
+        metadata: `Page ${currentPage } / ${totalPages}`,
       },
       end: { title: "", metadata: "" },
       tags: [],
@@ -252,7 +280,7 @@ export function buildNavItems(
       id: "nav_next",
       "main-content": {
         title: "Page Suivante ➡️",
-        metadata: `Page ${currentPage + 1} / ${totalPages}`,
+        metadata: `Page ${currentPage } / ${totalPages}`,
       },
       end: { title: "", metadata: "" },
       tags: [],

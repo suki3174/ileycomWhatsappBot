@@ -13,10 +13,6 @@ export function generateResetToken(): string {
   return crypto.randomBytes(32).toString("hex");
 }
 
-
-
-
-
 export function getFlowToken(parsed: FlowRequest): string {
   const t = parsed?.data?.flow_token ?? parsed?.flow_token ?? "";
   return typeof t === "string" ? t.trim() : String(t).trim();
@@ -49,5 +45,43 @@ export function paginateArray<T>(
     hasPrev: currentPage > 1,
     currentPage,
   };
+}
+
+export const COMMISSION_RATE = 0.2261;
+
+export function toNumber(value: unknown, fallback = 0): number {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+export function computeSellingPrice(
+  regular: number,
+  promo: number,
+): number {
+  const safeRegular = toNumber(regular, 0);
+  const safePromo = toNumber(promo, 0);
+  if (safePromo > 0 && safePromo < safeRegular) {
+    return safePromo;
+  }
+  return safeRegular;
+}
+
+export function convertTndToEur(tnd: number): number {
+  const safeTnd = toNumber(tnd, 0);
+  if (safeTnd <= 0) return 0;
+  const eur = safeTnd / 3.358 + 9;
+  return Math.round(eur);
+}
+
+export function formatGainTnd(sellingPrice: number): string {
+  const price = toNumber(sellingPrice, 0);
+  const gain = price * (1 - COMMISSION_RATE);
+  return gain.toFixed(2);
+}
+
+export function formatGainEur(sellingPrice: number): string {
+  const price = toNumber(sellingPrice, 0);
+  const gain = price * (1 - COMMISSION_RATE);
+  return gain.toFixed(2);
 }
 

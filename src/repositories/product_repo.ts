@@ -54,12 +54,20 @@ function mapProduct(rawProduct: unknown): Product | undefined {
   const isVariable = toBool(row.is_variable) || rawType === ProductType.VARIABLE;
   const type = isVariable ? ProductType.VARIABLE : ProductType.SIMPLE;
 
+  let imageUrls: string[] = [];
+  if (Array.isArray(row.image_src)) {
+    imageUrls = row.image_src.map((v) => normText(v)).filter((v) => v);
+  } else {
+    const single = normText(row.image_src);
+    if (single) imageUrls = [single];
+  }
+
   const mapped: Product = {
     id,
     name: normText(row.name),
     type,
     sku: normText(row.sku),
-    image_src: normText(row.image_src),
+    image_src: imageUrls,
     created_at: normText(row.created_at),
     short_description: normText(row.short_description),
     full_description: normText(row.full_description),
