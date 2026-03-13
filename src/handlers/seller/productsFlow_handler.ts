@@ -3,17 +3,18 @@ import { FlowRequest } from "@/models/flowRequest";
 import { FlowResponse } from "@/models/flowResponse";
 import { ProductType } from "@/models/product_model";
 import {
-  getProductsForToken,
   getLastVariableProductId,
 } from "@/repositories/poducts_cache";
 import {
   getProductById,
+  getSellerProductsPageByFlowToken,
   getVariationDetail,
   primeProductsAsync,
   rememberVariableProduct,
 } from "@/services/products_service";
 import {
-  buildProductListResponse,
+  buildProductCarouselImages,
+  buildProductListPagedResponse,
   buildVariableDetailData,
   formatSimplePrices,
   formatStock,
@@ -44,17 +45,27 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
   const requestedPage = Number(rawData.page ?? 1);
   const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
 
-  const products = await getProductsForToken(token);
-  console.log (`Products for token ${token}:`, products);
+  const pageResult = await getSellerProductsPageByFlowToken(token, page, 5);
+  const pageProducts = pageResult.products;
 
   // Noop — empty list item tapped
   if (mode === "noop") {
-    return await buildProductListResponse(products, page);
+    return await buildProductListPagedResponse(
+      pageProducts,
+      pageResult.page,
+      pageResult.hasMore,
+      pageResult.nextPage,
+    );
   }
 
   // Paginate — re-render at new page
   if (mode === "paginate") {
-    return await buildProductListResponse(products, page);
+    return await buildProductListPagedResponse(
+      pageProducts,
+      pageResult.page,
+      pageResult.hasMore,
+      pageResult.nextPage,
+    );
   }
 
   // Product tapped — navigate to detail
@@ -64,7 +75,12 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
     console.log("details — product_id:", selectedId);
 
     if (!selectedId || selectedId === "empty" || selectedId.startsWith("nav_")) {
-      return await buildProductListResponse(products, page);
+      return await buildProductListPagedResponse(
+        pageProducts,
+        pageResult.page,
+        pageResult.hasMore,
+        pageResult.nextPage,
+      );
     }
 
     const requestHost = String(rawData.__request_host || "").trim();
@@ -74,13 +90,18 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
 
     const product =
       (await getProductById(selectedId)) ||
-      products.find((p: any) => String(p.id) === selectedId);
+      pageProducts.find((p: any) => String(p.id) === selectedId);
 
       console.log("produit:",product)
 
     if (!product) {
       console.log("product not found:", selectedId);
-      return await buildProductListResponse(products, page);
+      return await buildProductListPagedResponse(
+        pageProducts,
+        pageResult.page,
+        pageResult.hasMore,
+        pageResult.nextPage,
+      );
     }
 
     const categories = (product.categories || []).join(", ") || "Sans categorie";
@@ -90,26 +111,20 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
     const tags = (product.tags ?? []).join(" · ") || "";
 
     if (product.type === ProductType.SIMPLE && !product.is_variable) {
-      const images = Array.isArray(product.image_src)
-        ? product.image_src
-        : product.image_src
-        ? [product.image_src]
-        : [];
-      const carousel_images = await Promise.all(
-        images.slice(0, 3).map(async (url, idx) => ({
-          src: await mapImageUrl(url),
-          "alt-text":
-            idx === 0
-              ? "Image principale du produit"
-              : `Image ${idx + 1} du produit`,
-        })),
+      const image = await mapImageUrl(product.image_src || "");
+      const carouselImages = await buildProductCarouselImages(
+        product.image_gallery,
+        product.image_src,
+        `Image principale de ${product.name || "produit"}`,
+        mapImageUrl,
       );
 
       return {
         screen: "PRODUCT_DETAIL_SIMPLE",
         data: {
           name: normalizeFlowLabel(product.name),
-          carousel_images,
+          img: image,
+          carousel_images: carouselImages,
           id_sku: `ID: ${product.id} | SKU: ${product.sku || "non renseigne"}`,
           short_desc: normalizeFlowLabel(
             sanitizeRichText(
@@ -140,7 +155,12 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
   }
 
   // Default — initial load or unknown cmd
-  return await buildProductListResponse(products, page);
+  return await buildProductListPagedResponse(
+    pageProducts,
+    pageResult.page,
+    pageResult.hasMore,
+    pageResult.nextPage,
+  );
 }
 
 async function handleVariationDetail(parsed: FlowRequest): Promise<FlowResponse> {

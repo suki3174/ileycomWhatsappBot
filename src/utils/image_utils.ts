@@ -13,7 +13,9 @@ import fs from "fs/promises";
 import path from "path";
 
 const MAX_BYTES = 90_000; // 90KB — leave headroom under 100KB limit
-const FALLBACK_BASE64 = ""; // empty string = no image shown (WhatsApp ignores empty)
+// 1x1 transparent PNG fallback to avoid empty image fields on transient failures.
+const FALLBACK_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Z2ioAAAAASUVORK5CYII=";
 const PLACEHOLDER_PATH = path.resolve(process.cwd(), "public", "placeholder.png");
 
 // In-memory cache: image URL → base64 string
@@ -21,6 +23,17 @@ const PLACEHOLDER_PATH = path.resolve(process.cwd(), "public", "placeholder.png"
 const imageCache = new Map<string, string>();
 
 let placeholderBufferPromise: Promise<Buffer | null> | null = null;
+
+function getCandidateDocRoots(): string[] {
+  const roots = [
+    process.env.WP_LOCAL_DOC_ROOT,
+    "C:\\xampp\\htdocs",
+    "C:\\xampp\\htdocs\\ILEYCOM",
+    "C:\\xampp\\htdocs\\ILEYCOM\\wordpress",
+  ].filter((value): value is string => !!String(value || "").trim());
+
+  return Array.from(new Set(roots.map((value) => path.normalize(value))));
+}
 
 function normalizeTargetSize(size?: number): number {
   const n = Number(size);
@@ -30,13 +43,9 @@ function normalizeTargetSize(size?: number): number {
 
 /**
  * For localhost image URLs, try to read the file directly from disk.
- * Requires WP_LOCAL_DOC_ROOT env var (Apache document root, e.g. C:\xampp\htdocs).
  * Returns the file buffer, or null if unavailable.
  */
 async function readLocalImage(imageUrl: string): Promise<Buffer | null> {
-  const docRoot = process.env.WP_LOCAL_DOC_ROOT;
-  if (!docRoot) return null;
-
   let parsed: URL;
   try {
     parsed = new URL(imageUrl);
@@ -44,17 +53,22 @@ async function readLocalImage(imageUrl: string): Promise<Buffer | null> {
     return null;
   }
 
-  if (parsed.hostname !== "localhost") return null;
-
-  // Convert URL pathname to local filesystem path
-  const relativePath = parsed.pathname.replace(/\//g, path.sep);
-  const localPath = path.join(docRoot, relativePath);
-
-  try {
-    return await fs.readFile(localPath);
-  } catch {
+  if (parsed.hostname !== "localhost" && parsed.hostname !== "127.0.0.1") {
     return null;
   }
+
+  const relativePath = parsed.pathname.replace(/^\/+/, "").replace(/\//g, path.sep);
+
+  for (const docRoot of getCandidateDocRoots()) {
+    const localPath = path.join(docRoot, relativePath);
+    try {
+      return await fs.readFile(localPath);
+    } catch {
+      // Try the next candidate root.
+    }
+  }
+
+  return null;
 }
 
 async function readPlaceholderImage(): Promise<Buffer | null> {
@@ -135,7 +149,7 @@ async function buildImageBase64(
     }
 
     if (!inputBuffer) {
-      imageCache.set(cacheKey, FALLBACK_BASE64);
+      // Do not cache fallback here; local assets can appear later.
       return FALLBACK_BASE64;
     }
 
@@ -145,7 +159,7 @@ async function buildImageBase64(
     return base64;
   } catch (err) {
     console.warn("navlist image processing error:", imageUrl, err);
-    imageCache.set(cacheKey, FALLBACK_BASE64);
+    // Avoid pinning transient errors in cache; allow future retries.
     return FALLBACK_BASE64;
   }
 }
@@ -212,15 +226,16 @@ export async function prefetchNavListImages(
   const results = new Map<string, string>();
   const targetSize = normalizeTargetSize(size);
 
-  await Promise.all(
-    products.map(async (p) => {
-      const rawSrc = Array.isArray(p.image_src)
-        ? p.image_src[0] ?? ""
-        : p.image_src || "";
-      const base64 = await buildImageBase64(rawSrc, targetSize, targetSize);
+  const concurrency = 2;
+  for (let index = 0; index < products.length; index += concurrency) {
+    const batch = products.slice(index, index + concurrency);
+    await Promise.all(
+      batch.map(async (p) => {
+      const base64 = await buildImageBase64(p.image_src || "", targetSize);
       results.set(String(p.id), base64);
-    }),
-  );
+      }),
+    );
+  }
 
   return results;
 }

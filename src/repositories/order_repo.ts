@@ -9,6 +9,10 @@ import {
 } from "@/utils/repository_utils";
 import { normToken } from "@/utils/utilities";
 
+const ORDER_LIST_TIMEOUT_MS = Math.max(PLUGIN_TIMEOUT_MS, 15000);
+const ORDER_COUNTERS_TIMEOUT_MS = Math.max(PLUGIN_TIMEOUT_MS, 15000);
+const ORDER_DETAIL_TIMEOUT_MS = Math.max(PLUGIN_TIMEOUT_MS, 15000);
+
 export interface OrderStatusCounters {
   total: number;
   completed: number;
@@ -114,7 +118,7 @@ export async function findOrdersBySellerFlowToken(
     const res = await pluginPostWithRetry(
       "/seller/orders/list/by-flow-token",
       { flow_token: token },
-      { timeoutMs: Math.max(PLUGIN_TIMEOUT_MS, 10000), retries: 0, retryDelayMs: 250 },
+      { timeoutMs: ORDER_LIST_TIMEOUT_MS, retries: 0, retryDelayMs: 250 },
     );
 
     if (!res.ok) {
@@ -160,7 +164,7 @@ export async function findOrderStatusCountersByFlowToken(
     const res = await pluginPostWithRetry(
       "/seller/orders/counters/by-flow-token",
       { flow_token: token },
-      { timeoutMs: Math.max(PLUGIN_TIMEOUT_MS, 6000), retries: 0, retryDelayMs: 250 },
+      { timeoutMs: ORDER_COUNTERS_TIMEOUT_MS, retries: 0, retryDelayMs: 250 },
     );
 
     if (!res.ok) {
@@ -199,7 +203,7 @@ export async function findOrderById(
     const res = await pluginPostWithRetry(
       "/seller/order/by-id",
       { order_id: oid },
-      { timeoutMs: Math.max(PLUGIN_TIMEOUT_MS, 12000), retries: 0, retryDelayMs: 250 },
+      { timeoutMs: ORDER_DETAIL_TIMEOUT_MS, retries: 0, retryDelayMs: 250 },
     );
 
     if (!res.ok) {
@@ -255,7 +259,7 @@ export async function findOrderSummariesPageByFlowToken(
         page: safePage,
         limit: safeLimit,
       },
-      { timeoutMs: Math.max(PLUGIN_TIMEOUT_MS, 10000), retries: 0, retryDelayMs: 250 },
+      { timeoutMs: ORDER_LIST_TIMEOUT_MS, retries: 0, retryDelayMs: 250 },
     );
 
     if (!res.ok) {

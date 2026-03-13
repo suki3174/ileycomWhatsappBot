@@ -7,6 +7,7 @@ import { paginateArray } from "./utilities";
 
 
 const PAGE_SIZE = 5;
+const MAX_CAROUSEL_IMAGES = 3;
 
 export function formatSimplePrices(product: any): string {
   const euro = String(
@@ -26,37 +27,43 @@ export function formatStock(product: any): string {
   if (!product.manage_stock) return "Stock non géré";
   return `${product.stock_quantity ?? 0} en stock`;
 }
-async function buildCarouselImages(
-  rawImageSrc: string | string[] | undefined,
-): Promise<Array<{ src: string; "alt-text": string }>> {
-  const urls = Array.isArray(rawImageSrc)
-    ? rawImageSrc
-    : rawImageSrc
-    ? [rawImageSrc]
-    : [];
-  const limited = urls.filter(Boolean).slice(0, 3);
-  if (limited.length === 0) return [];
 
-  const images: Array<{ src: string; "alt-text": string }> = [];
-  for (let i = 0; i < limited.length; i += 1) {
-    const url = limited[i];
-    const base64 = await toCarouselBase64(url);
-    images.push({
-      src: base64,
-      "alt-text":
-        i === 0
-          ? "Image principale du produit"
-          : `Image ${i + 1} du produit`,
-    });
+export async function buildProductCarouselImages(
+  imageUrls: string[] | undefined,
+  fallbackImageUrl: string | undefined,
+  altText: string,
+  mapImageUrl: (rawUrl: string) => Promise<string>,
+) {
+  const normalizedUrls = [
+    ...(Array.isArray(imageUrls) ? imageUrls : []),
+    String(fallbackImageUrl || ""),
+  ]
+    .map((url) => String(url || "").trim())
+    .filter(Boolean)
+    .filter((url, index, all) => all.indexOf(url) === index)
+    .slice(0, MAX_CAROUSEL_IMAGES);
+
+  if (normalizedUrls.length === 0) {
+    const mapped = await mapImageUrl("");
+    return [{
+      src: mapped,
+      "alt-text": normalizeFlowLabel(altText || "Image produit"),
+    }];
   }
-  return images;
+
+  const mapped = await Promise.all(normalizedUrls.map((url) => mapImageUrl(url)));
+  return mapped.map((src, index) => ({
+    src,
+    "alt-text": normalizeFlowLabel(index === 0 ? altText : `${altText} ${index + 1}`),
+  }));
 }
 
 export async function buildVariableDetailData(product: {
   id: string;
   name: string;
   sku?: string;
-  image_src?: string | string[];
+  image_src?: string;
+  image_gallery?: string[];
   short_description?: string;
   full_description?: string;
   categories?: string[];
@@ -69,17 +76,23 @@ export async function buildVariableDetailData(product: {
     ? `Cree le: ${product.created_at}`
     : "Cree le: non renseigne";
   const tags = (product.tags ?? []).join(" · ") || "";
-
-  const carousel_images = await buildCarouselImages(product.image_src);
+  const image = await mapImageUrl(product.image_src || "");
+  const carouselImages = await buildProductCarouselImages(
+    product.image_gallery,
+    product.image_src,
+    `Image principale de ${product.name || "produit"}`,
+    mapImageUrl,
+  );
 
   return {
     name: normalizeFlowLabel(product.name),
-    carousel_images,
+    img: image,
+    carousel_images: carouselImages,
     id_sku: `ID: ${product.id} | SKU: ${product.sku || "non renseigne"}`,
     short_desc: normalizeFlowLabel(sanitizeRichText(product.short_description || "Description courte non renseignee")),
     full_desc: normalizeFlowLabel(sanitizeRichText(product.full_description || "Description complete non renseignee")),
     categories: normalizeFlowLabel(categories),
-    tags,                                                  // ← add this
+    tags,
     date_creation: normalizeFlowLabel(dateCreation),
     product_id: product.id,
     variations: product.variations?.map((v) => ({
@@ -322,6 +335,70 @@ export async function buildProductListResponse(products: any[], page: number): P
     screen: "PRODUCT_LIST",
     data: {
       current_page: currentPage,
+      products: [...navItems, ...paginationItems],
+    },
+  };
+}
+
+export async function buildProductListPagedResponse(
+  pageItems: any[],
+  currentPage: number,
+  hasMore: boolean,
+  nextPage?: number,
+): Promise<FlowResponse> {
+  if (pageItems.length === 0) {
+    return {
+      screen: "PRODUCT_LIST",
+      data: {
+        current_page: Math.max(1, currentPage),
+        products: [formatEmptyProductNavItem()],
+      },
+    };
+  }
+
+  const imageMap = await prefetchNavListImages(pageItems, 200);
+  const navItems = pageItems.map((p: any) =>
+    formatProductNavItem(p, imageMap.get(String(p.id)) || ""),
+  );
+
+  const paginationItems: any[] = [];
+  if (currentPage > 1) {
+    paginationItems.push({
+      id: "nav_prev",
+      "main-content": {
+        title: "⬅️ Page Précédente",
+        metadata: `Page ${currentPage - 1}`,
+      },
+      end: { title: "", metadata: "" },
+      tags: [],
+      "on-click-action": {
+        name: "data_exchange",
+        payload: { page: currentPage - 1, cmd: "paginate" },
+      },
+    });
+  }
+
+  if (hasMore) {
+    const targetNext = nextPage && nextPage > 0 ? nextPage : currentPage + 1;
+    paginationItems.push({
+      id: "nav_next",
+      "main-content": {
+        title: "Page Suivante ➡️",
+        metadata: `Page ${targetNext}`,
+      },
+      end: { title: "", metadata: "" },
+      tags: [],
+      "on-click-action": {
+        name: "data_exchange",
+        payload: { page: targetNext, cmd: "paginate" },
+      },
+    });
+  }
+
+  return {
+    screen: "PRODUCT_LIST",
+    data: {
+      current_page: Math.max(1, currentPage),
       products: [...navItems, ...paginationItems],
     },
   };
