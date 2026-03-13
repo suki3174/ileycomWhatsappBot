@@ -13,6 +13,7 @@ import {
   rememberVariableProduct,
 } from "@/services/products_service";
 import {
+  buildProductCarouselImages,
   buildProductListResponse,
   buildVariableDetailData,
   formatSimplePrices,
@@ -143,11 +144,20 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
     const tags = (product.tags ?? []).join(" · ") || "";
 
     if (product.type === ProductType.SIMPLE && !product.is_variable) {
+      const image = await mapImageUrl(product.image_src || "");
+      const carouselImages = await buildProductCarouselImages(
+        product.image_gallery,
+        product.image_src,
+        `Image principale de ${product.name || "produit"}`,
+        mapImageUrl,
+      );
+
       return {
         screen: "PRODUCT_DETAIL_SIMPLE",
         data: {
           name: normalizeFlowLabel(product.name),
-          img: await mapImageUrl(product.image_src || ""),
+          img: image,
+          carousel_images: carouselImages,
           id_sku: `ID: ${product.id} | SKU: ${product.sku || "non renseigne"}`,
           short_desc: normalizeFlowLabel(sanitizeRichText(product.short_description || "Description courte non renseignee")),
           full_desc: normalizeFlowLabel(sanitizeRichText(product.full_description || "Description complete non renseignee")),

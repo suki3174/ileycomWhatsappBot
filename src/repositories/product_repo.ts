@@ -60,6 +60,7 @@ function mapProduct(rawProduct: unknown): Product | undefined {
     type,
     sku: normText(row.sku),
     image_src: normText(row.image_src),
+    image_gallery: toStringArray(row.image_gallery),
     created_at: normText(row.created_at),
     short_description: normText(row.short_description),
     full_description: normText(row.full_description),
