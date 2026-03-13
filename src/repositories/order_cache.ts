@@ -4,9 +4,9 @@ import {
   findOrderArticlesByOrderId,
   findOrderById,
   findOrdersBySellerFlowToken,
-  findOrderStatusCountersByFlowToken,
   type OrderStatusCounters,
 } from "@/repositories/order_repo";
+import { extractPhoneFromFlowToken } from "@/utils/repository_utils";
 import { normToken } from "@/utils/utilities";
 
 interface OrderListCacheEntry {
@@ -46,6 +46,9 @@ declare global {
   var orderListCache: Map<string, OrderListCacheEntry> | undefined;
   var orderListInflight: Map<string, Promise<Order[]>> | undefined;
   var orderCountersCache: Map<string, OrderCountersCacheEntry> | undefined;
+  var orderCountersBySellerCache:
+    | Map<string, OrderCountersCacheEntry>
+    | undefined;
   var orderCountersInflight:
     | Map<string, Promise<OrderStatusCounters>>
     | undefined;
@@ -63,6 +66,9 @@ globalThis.orderListInflight =
   globalThis.orderListInflight || new Map<string, Promise<Order[]>>();
 globalThis.orderCountersCache =
   globalThis.orderCountersCache || new Map<string, OrderCountersCacheEntry>();
+globalThis.orderCountersBySellerCache =
+  globalThis.orderCountersBySellerCache ||
+  new Map<string, OrderCountersCacheEntry>();
 globalThis.orderCountersInflight =
   globalThis.orderCountersInflight ||
   new Map<string, Promise<OrderStatusCounters>>();
@@ -78,6 +84,7 @@ globalThis.orderArticlesInflight =
 const orderListCache = globalThis.orderListCache;
 const orderListInflight = globalThis.orderListInflight;
 const orderCountersCache = globalThis.orderCountersCache;
+const orderCountersBySellerCache = globalThis.orderCountersBySellerCache;
 const orderCountersInflight = globalThis.orderCountersInflight;
 const orderDetailCache = globalThis.orderDetailCache;
 const orderDetailInflight = globalThis.orderDetailInflight;
@@ -218,35 +225,23 @@ export async function loadAndCacheOrderCounters(
 
   const task = (async () => {
     try {
-      const counters = await findOrderStatusCountersByFlowToken(normalized);
-      const existing = orderCountersCache.get(normalized);
-
-      // Keep existing non-zero counters when fresh fetch yields zeros.
-      if (
-        counters.total === 0 &&
-        existing &&
-        existing.counters.total > 0
-      ) {
-        return existing.counters;
+      let orders = getCachedOrdersForToken(normalized);
+      if (orders.length === 0) {
+        orders = await getOrdersForToken(normalized);
       }
 
-      if (counters.total === 0) {
-        const listEntry = orderListCache.get(normalized);
-        if (listEntry && listEntry.orders.length > 0) {
-          const derived = deriveCountersFromOrders(listEntry.orders);
-          orderCountersCache.set(normalized, {
-            counters: derived,
-            preparedAt: Date.now(),
-          });
-          return derived;
+      if (orders.length === 0) {
+        const existing = orderCountersCache.get(normalized);
+        if (existing && existing.counters.total > 0) {
+          return existing.counters;
         }
+
+        return EMPTY_COUNTERS;
       }
 
-      orderCountersCache.set(normalized, {
-        counters,
-        preparedAt: Date.now(),
-      });
-      return counters;
+      const derived = deriveCountersFromOrders(orders);
+      setOrderCountersForToken(normalized, derived);
+      return derived;
     } catch (err) {
       console.error("loadAndCacheOrderCounters failed", err);
 
@@ -255,10 +250,7 @@ export async function loadAndCacheOrderCounters(
       const listEntry = orderListCache.get(normalized);
       if (listEntry && listEntry.orders.length > 0) {
         const derived = deriveCountersFromOrders(listEntry.orders);
-        orderCountersCache.set(normalized, {
-          counters: derived,
-          preparedAt: Date.now(),
-        });
+        setOrderCountersForToken(normalized, derived);
         return derived;
       }
 
@@ -293,12 +285,40 @@ export function getCachedOrderCountersForToken(
   if (!normalized) return undefined;
 
   const entry = orderCountersCache.get(normalized);
-  if (!entry) return undefined;
-  if (Date.now() - entry.preparedAt > ORDER_COUNTERS_TTL_MS) {
+  if (entry && Date.now() - entry.preparedAt <= ORDER_COUNTERS_TTL_MS) {
+    return entry.counters;
+  }
+
+  const sellerKey = extractPhoneFromFlowToken(normalized);
+  if (!sellerKey) return undefined;
+
+  const sellerEntry = orderCountersBySellerCache.get(sellerKey);
+  if (!sellerEntry) return undefined;
+  if (Date.now() - sellerEntry.preparedAt > ORDER_COUNTERS_TTL_MS) {
     return undefined;
   }
 
-  return entry.counters;
+  return sellerEntry.counters;
+}
+
+export function setOrderCountersForToken(
+  token: string,
+  counters: OrderStatusCounters,
+): void {
+  const normalized = normToken(token);
+  if (!normalized) return;
+
+  const entry: OrderCountersCacheEntry = {
+    counters,
+    preparedAt: Date.now(),
+  };
+
+  orderCountersCache.set(normalized, entry);
+
+  const sellerKey = extractPhoneFromFlowToken(normalized);
+  if (sellerKey) {
+    orderCountersBySellerCache.set(sellerKey, entry);
+  }
 }
 
 export async function loadAndCacheOrderDetail(

@@ -24,7 +24,7 @@ import {
   sanitizeRichText,
   toPositivePage,
 } from "@/utils/products_flow_utils";
-import { getFlowToken } from "@/utils/utilities";
+import { getFlowToken, paginateArray } from "@/utils/utilities";
 
 
 
@@ -33,6 +33,58 @@ import { getFlowToken } from "@/utils/utilities";
 // ---------------------------------------------------------------------------
 // Screen handlers
 // ---------------------------------------------------------------------------
+
+async function enrichVisiblePageProducts(products: any[], page: number): Promise<any[]> {
+  if (products.length === 0) return products;
+
+  const { pageItems } = paginateArray(products, page, 5);
+  const missingIds = pageItems
+    .filter((product: any) => !String(product?.image_src || "").trim())
+    .map((product: any) => String(product.id || "").trim())
+    .filter(Boolean);
+
+  if (missingIds.length === 0) return products;
+
+  const resolvedById = new Map<string, any>();
+  const concurrency = 2;
+
+  for (let index = 0; index < missingIds.length; index += concurrency) {
+    const batch = missingIds.slice(index, index + concurrency);
+    const resolvedBatch = await Promise.all(
+      batch.map(async (productId) => {
+        const detailedProduct = await getProductById(productId);
+        return detailedProduct ? [productId, detailedProduct] as const : undefined;
+      }),
+    );
+
+    for (const entry of resolvedBatch) {
+      if (!entry) continue;
+      resolvedById.set(entry[0], entry[1]);
+    }
+  }
+
+  if (resolvedById.size === 0) return products;
+
+  return products.map((product: any) => {
+    const productId = String(product?.id || "").trim();
+    const detailedProduct = resolvedById.get(productId);
+    if (!detailedProduct) return product;
+
+    return {
+      ...product,
+      image_src: String(product?.image_src || detailedProduct.image_src || "").trim(),
+      created_at: product?.created_at || detailedProduct.created_at || "",
+      short_description: product?.short_description || detailedProduct.short_description || "",
+      full_description: product?.full_description || detailedProduct.full_description || "",
+      categories: Array.isArray(product?.categories) && product.categories.length > 0
+        ? product.categories
+        : detailedProduct.categories,
+      tags: Array.isArray(product?.tags) && product.tags.length > 0
+        ? product.tags
+        : detailedProduct.tags,
+    };
+  });
+}
 
 async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
@@ -46,15 +98,16 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
 
   const products = await getProductsForToken(token);
   console.log (`Products for token ${token}:`, products);
+  const enrichedProducts = await enrichVisiblePageProducts(products, page);
 
   // Noop — empty list item tapped
   if (mode === "noop") {
-    return await buildProductListResponse(products, page);
+    return await buildProductListResponse(enrichedProducts, page);
   }
 
   // Paginate — re-render at new page
   if (mode === "paginate") {
-    return await buildProductListResponse(products, page);
+    return await buildProductListResponse(enrichedProducts, page);
   }
 
   // Product tapped — navigate to detail
@@ -64,7 +117,7 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
     console.log("details — product_id:", selectedId);
 
     if (!selectedId || selectedId === "empty" || selectedId.startsWith("nav_")) {
-      return await buildProductListResponse(products, page);
+      return await buildProductListResponse(enrichedProducts, page);
     }
 
     const requestHost = String(rawData.__request_host || "").trim();
@@ -74,13 +127,13 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
 
     const product =
       (await getProductById(selectedId)) ||
-      products.find((p: any) => String(p.id) === selectedId);
+      enrichedProducts.find((p: any) => String(p.id) === selectedId);
 
       console.log("produit:",product)
 
     if (!product) {
       console.log("product not found:", selectedId);
-      return await buildProductListResponse(products, page);
+      return await buildProductListResponse(enrichedProducts, page);
     }
 
     const categories = (product.categories || []).join(", ") || "Sans categorie";
@@ -115,7 +168,7 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
   }
 
   // Default — initial load or unknown cmd
-  return await buildProductListResponse(products, page);
+  return await buildProductListResponse(enrichedProducts, page);
 }
 
 async function handleVariationDetail(parsed: FlowRequest): Promise<FlowResponse> {

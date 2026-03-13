@@ -90,7 +90,10 @@ export function formatEmptyOrderListItem() {
 }
 
 export function formatOrderDetail(order: Order) {
-  const articlesCount = order.articles.length;
+  const articlesCount =
+    typeof order.articles_count === "number"
+      ? order.articles_count
+      : order.articles.length;
   const articlesTotal = order.subtotal;
 
   return {
