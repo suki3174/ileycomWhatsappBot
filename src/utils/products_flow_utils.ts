@@ -1,8 +1,9 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { FlowResponse } from "@/models/flowResponse";
 import { ProductType, ProductVariation } from "@/models/product_model";
-import { prefetchNavListImages, toCarouselBase64, toSizedBase64 } from "./image_utils";
+import { prefetchNavListImages, toSizedBase64 } from "./image_utils";
 import { paginateArray } from "./utilities";
 
 
@@ -70,7 +71,7 @@ export async function buildVariableDetailData(product: {
   tags?: string[];
   created_at?: string;
   variations?: Array<{ id: string | number; title: string }>;
-}) {
+}, mapImageUrl: (rawUrl: string) => Promise<string>) {
   const categories = (product.categories || []).join(", ") || "Sans categorie";
   const dateCreation = product.created_at
     ? `Cree le: ${product.created_at}`
@@ -277,7 +278,7 @@ export function buildNavItems(
       id: "nav_prev",
       "main-content": {
         title: "⬅️ Page Précédente",
-        metadata: `Page ${currentPage } / ${totalPages}`,
+        metadata: `Page ${currentPage - 1} / ${totalPages}`,
       },
       end: { title: "", metadata: "" },
       tags: [],
@@ -293,7 +294,7 @@ export function buildNavItems(
       id: "nav_next",
       "main-content": {
         title: "Page Suivante ➡️",
-        metadata: `Page ${currentPage } / ${totalPages}`,
+        metadata: `Page ${currentPage + 1} / ${totalPages}`,
       },
       end: { title: "", metadata: "" },
       tags: [],

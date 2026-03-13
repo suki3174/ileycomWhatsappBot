@@ -231,7 +231,7 @@ export async function prefetchNavListImages(
     const batch = products.slice(index, index + concurrency);
     await Promise.all(
       batch.map(async (p) => {
-      const base64 = await buildImageBase64(p.image_src || "", targetSize);
+      const base64 = await buildImageBase64(p.image_src?.[0] || "", targetSize,targetSize);
       results.set(String(p.id), base64);
       }),
     );

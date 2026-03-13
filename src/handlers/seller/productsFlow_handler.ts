@@ -150,7 +150,7 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
     rememberVariableProduct(token, String(product.id));
     return {
       screen: "PRODUCT_DETAIL_VARIABLE",
-      data: await buildVariableDetailData(product),
+      data: await buildVariableDetailData(product,mapImageUrl),
     };
   }
 
@@ -184,7 +184,7 @@ async function handleVariationDetail(parsed: FlowRequest): Promise<FlowResponse>
         rememberVariableProduct(token, String(product.id));
         return {
           screen: "PRODUCT_DETAIL_VARIABLE",
-          data: await buildVariableDetailData(product),
+          data: await buildVariableDetailData(product,mapImageUrl),
         };
       }
     }
