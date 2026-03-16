@@ -18,6 +18,11 @@ export interface AddProductState {
   couleur?: string;
   taille?: string;
   quantite?: string;
+  product_id?: string;
+  submitted_at?: number;
+  submit_status?: string;
+  submit_message?: string;
+  submit_error_code?: string;
 }
 
 interface AddProductCacheEntry {

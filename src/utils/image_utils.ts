@@ -226,12 +226,24 @@ export async function prefetchNavListImages(
   const results = new Map<string, string>();
   const targetSize = normalizeTargetSize(size);
 
+  const resolveImageUrl = (value: string | string[] | undefined): string => {
+    if (Array.isArray(value)) {
+      const first = value.find((item) => typeof item === "string" && item.trim().length > 0);
+      return first ? first.trim() : "";
+    }
+    if (typeof value === "string") {
+      return value.trim();
+    }
+    return "";
+  };
+
   const concurrency = 2;
   for (let index = 0; index < products.length; index += concurrency) {
     const batch = products.slice(index, index + concurrency);
     await Promise.all(
       batch.map(async (p) => {
-      const base64 = await buildImageBase64(p.image_src?.[0] || "", targetSize,targetSize);
+      const imageUrl = resolveImageUrl(p.image_src);
+      const base64 = await buildImageBase64(imageUrl, targetSize, targetSize);
       results.set(String(p.id), base64);
       }),
     );

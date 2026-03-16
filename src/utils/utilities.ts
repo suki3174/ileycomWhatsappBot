@@ -70,7 +70,7 @@ export function convertTndToEur(tnd: number): number {
   const safeTnd = toNumber(tnd, 0);
   if (safeTnd <= 0) return 0;
   const eur = safeTnd / 3.358 + 9;
-  return Math.round(eur);
+  return Math.round(eur * 100) / 100;
 }
 
 export function formatGainTnd(sellingPrice: number): string {
