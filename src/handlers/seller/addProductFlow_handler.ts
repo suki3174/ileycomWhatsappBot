@@ -7,20 +7,26 @@ import {
   formatGainTnd,
   formatGainEur,
   toNumber,
+  hasInvalidPromoPrice,
+  parsePrice,
+  resolveEurPrices,
 } from "@/utils/utilities";
 import {
   getAddProductState,
   updateAddProductState,
-} from "@/repositories/add_product_cache";
+} from "@/repositories/addProduct/add_product_cache";
 import {
   getProductCategoriesCached,
+  getSubcategoriesByCategoryCached,
   persistDraftProduct,
   convertTndPricesToEur,
 } from "@/services/add_product_service";
-import { toCarouselBase64FromBase64 } from "@/utils/image_utils";
+import { buildCarousel, toCarouselBase64FromBase64 } from "@/utils/image_utils";
 import crypto from "crypto";
+import { SubCategory } from "@/models/category_model";
+import { decryptWhatsAppMedia } from "@/utils/crypto";
 
-// ─── Constants ───────────────────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 const DEFAULT_CATEGORIES = [
   { id: "mode", title: "Mode & Vetements" },
@@ -35,131 +41,112 @@ const DEFAULT_CATEGORIES = [
   { id: "autre", title: "Autre" },
 ];
 
-/** 1×1 transparent PNG — used to fill empty carousel slots */
-const IMAGE_PLACEHOLDER =
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+/**
+ * Fallback subcategories map keyed by category id.
+ * Each item includes a `description` field rendered as the breadcrumb
+ * path inside the Dropdown (e.g. "Mode & Vetements > Robes").
+ */
+const DEFAULT_SUBCATEGORIES: Record<
+  string,
+  Array<{ id: string; title: string; description: string }>
+> = {
+  mode: [
+    { id: "robes",      title: "Robes",            description: "Mode & Vetements > Robes" },
+    { id: "hauts",      title: "Hauts & T-shirts",  description: "Mode & Vetements > Hauts & T-shirts" },
+    { id: "pantalons",  title: "Pantalons & Jeans", description: "Mode & Vetements > Pantalons & Jeans" },
+    { id: "chaussures", title: "Chaussures",        description: "Mode & Vetements > Chaussures" },
+    { id: "accessoires_mode", title: "Autres accessoires", description: "Mode & Vetements > Autres accessoires" },
+  ],
+  electronique: [
+    { id: "smartphones",  title: "Smartphones",      description: "Electronique > Smartphones" },
+    { id: "ordinateurs",  title: "Ordinateurs",      description: "Electronique > Ordinateurs" },
+    { id: "tv",           title: "TV & Audio",       description: "Electronique > TV & Audio" },
+    { id: "accessoires_elec", title: "Accessoires",  description: "Electronique > Accessoires" },
+  ],
+  maison: [
+    { id: "meubles",    title: "Meubles",           description: "Maison & Decoration > Meubles" },
+    { id: "deco",       title: "Decoration",        description: "Maison & Decoration > Decoration" },
+    { id: "cuisine",    title: "Cuisine",           description: "Maison & Decoration > Cuisine" },
+    { id: "linge",      title: "Linge de maison",   description: "Maison & Decoration > Linge de maison" },
+  ],
+  beaute: [
+    { id: "skincare",   title: "Skincare",          description: "Beaute & Sante > Skincare" },
+    { id: "maquillage", title: "Maquillage",        description: "Beaute & Sante > Maquillage" },
+    { id: "parfums",    title: "Parfums",           description: "Beaute & Sante > Parfums" },
+    { id: "sante",      title: "Sante & Hygiene",   description: "Beaute & Sante > Sante & Hygiene" },
+  ],
+  sport: [
+    { id: "fitness",    title: "Fitness",           description: "Sport & Loisirs > Fitness" },
+    { id: "outdoor",    title: "Outdoor",           description: "Sport & Loisirs > Outdoor" },
+    { id: "sports_eau", title: "Sports aquatiques", description: "Sport & Loisirs > Sports aquatiques" },
+  ],
+  alimentaire: [
+    { id: "epicerie",   title: "Epicerie",          description: "Alimentaire > Epicerie" },
+    { id: "boissons",   title: "Boissons",          description: "Alimentaire > Boissons" },
+    { id: "bio",        title: "Bio & Naturel",     description: "Alimentaire > Bio & Naturel" },
+  ],
+  jouets: [
+    { id: "bebes",      title: "Bebe (0-3 ans)",    description: "Jouets & Enfants > Bebe (0-3 ans)" },
+    { id: "jeux",       title: "Jeux de societe",   description: "Jouets & Enfants > Jeux de societe" },
+    { id: "peluches",   title: "Peluches",          description: "Jouets & Enfants > Peluches" },
+  ],
+  auto: [
+    { id: "pieces",     title: "Pieces detachees",  description: "Auto & Moto > Pieces detachees" },
+    { id: "accessoires_auto", title: "Accessoires", description: "Auto & Moto > Accessoires" },
+    { id: "entretien",  title: "Entretien",         description: "Auto & Moto > Entretien" },
+  ],
+  livres: [
+    { id: "romans",     title: "Romans",            description: "Livres & Papeterie > Romans" },
+    { id: "scolaire",   title: "Scolaire",          description: "Livres & Papeterie > Scolaire" },
+    { id: "papeterie",  title: "Papeterie",         description: "Livres & Papeterie > Papeterie" },
+  ],
+  autre: [
+    { id: "autre_divers", title: "Divers",          description: "Autre > Divers" },
+  ],
+};
 
-const CAROUSEL_SIZE = 3;
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+const CAROUSEL_SIZE=3
 
 /**
- * Parses a number that may use a comma as decimal separator (e.g. "55,5" → 55.5).
- * Falls back to `defaultVal` when the value is empty, undefined, or not a number.
+ * Returns the subcategories for a given category id, trying the service first
+ * then falling back to the in-memory cache stored during INIT, then to the
+ * hard-coded DEFAULT_SUBCATEGORIES map.
  */
-function parsePrice(value: unknown, defaultVal: number = 0): number {
-  if (value === null || value === undefined || value === "") return defaultVal;
-  const normalized = String(value).replace(",", ".");
-  const parsed = parseFloat(normalized);
-  return Number.isFinite(parsed) ? parsed : defaultVal;
-}
-
-function hasInvalidPromoPrice(regular: number, promo: number): boolean {
-  return regular > 0 && promo > 0 && promo >= regular;
-}
-
-/**
- * Build a carousel array from real images only.
- */
-function buildCarousel(
-  images: string[],
-  offset: number
-): Array<{ src: string; "alt-text": string }> {
-  return images.slice(offset, offset + CAROUSEL_SIZE).map((src, i) => ({
-    src,
-    "alt-text": `Photo ${offset + i + 1}`,
-  }));
-}
-
-async function resolveEurPrices(
-  regularTnd: number,
-  promoTnd: number,
-): Promise<{ regularEur: number; promoEur: number }> {
-  return convertTndPricesToEur(regularTnd, promoTnd);
-}
-
-// ─── WhatsApp media decryption ────────────────────────────────────────────────
-
-/**
- * Downloads and decrypts a WhatsApp Flows PhotoPicker image.
- *
- * WhatsApp encrypts uploaded media with AES-256-CBC. The .enc file structure is:
- *   [ ciphertext ][ mac: 10 bytes ]
- *
- * Decryption steps:
- *   1. Fetch the cdn_url
- *   2. Split off the last 10 bytes (HMAC-SHA256 truncated MAC)
- *   3. Verify: HMAC-SHA256(hmac_key, iv + ciphertext)[0..9] === mac
- *   4. Decrypt: AES-256-CBC(encryption_key, iv, ciphertext) → plaintext media
- *
- * Returns null on any failure (network, decryption, verification).
- */
-async function decryptWhatsAppMedia(img: {
-  cdn_url: string;
-  encryption_metadata: {
-    encryption_key: string;
-    hmac_key: string;
-    iv: string;
-    plaintext_hash: string;
-    encrypted_hash: string;
-  };
-}): Promise<Buffer | null> {
+async function resolveSubcategories(
+  token: string,
+  categoryId: string
+): Promise<SubCategory[]> {
   try {
-    const encryptionKey = Buffer.from(img.encryption_metadata.encryption_key, "base64");
-    const hmacKey       = Buffer.from(img.encryption_metadata.hmac_key, "base64");
-    const iv            = Buffer.from(img.encryption_metadata.iv, "base64");
-
-    // 1. Download the encrypted file
-    const response = await fetch(img.cdn_url, {
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!response.ok) {
-      console.warn("WhatsApp CDN fetch failed:", img.cdn_url, response.status);
-      return null;
+    const fromService = await getSubcategoriesByCategoryCached(categoryId);
+    if (Array.isArray(fromService) && fromService.length > 0) {
+      return fromService;
     }
-    const encryptedBytes = Buffer.from(await response.arrayBuffer());
-
-    // 2. Split: last 10 bytes = MAC, rest = ciphertext
-    const mac        = encryptedBytes.subarray(encryptedBytes.length - 10);
-    const ciphertext = encryptedBytes.subarray(0, encryptedBytes.length - 10);
-
-    // 3. Verify HMAC-SHA256(hmac_key, iv + ciphertext) — first 10 bytes must match
-    const hmac = crypto.createHmac("sha256", hmacKey);
-    hmac.update(iv);
-    hmac.update(ciphertext);
-    const expectedMac = hmac.digest().subarray(0, 10);
-
-    if (!crypto.timingSafeEqual(expectedMac, mac)) {
-      console.warn("WhatsApp media HMAC verification failed:", img.cdn_url);
-      return null;
-    }
-
-    // 4. Decrypt AES-256-CBC
-    const decipher = crypto.createDecipheriv("aes-256-cbc", encryptionKey, iv);
-    const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
-
-    return decrypted;
-  } catch (err) {
-    console.warn("decryptWhatsAppMedia error:", err);
-    return null;
+  } catch {
+    // fall through to cache / defaults
   }
+
+  const state = getAddProductState(token);
+  const cached = state?.subcategories?.[categoryId];
+  if (Array.isArray(cached) && cached.length > 0) return cached;
+
+  return DEFAULT_SUBCATEGORIES[categoryId] ?? [
+    { id: "autre", title: "Autre", description: `${categoryId} > Autre` },
+  ];
 }
+
+
+
+
 
 // ─── Screen handlers ──────────────────────────────────────────────────────────
 
 /**
- * SCREEN_PHOTO → decrypt, resize & save images → SCREEN_NAME
- *
- * WhatsApp Flows PhotoPicker returns objects shaped:
- *   { file_name, media_id, cdn_url, encryption_metadata: { encryption_key, hmac_key, iv, ... } }
- *
- * Images are AES-256-CBC encrypted on the CDN. We decrypt each one, then run
- * it through sharp (320×240 JPEG, <100KB) before storing.
+ * SCREEN_PHOTO → decrypt & compress images → SCREEN_NAME
  */
 async function handlePhoto(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
   const data = parsed.data || {};
-
   const raw = Array.isArray(data.images) ? data.images : [];
 
   const images = (
@@ -171,18 +158,13 @@ async function handlePhoto(parsed: FlowRequest): Promise<FlowResponse> {
           typeof img.cdn_url !== "string" ||
           !img.encryption_metadata
         ) {
-          // Fallback: plain base64 string (should not happen in production)
           if (typeof img === "string" && img.length > 0) {
             return toCarouselBase64FromBase64(img);
           }
           return null;
         }
-
-        // Decrypt the WhatsApp-encrypted CDN image
         const plainBuffer = await decryptWhatsAppMedia(img);
         if (!plainBuffer) return null;
-
-        // Process through sharp: 320×240 JPEG <100KB
         return toCarouselBase64FromBase64(plainBuffer.toString("base64"));
       })
     )
@@ -194,7 +176,7 @@ async function handlePhoto(parsed: FlowRequest): Promise<FlowResponse> {
 }
 
 /**
- * SCREEN_NAME → save product_name, return cached categories → SCREEN_CATEGORY
+ * SCREEN_NAME → save product_name → SCREEN_CATEGORY (categories already cached in INIT)
  */
 async function handleSaveName(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
@@ -203,78 +185,116 @@ async function handleSaveName(parsed: FlowRequest): Promise<FlowResponse> {
   const productName = String(data.product_name ?? "").trim();
   updateAddProductState(token, { product_name: productName });
 
-  let categories = DEFAULT_CATEGORIES;
-  try {
-    const fromPlugin = await getProductCategoriesCached();
-    if (Array.isArray(fromPlugin) && fromPlugin.length > 0) {
-      categories = fromPlugin;
-      updateAddProductState(token, { categories: fromPlugin });
-    }
-  } catch {
-    const state = getAddProductState(token);
-    categories = state?.categories?.length ? state.categories : DEFAULT_CATEGORIES;
+  // Prefer categories cached during INIT; re-fetch only as a last resort
+  const state = getAddProductState(token);
+  let categories =
+    Array.isArray(state?.categories) && state.categories.length > 0
+      ? state.categories
+      : DEFAULT_CATEGORIES;
+
+  if (categories === DEFAULT_CATEGORIES) {
+    try {
+      const fromService = await getProductCategoriesCached();
+      if (Array.isArray(fromService) && fromService.length > 0) {
+        categories = fromService;
+        updateAddProductState(token, { categories });
+      }
+    } catch { /* keep defaults */ }
   }
 
-  return {
-    screen: "SCREEN_CATEGORY",
-    data: { categories },
-  };
+  return { screen: "SCREEN_CATEGORY", data: { categories } };
 }
 
 /**
- * SCREEN_CATEGORY → save category → SCREEN_PRICE_TND
+ * SCREEN_CATEGORY → save category id → SCREEN_SUBCATEGORY
+ * Loads the matching subcategories (from INIT cache or service).
  */
 async function handleSaveCategory(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
   const data = parsed.data || {};
 
-  const productCategory = String(data.product_category ?? "").trim();
-  updateAddProductState(token, { product_category: productCategory });
+  const categoryId    = String(data.product_category ?? "").trim();
+  const state         = getAddProductState(token);
+
+  // Resolve the human-readable label for the selected category
+  const allCategories: Array<{ id: string; title: string }> =
+    Array.isArray(state?.categories) && state.categories.length > 0
+      ? state.categories
+      : DEFAULT_CATEGORIES;
+
+  const categoryLabel =
+    allCategories.find((c) => c.id === categoryId)?.title ?? categoryId;
+
+  updateAddProductState(token, {
+    product_category: categoryId,
+  });
+
+  const subcategories = await resolveSubcategories(token, categoryId);
 
   return {
-    screen: "SCREEN_PRICE_TND",
-    data: { gain_tnd: "" },
+    screen: "SCREEN_SUBCATEGORY",
+    data: {
+      parent_category_label: categoryLabel,
+      subcategories,
+    },
   };
+}
+
+/**
+ * SCREEN_SUBCATEGORY → save subcategory → SCREEN_PRICE_TND
+ */
+async function handleSaveSubcategory(parsed: FlowRequest): Promise<FlowResponse> {
+  const token = getFlowToken(parsed);
+  const data = parsed.data || {};
+
+  const subcategoryId = String(data.product_subcategory ?? "").trim();
+  const state         = getAddProductState(token);
+
+  // Build the human-readable breadcrumb label from the cached subcategories map
+  const categoryId    = state?.product_category ?? "";
+  const cachedSubs: Array<{ id: string; title: string; description: string }> =
+    state?.subcategories?.[categoryId] ??
+    DEFAULT_SUBCATEGORIES[categoryId] ??
+    [];
+
+  const subcategoryLabel =
+    cachedSubs.find((s) => s.id === subcategoryId)?.description ??
+    subcategoryId;
+
+  updateAddProductState(token, {
+    product_subcategory: subcategoryId,
+  });
+
+  return { screen: "SCREEN_PRICE_TND", data: { gain_tnd: "" } };
 }
 
 /**
  * SCREEN_PRICE_TND — EmbeddedLink "Calculer gain"
- * Computes the gain and stays on the same screen.
- * Promo validation is handled by the flow itself (inline If condition).
  */
-async function handleCalculateGainTnd(
-  parsed: FlowRequest
-): Promise<FlowResponse> {
+async function handleCalculateGainTnd(parsed: FlowRequest): Promise<FlowResponse> {
   const data = parsed.data || {};
 
   const prixRegulierTnd = parsePrice(data.prix_regulier_tnd);
-  const prixPromoTnd = parsePrice(data.prix_promo_tnd);
+  const prixPromoTnd    = parsePrice(data.prix_promo_tnd);
 
   const sellingPrice = computeSellingPrice(prixRegulierTnd, prixPromoTnd);
-  const gainTnd = formatGainTnd(sellingPrice);
+  const gainTnd      = formatGainTnd(sellingPrice);
 
-  return {
-    screen: "SCREEN_PRICE_TND",
-    data: { gain_tnd: gainTnd },
-  };
+  return { screen: "SCREEN_PRICE_TND", data: { gain_tnd: gainTnd } };
 }
 
 /**
  * SCREEN_PRICE_TND — Footer "Continuer"
- * Saves TND prices, converts to EUR as initial hints → SCREEN_PRICE_EUR
  */
 async function handleSavePriceTnd(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
-  const data = parsed.data || {};
+  const data  = parsed.data || {};
 
   const prixRegulierTnd = parsePrice(data.prix_regulier_tnd);
-  const prixPromoTnd = parsePrice(data.prix_promo_tnd);
+  const prixPromoTnd    = parsePrice(data.prix_promo_tnd);
 
   if (hasInvalidPromoPrice(prixRegulierTnd, prixPromoTnd)) {
-    return {
-      screen: "SCREEN_PRICE_TND",
-      data: { gain_tnd: "" },
-    };
+    return { screen: "SCREEN_PRICE_TND", data: { gain_tnd: "" } };
   }
 
   updateAddProductState(token, {
@@ -282,100 +302,80 @@ async function handleSavePriceTnd(parsed: FlowRequest): Promise<FlowResponse> {
     prix_promo_tnd: prixPromoTnd,
   });
 
-  const eurPrices = await resolveEurPrices(prixRegulierTnd, prixPromoTnd);
+  const eurPrices  = await resolveEurPrices(prixRegulierTnd, prixPromoTnd);
   const eurRegular = eurPrices.regularEur;
-  const eurPromo = eurPrices.promoEur > 0 ? eurPrices.promoEur : null;
+  const eurPromo   = eurPrices.promoEur > 0 ? eurPrices.promoEur : null;
 
   return {
     screen: "SCREEN_PRICE_EUR",
     data: {
       prix_regulier_eur_init: eurRegular ? String(eurRegular) : "",
-      prix_promo_eur_init: eurPromo ? String(eurPromo) : "Optionnel",
-      gain_eur: "",
-      // TND prices passed through so they survive a gain recalculation round-trip
-      prix_regulier_tnd: String(prixRegulierTnd),
-      prix_promo_tnd: prixPromoTnd > 0 ? String(prixPromoTnd) : "",
+      prix_promo_eur_init:    eurPromo   ? String(eurPromo)   : "Optionnel",
+      gain_eur:               "",
+      prix_regulier_tnd:      String(prixRegulierTnd),
+      prix_promo_tnd:         prixPromoTnd > 0 ? String(prixPromoTnd) : "",
     },
   };
 }
 
 /**
  * SCREEN_PRICE_EUR — EmbeddedLink "Calculer gain"
- * Computes EUR gain and stays on the same screen.
- * TND prices are echoed back so the data model stays intact.
- * Promo validation is handled by the flow itself (inline If condition).
  */
-async function handleCalculateGainEur(
-  parsed: FlowRequest
-): Promise<FlowResponse> {
+async function handleCalculateGainEur(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
-  const data = parsed.data || {};
+  const data  = parsed.data || {};
+  const state = getAddProductState(token) || undefined;
 
-  const state = getAddProductState(token) || {};
-
-  // Parse typed value — fall back to TND conversion if empty
   let prixRegulierEur = parsePrice(data.prix_regulier_eur);
-  let prixPromoEur = parsePrice(data.prix_promo_eur);
+  let prixPromoEur    = parsePrice(data.prix_promo_eur);
 
-  if (prixRegulierEur <= 0 || (prixPromoEur <= 0 && (state.prix_promo_tnd ?? 0) > 0)) {
+  if (prixRegulierEur <= 0 || (prixPromoEur <= 0 && (state?.prix_promo_tnd ?? 0) > 0)) {
     const eurPrices = await resolveEurPrices(
-      state.prix_regulier_tnd ?? 0,
-      state.prix_promo_tnd ?? 0,
+      state?.prix_regulier_tnd ?? 0,
+      state?.prix_promo_tnd   ?? 0
     );
-    if (prixRegulierEur <= 0) {
-      prixRegulierEur = eurPrices.regularEur;
-    }
-    if (prixPromoEur <= 0 && (state.prix_promo_tnd ?? 0) > 0) {
-      prixPromoEur = eurPrices.promoEur;
-    }
+    if (prixRegulierEur <= 0) prixRegulierEur = eurPrices.regularEur;
+    if (prixPromoEur <= 0 && (state?.prix_promo_tnd ?? 0) > 0) prixPromoEur = eurPrices.promoEur;
   }
 
-  // Persist so the footer "Continuer" sees the resolved values
   updateAddProductState(token, {
     prix_regulier_eur: prixRegulierEur,
-    prix_promo_eur: prixPromoEur,
+    prix_promo_eur:    prixPromoEur,
   });
 
   const sellingPrice = computeSellingPrice(prixRegulierEur, prixPromoEur);
-  const gainEur = formatGainEur(sellingPrice);
+  const gainEur      = formatGainEur(sellingPrice);
 
   return {
     screen: "SCREEN_PRICE_EUR",
     data: {
       prix_regulier_eur_init: String(prixRegulierEur),
-      prix_promo_eur_init: prixPromoEur > 0 ? String(prixPromoEur) : "Optionnel",
-      gain_eur: gainEur,
-      prix_regulier_tnd: String(state.prix_regulier_tnd ?? 0),
-      prix_promo_tnd: state.prix_promo_tnd ? String(state.prix_promo_tnd) : "",
+      prix_promo_eur_init:    prixPromoEur > 0 ? String(prixPromoEur) : "Optionnel",
+      gain_eur:               gainEur,
+      prix_regulier_tnd:      String(state?.prix_regulier_tnd ?? 0),
+      prix_promo_tnd:         state?.prix_promo_tnd ? String(state.prix_promo_tnd) : "",
     },
   };
 }
 
 /**
  * SCREEN_PRICE_EUR — Footer "Continuer"
- * Saves EUR prices → SCREEN_DETAILS
  */
 async function handleSavePriceEur(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
-  const data = parsed.data || {};
+  const data  = parsed.data || {};
+  const state = getAddProductState(token) || undefined;
 
-  const state = getAddProductState(token) || {};
-
-  // Parse what the user typed (supports comma decimals)
   let prixRegulierEur = parsePrice(data.prix_regulier_eur);
-  let prixPromoEur = parsePrice(data.prix_promo_eur);
+  let prixPromoEur    = parsePrice(data.prix_promo_eur);
 
-  if (prixRegulierEur <= 0 || (prixPromoEur <= 0 && (state.prix_promo_tnd ?? 0) > 0)) {
+  if (prixRegulierEur <= 0 || (prixPromoEur <= 0 && (state?.prix_promo_tnd ?? 0) > 0)) {
     const eurPrices = await resolveEurPrices(
-      state.prix_regulier_tnd ?? 0,
-      state.prix_promo_tnd ?? 0,
+      state?.prix_regulier_tnd ?? 0,
+      state?.prix_promo_tnd   ?? 0
     );
-    if (prixRegulierEur <= 0) {
-      prixRegulierEur = eurPrices.regularEur;
-    }
-    if (prixPromoEur <= 0 && (state.prix_promo_tnd ?? 0) > 0) {
-      prixPromoEur = eurPrices.promoEur;
-    }
+    if (prixRegulierEur <= 0) prixRegulierEur = eurPrices.regularEur;
+    if (prixPromoEur <= 0 && (state?.prix_promo_tnd ?? 0) > 0) prixPromoEur = eurPrices.promoEur;
   }
 
   if (hasInvalidPromoPrice(prixRegulierEur, prixPromoEur)) {
@@ -383,17 +383,17 @@ async function handleSavePriceEur(parsed: FlowRequest): Promise<FlowResponse> {
       screen: "SCREEN_PRICE_EUR",
       data: {
         prix_regulier_eur_init: String(prixRegulierEur),
-        prix_promo_eur_init: prixPromoEur > 0 ? String(prixPromoEur) : "Optionnel",
-        gain_eur: "",
-        prix_regulier_tnd: String(state.prix_regulier_tnd ?? 0),
-        prix_promo_tnd: state.prix_promo_tnd ? String(state.prix_promo_tnd) : "",
+        prix_promo_eur_init:    prixPromoEur > 0 ? String(prixPromoEur) : "Optionnel",
+        gain_eur:               "",
+        prix_regulier_tnd:      String(state?.prix_regulier_tnd ?? 0),
+        prix_promo_tnd:         state?.prix_promo_tnd ? String(state.prix_promo_tnd) : "",
       },
     };
   }
 
   updateAddProductState(token, {
     prix_regulier_eur: prixRegulierEur,
-    prix_promo_eur: prixPromoEur,
+    prix_promo_eur:    prixPromoEur,
   });
 
   return { screen: "SCREEN_DETAILS", data: {} };
@@ -401,142 +401,129 @@ async function handleSavePriceEur(parsed: FlowRequest): Promise<FlowResponse> {
 
 /**
  * SCREEN_DETAILS — Footer "Continuer"
- * Saves product details → SCREEN_QUANTITY
  */
 async function handleSaveDetails(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
-  const data = parsed.data || {};
+  const data  = parsed.data || {};
 
   updateAddProductState(token, {
-    longueur: toNumber(data.longueur, 0),
-    largeur: toNumber(data.largeur, 0),
-    profondeur: toNumber(data.profondeur, 0),
+    longueur:        toNumber(data.longueur, 0),
+    largeur:         toNumber(data.largeur, 0),
+    profondeur:      toNumber(data.profondeur, 0),
     unite_dimension: String(data.unite_dimension ?? "").trim(),
-    valeur_poids: toNumber(data.valeur_poids, 0),
-    unite_poids: String(data.unite_poids ?? "").trim(),
-    couleur: String(data.couleur ?? "").trim(),
-    taille: String(data.taille ?? "").trim(),
+    valeur_poids:    toNumber(data.valeur_poids, 0),
+    unite_poids:     String(data.unite_poids ?? "").trim(),
+    couleur:         String(data.couleur ?? "").trim(),
+    taille:          String(data.taille  ?? "").trim(),
   });
 
-  return {
-    screen: "SCREEN_QUANTITY",
-    data: { error_quantite: "" },
-  };
+  return { screen: "SCREEN_QUANTITY", data: {} };
 }
 
 /**
  * SCREEN_QUANTITY — Footer "Continuer"
- * Validates & saves quantity, creates the product, then builds SCREEN_SUMMARY data.
- *
- * Carousel rules:
- *  - Each carousel holds exactly CAROUSEL_SIZE (3) slots.
- *  - show_carousel_2 = true only when there are more than 3 real images.
+ * Saves the quantity then builds the summary data.
+ * Product creation is intentionally deferred to SCREEN_SUMMARY (final confirmation).
  */
-async function handleSaveQuantity(
-  parsed: FlowRequest
-): Promise<FlowResponse> {
+async function handleSaveQuantity(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
-  const data = parsed.data || {};
+  const data  = parsed.data || {};
 
-  // Resolve quantity: chips take priority, fallback to manual input, default 1
-  const chips = Array.isArray(data.quantite_chips)
-    ? (data.quantite_chips as string[])
-    : [];
+  const chips = Array.isArray(data.quantite_chips) ? (data.quantite_chips as string[]) : [];
   let quantity = chips[0] ? parseInt(chips[0], 10) : NaN;
   if (!Number.isFinite(quantity) || quantity <= 0) {
     const manual = toNumber(data.quantite_manuelle, 0);
     quantity = manual > 0 ? manual : 1;
   }
 
-  let current = updateAddProductState(token, { quantite: String(quantity) });
-
-  if (!(current.submitted_at && current.product_id)) {
-    const createResult = await persistDraftProduct(token, current, quantity);
-
-    if (!createResult.ok) {
-      current = updateAddProductState(token, {
-        submit_status: "error",
-        submit_message: createResult.errorMessage || "Impossible d'ajouter le produit.",
-        submit_error_code: createResult.errorCode || "create_failed",
-        product_id: "",
-      });
-    } else {
-      current = updateAddProductState(token, {
-        submitted_at: Date.now(),
-        submit_status: "submitted",
-        submit_message: "Produit ajoute avec succes.",
-        submit_error_code: "",
-        product_id: createResult.productId,
-      });
-    }
-  }
+  const current = updateAddProductState(token, { quantite: String(quantity) });
 
   const rawImages: string[] = current.images ?? [];
-
-  // Carousel 1: slots 0-2
-  const carousel1 = buildCarousel(rawImages, 0);
-
-  // Carousel 2: slots 3-5 — only shown when more than 3 real images exist
+  const carousel1   = buildCarousel(rawImages, 0);
   const showCarousel2 = rawImages.length > CAROUSEL_SIZE;
-  const carousel2 = showCarousel2
-    ? buildCarousel(rawImages, CAROUSEL_SIZE)
-    : [];
+  const carousel2   = showCarousel2 ? buildCarousel(rawImages, CAROUSEL_SIZE) : [];
 
   return {
     screen: "SCREEN_SUMMARY",
     data: {
-      images: carousel1,
-      images_2: carousel2,
+      images:          carousel1,
+      images_2:        carousel2,
       show_carousel_2: showCarousel2,
 
-      product_name: current.product_name ?? "",
-      product_category: current.product_category ?? "",
+      product_name:         current.product_name         ?? "",
+      product_category:      current.product_category ?? "",
+      product_subcategory: current.product_subcategory ?? "",
 
-      prix_regulier_tnd: current.prix_regulier_tnd
-        ? String(current.prix_regulier_tnd)
-        : "",
-      prix_promo_tnd: current.prix_promo_tnd
-        ? String(current.prix_promo_tnd)
-        : "",
-      prix_regulier_eur: current.prix_regulier_eur
-        ? String(current.prix_regulier_eur)
-        : "",
-      prix_promo_eur: current.prix_promo_eur
-        ? String(current.prix_promo_eur)
-        : "",
+      prix_regulier_tnd: current.prix_regulier_tnd ? String(current.prix_regulier_tnd) : "",
+      prix_promo_tnd:    current.prix_promo_tnd    ? String(current.prix_promo_tnd)    : "",
+      prix_regulier_eur: current.prix_regulier_eur ? String(current.prix_regulier_eur) : "",
+      prix_promo_eur:    current.prix_promo_eur    ? String(current.prix_promo_eur)    : "",
 
-      longueur: current.longueur ? String(current.longueur) : "",
-      largeur: current.largeur ? String(current.largeur) : "",
-      profondeur: current.profondeur ? String(current.profondeur) : "",
+      longueur:        current.longueur    ? String(current.longueur)    : "",
+      largeur:         current.largeur     ? String(current.largeur)     : "",
+      profondeur:      current.profondeur  ? String(current.profondeur)  : "",
       unite_dimension: current.unite_dimension ?? "",
 
       valeur_poids: current.valeur_poids ? String(current.valeur_poids) : "",
-      unite_poids: current.unite_poids ?? "",
+      unite_poids:  current.unite_poids  ?? "",
 
-      couleur: current.couleur ?? "",
-      taille: current.taille ?? "",
+      couleur:  current.couleur  ?? "",
+      taille:   current.taille   ?? "",
       quantite: String(quantity),
-      submit_ok: !!current.product_id,
-      product_id: current.product_id ?? "",
     },
   };
 }
 
 /**
- * SCREEN_SUMMARY — final confirmation screen
- * Product creation already happened at the previous step.
+ * SCREEN_SUMMARY — Footer "Soumettre le produit"
+ * Performs the final product insert and redirects to SUCCESS.
  */
 async function handleSubmitSummary(parsed: FlowRequest): Promise<FlowResponse> {
-  const token = getFlowToken(parsed);
-  const submitted = getAddProductState(token) || {};
+  const token   = getFlowToken(parsed);
+  const current = getAddProductState(token) ?? {};
 
-  return {
-    screen: "SCREEN_SUMMARY",
-    data: {
-      submit_ok: !!submitted.product_id,
-      product_id: submitted.product_id ?? "",
-    },
-  };
+  const quantity = parseInt(String(current.quantite ?? "1"), 10);
+
+  // Guard: skip if already submitted (e.g. user double-taps the footer)
+  if (current.submitted_at && current.product_id) {
+    console.info("Product already submitted, skipping duplicate insert:", current.product_id);
+    return { screen: "SUCCESS", data: {} };
+  }
+
+  const createResult = await persistDraftProduct(token, current, quantity);
+
+  if (!createResult.ok) {
+    console.error(
+      "persistDraftProduct failed:",
+      createResult.errorCode,
+      createResult.errorMessage
+    );
+    updateAddProductState(token, {
+      submit_status:      "error",
+      submit_message:     createResult.errorMessage ?? "Impossible d'ajouter le produit.",
+      submit_error_code:  createResult.errorCode    ?? "create_failed",
+      product_id:         "",
+    });
+
+    // Stay on the summary screen and surface the error
+    return {
+      screen: "SCREEN_SUMMARY",
+      data: {
+        
+        error_message: createResult.errorMessage ?? "Une erreur est survenue. Veuillez réessayer.",
+      },
+    };
+  }
+
+  updateAddProductState(token, {
+    submitted_at:      Date.now(),
+    submit_status:     "submitted",
+    submit_message:    "Produit ajouté avec succès.",
+    submit_error_code: "",
+    product_id:        createResult.productId,
+  });
+
+  return { screen: "SUCCESS", data: {} };
 }
 
 // ─── Main dispatcher ──────────────────────────────────────────────────────────
@@ -546,38 +533,63 @@ export async function handleAddProductFlow(
 ): Promise<FlowResponse | null> {
   const action = (parsed.action || "").toUpperCase();
   const screen = parsed.screen || "";
-  const data = parsed.data || {};
+  const data   = parsed.data   || {};
 
   // ── INIT ──────────────────────────────────────────────────────────────────
   if (action === "INIT") {
     const token = getFlowToken(parsed);
+
     if (token) {
-      // Fetch and cache categories during INIT so they are ready for SCREEN_NAME
+      // Fetch categories and all subcategories in parallel so every subsequent
+      // screen transition is instant (no extra round-trips to the service).
       try {
-        const categories = await getProductCategoriesCached();
-        updateAddProductState(token, { categories });
+        const [categories, subcategoriesMap] = await Promise.all([
+          getProductCategoriesCached(),
+          // Fetch subcategories for every known category id upfront
+          (async () => {
+            const catList: Array<{ id: string }> =
+              await getProductCategoriesCached().catch(() => DEFAULT_CATEGORIES);
+
+            const entries = await Promise.all(
+              catList.map(async (cat) => {
+                try {
+                  const subs = await getSubcategoriesByCategoryCached(cat.id);
+                  return [cat.id, subs] as const;
+                } catch {
+                  return [cat.id, DEFAULT_SUBCATEGORIES[cat.id] ?? []] as const;
+                }
+              })
+            );
+            return Object.fromEntries(entries);
+          })(),
+        ]);
+
+        updateAddProductState(token, {
+          categories,
+          subcategories: subcategoriesMap,
+        });
       } catch {
-        updateAddProductState(token, { categories: DEFAULT_CATEGORIES });
+        // Ignore errors and rely on defaults in the handlers; better to show something than nothing
       }
     }
+
     return { screen: "SCREEN_PHOTO", data: {} };
   }
 
-  // ── DATA_EXCHANGE ─────────────────────────────────────────────────────────
-  if (action === "COMPLETE") {
-    return handleSubmitSummary(parsed);
-  }
+  
 
+  // ── DATA_EXCHANGE ─────────────────────────────────────────────────────────
   if (action === "DATA_EXCHANGE") {
     const cmd = String(data.cmd || "").toLowerCase();
 
     if (!screen) {
-      // Some clients emit empty screen on transition errors; recover to category step.
-      const token = getFlowToken(parsed);
-      const state = getAddProductState(token);
-      const categories = state?.categories?.length
-        ? state.categories
-        : await getProductCategoriesCached();
+      // Recover gracefully: send the user back to the category step
+      const token      = getFlowToken(parsed);
+      const state      = getAddProductState(token);
+      const categories =
+        Array.isArray(state?.categories) && state.categories.length > 0
+          ? state.categories
+          : await getProductCategoriesCached().catch(() => DEFAULT_CATEGORIES);
       return { screen: "SCREEN_CATEGORY", data: { categories } };
     }
 
@@ -590,6 +602,9 @@ export async function handleAddProductFlow(
 
       case "SCREEN_CATEGORY":
         return handleSaveCategory(parsed);
+
+      case "SCREEN_SUBCATEGORY":
+        return handleSaveSubcategory(parsed);
 
       case "SCREEN_PRICE_TND":
         if (cmd === "calculate_gain_tnd") return handleCalculateGainTnd(parsed);

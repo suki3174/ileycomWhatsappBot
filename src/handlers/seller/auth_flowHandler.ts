@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { getFlowToken, isValidEmail } from "@/utils/utilities"
 import { extractPhoneFromFlowToken } from "@/utils/repository_utils";
-import { findSellerStateByPhone } from "@/repositories/seller_repo";
+import { findSellerStateByPhone } from "@/repositories/auth/seller_repo";
 import {
   prepareSellerState,
   sellerHasCodeByFlowToken,

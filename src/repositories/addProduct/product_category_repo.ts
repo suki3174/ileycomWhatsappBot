@@ -1,7 +1,5 @@
-export interface ProductCategory {
-  id: string;
-  title: string;
-}
+
+import { ProductCategory, SubCategory } from "@/models/category_model";
 import { PLUGIN_TIMEOUT_MS, pluginPostWithRetry } from "@/utils/plugin_client";
 import {
   asRecord,
@@ -11,8 +9,10 @@ import {
 } from "@/utils/repository_utils";
 
 let cachedCategories: ProductCategory[] | null = null;
+const  cachedSubcategories:SubCategory[]| null = null;//placeholder for potential future subcategory caching logic, currently not used in plugin
 let lastFetchAt = 0;
 let cachedCategoriesSource: "plugin" | "fallback" | null = null;
+const  cachedSubCategoriesSource: "plugin" | "fallback" | null = null;//placeholder for potential future subcategory caching logic, currently not used in plugin
 const CATEGORIES_TTL_MS = 60 * 60 * 1000;
 const FALLBACK_CATEGORIES_TTL_MS = 30 * 1000;
 const MAX_FLOW_CATEGORIES = 60;
@@ -30,6 +30,7 @@ const DEFAULT_CATEGORIES: ProductCategory[] = [
   { id: "autre", title: "Autre" },
 ];
 
+
 function extractCategories(payload: Record<string, unknown> | undefined): ProductCategory[] {
   const data = asRecord(payload?.data);
   if (!data || !Array.isArray(data.categories)) return [];
@@ -46,6 +47,10 @@ function extractCategories(payload: Record<string, unknown> | undefined): Produc
 
   return mapped.slice(0, MAX_FLOW_CATEGORIES);
 }
+
+// placeholder for potential future subcategory fetching logic, currently not used in plugin
+export async function fetchAllSubCategories(): Promise<SubCategory[] | null>  {
+return cachedSubcategories}
 
 export async function fetchAllProductCategories(): Promise<ProductCategory[]> {
   const now = Date.now();
@@ -92,4 +97,6 @@ export async function fetchAllProductCategories(): Promise<ProductCategory[]> {
     return cachedCategories;
   }
 }
+
+export { SubCategory, ProductCategory };
 

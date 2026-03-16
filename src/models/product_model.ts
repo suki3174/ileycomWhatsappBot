@@ -1,4 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+
+import { SubCategory } from "./category_model";
+
 /**
  * Enum pour les types de produits supportés par votre Flow
  */
@@ -130,6 +133,35 @@ export const MOCK_PRODUCT_VARIABLE: Product = {
     },
   ],
 };
+
+export interface AddProductState {
+  images?: string[];
+  product_name?: string;
+  product_category?: string;
+  categories?: { id: string; title: string }[];
+  prix_regulier_tnd?: number;
+  prix_promo_tnd?: number;
+  prix_regulier_eur?: number;
+  prix_promo_eur?: number;
+  longueur?: number;
+  largeur?: number;
+  profondeur?: number;
+  unite_dimension?: string;
+  valeur_poids?: number;
+  unite_poids?: string;
+  couleur?: string;
+  taille?: string;
+  quantite?: string;
+  product_id?: string;
+  submitted_at?: number;
+  submit_status?: string;
+  submit_message?: string;
+  submit_error_code?: string;
+  product_subcategory?:string
+  subcategories?: { id: string; title: string }[]
+  ;// pour stocker les sous-catégories associées à la catégorie sélectionnée
+}
+
 
 /**
  * Liste mockée de produits pour un vendeur.

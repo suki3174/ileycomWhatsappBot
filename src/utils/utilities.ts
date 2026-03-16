@@ -85,3 +85,22 @@ export function formatGainEur(sellingPrice: number): string {
   return gain.toFixed(2);
 }
 
+export function parsePrice(value: unknown, defaultVal = 0): number {
+  if (value === null || value === undefined || value === "") return defaultVal;
+  const normalized = String(value).replace(",", ".");
+  const parsed = parseFloat(normalized);
+  return Number.isFinite(parsed) ? parsed : defaultVal;
+}
+
+export function hasInvalidPromoPrice(regular: number, promo: number): boolean {
+  return regular > 0 && promo > 0 && promo >= regular;
+}
+
+
+
+export async function resolveEurPrices(
+  regularTnd: number,
+  promoTnd: number
+): Promise<{ regularEur: number; promoEur: number }> {
+  return convertTndPricesToEur(regularTnd, promoTnd);
+}

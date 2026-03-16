@@ -9,7 +9,7 @@ import {
   filterOrdersByStatus,
   type OrderSummariesPage,
   type OrderStatusCounters,
-} from "@/repositories/order_repo";
+} from "@/repositories/orders/order_repo";
 import { normToken } from "@/utils/utilities";
 
 export async function getSellerOrdersByFlowToken(

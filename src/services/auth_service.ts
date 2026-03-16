@@ -5,9 +5,9 @@
   findSellerByPhone,
   upsertSellerState,
   updateSellerCode,
-} from "@/repositories/seller_repo";
+} from "@/repositories/auth/seller_repo";
 import type { Seller } from "@/models/seller_model";
-import { consumePendingCode, updateAuthWarmupCache } from "@/repositories/auth_cache";
+import { consumePendingCode, updateAuthWarmupCache } from "@/repositories/auth/auth_cache";
 import {
   generateFlowtoken,
   hasSellerCodeValue,

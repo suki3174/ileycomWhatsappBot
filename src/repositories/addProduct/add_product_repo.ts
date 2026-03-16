@@ -1,5 +1,5 @@
 import { normToken } from "@/utils/utilities";
-import type { AddProductState } from "@/repositories/add_product_cache";
+import type { AddProductState } from "@/models/product_model";
 import { PLUGIN_TIMEOUT_MS, pluginPostWithRetry } from "@/utils/plugin_client";
 import crypto from "crypto";
 import {

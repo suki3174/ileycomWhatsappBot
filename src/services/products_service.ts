@@ -1,12 +1,12 @@
 import type { Product, ProductVariation } from "@/models/product_model";
-import { loadAndCacheProducts, setLastVariableProductId } from "@/repositories/poducts_cache";
+import { loadAndCacheProducts, setLastVariableProductId } from "@/repositories/products/poducts_cache";
 import {
   findProductsBySellerFlowToken,
   findProductsPageBySellerFlowToken,
   findProductById,
   findVariationById,
   type ProductsPageResult,
-} from "@/repositories/product_repo";
+} from "@/repositories/products/product_repo";
 import { normToken } from "@/utils/utilities";
 
 interface ProductDetailCacheEntry {

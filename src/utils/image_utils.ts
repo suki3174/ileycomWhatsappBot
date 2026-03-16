@@ -11,7 +11,10 @@
 import sharp from "sharp";
 import fs from "fs/promises";
 import path from "path";
+import { env } from "process";
 
+
+ const CAROUSEL_SIZE = 3;
 const MAX_BYTES = 90_000; // 90KB — leave headroom under 100KB limit
 // 1x1 transparent PNG fallback to avoid empty image fields on transient failures.
 const FALLBACK_BASE64 =
@@ -250,4 +253,14 @@ export async function prefetchNavListImages(
   }
 
   return results;
+}
+
+export function buildCarousel(
+  images: string[],
+  offset: number
+): Array<{ src: string; "alt-text": string }> {
+  return images.slice(offset, offset + CAROUSEL_SIZE).map((src, i) => ({
+    src,
+    "alt-text": `Photo ${offset + i + 1}`,
+  }));
 }

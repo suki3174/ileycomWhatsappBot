@@ -4,7 +4,7 @@ import { FlowResponse } from "@/models/flowResponse";
 import { ProductType } from "@/models/product_model";
 import {
   getLastVariableProductId,
-} from "@/repositories/poducts_cache";
+} from "@/repositories/products/poducts_cache";
 import {
   getProductById,
   getSellerProductsPageByFlowToken,

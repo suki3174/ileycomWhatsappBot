@@ -1,11 +1,11 @@
-import type { AddProductState } from "@/repositories/add_product_cache";
+import type { AddProductState } from "@/models/product_model";
 import {
   saveProductDraft,
   markProductConfirmed,
   type CreateProductResult,
-} from "@/repositories/add_product_repo";
-import { fetchAllProductCategories, type ProductCategory } from "@/repositories/product_category_repo";
-import { convertTndPricesViaPlugin } from "@/repositories/pricing_repo";
+} from "@/repositories/addProduct/add_product_repo";
+import { fetchAllProductCategories, fetchAllSubCategories, SubCategory, type ProductCategory } from "@/repositories/addProduct/product_category_repo";
+import { convertTndPricesViaPlugin } from "@/repositories/addProduct/pricing_repo";
 import { normToken } from "@/utils/utilities";
 
 export async function persistDraftProduct(
@@ -27,6 +27,9 @@ export async function confirmProduct(productId: string): Promise<void> {
 export async function getProductCategoriesCached(): Promise<ProductCategory[]> {
   return fetchAllProductCategories();
 }
+export async function getSubcategoriesByCategoryCached(categoryId: string):Promise<SubCategory[] | null>{
+  return fetchAllSubCategories()} 
+
 
 export async function convertTndPricesToEur(
   regularTnd: number,

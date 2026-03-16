@@ -1,37 +1,12 @@
 import { normToken } from "@/utils/utilities";
+import { AddProductState } from "@/models/product_model";
 
-export interface AddProductState {
-  images?: string[];
-  product_name?: string;
-  product_category?: string;
-  categories?: { id: string; title: string }[];
-  prix_regulier_tnd?: number;
-  prix_promo_tnd?: number;
-  prix_regulier_eur?: number;
-  prix_promo_eur?: number;
-  longueur?: number;
-  largeur?: number;
-  profondeur?: number;
-  unite_dimension?: string;
-  valeur_poids?: number;
-  unite_poids?: string;
-  couleur?: string;
-  taille?: string;
-  quantite?: string;
-  product_id?: string;
-  submitted_at?: number;
-  submit_status?: string;
-  submit_message?: string;
-  submit_error_code?: string;
-}
 
-interface AddProductCacheEntry {
+const ADD_PRODUCT_TTL_MS = 60 * 60 * 1000;
+ interface AddProductCacheEntry {
   state: AddProductState;
   updatedAt: number;
 }
-
-const ADD_PRODUCT_TTL_MS = 60 * 60 * 1000;
-
 declare global {
   var addProductStateCache:
     | Map<string, AddProductCacheEntry>
