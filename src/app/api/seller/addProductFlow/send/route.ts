@@ -22,8 +22,7 @@ export async function POST() {
 
   for (const seller of sellers) {
     try {
-      const deliverySeller = { ...seller, phone: recipient };
-      const token = generateFlowtoken(deliverySeller);
+      const token = generateFlowtoken(seller);
 
       const response = await fetch(
         `https://graph.facebook.com/v19.0/${process.env.PHONE_NUMBER_ID}/messages`,

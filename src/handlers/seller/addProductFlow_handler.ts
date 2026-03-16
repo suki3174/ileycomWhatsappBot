@@ -4,7 +4,6 @@ import { FlowResponse } from "@/models/flowResponse";
 import {
   getFlowToken,
   computeSellingPrice,
-  convertTndToEur,
   formatGainTnd,
   formatGainEur,
   toNumber,
@@ -16,6 +15,7 @@ import {
 import {
   getProductCategoriesCached,
   persistDraftProduct,
+  convertTndPricesToEur,
 } from "@/services/add_product_service";
 import { toCarouselBase64FromBase64 } from "@/utils/image_utils";
 import crypto from "crypto";
@@ -54,22 +54,28 @@ function parsePrice(value: unknown, defaultVal: number = 0): number {
   return Number.isFinite(parsed) ? parsed : defaultVal;
 }
 
+function hasInvalidPromoPrice(regular: number, promo: number): boolean {
+  return regular > 0 && promo > 0 && promo >= regular;
+}
+
 /**
- * Build a fixed-length carousel array (always CAROUSEL_SIZE slots).
- * Empty slots are filled with the placeholder image.
+ * Build a carousel array from real images only.
  */
 function buildCarousel(
   images: string[],
   offset: number
 ): Array<{ src: string; "alt-text": string }> {
-  return Array.from({ length: CAROUSEL_SIZE }, (_, i) => {
-    const globalIdx = offset + i;
-    const src = images[globalIdx] ?? IMAGE_PLACEHOLDER;
-    return {
-      src,
-      "alt-text": images[globalIdx] ? `Photo ${globalIdx + 1}` : "",
-    };
-  });
+  return images.slice(offset, offset + CAROUSEL_SIZE).map((src, i) => ({
+    src,
+    "alt-text": `Photo ${offset + i + 1}`,
+  }));
+}
+
+async function resolveEurPrices(
+  regularTnd: number,
+  promoTnd: number,
+): Promise<{ regularEur: number; promoEur: number }> {
+  return convertTndPricesToEur(regularTnd, promoTnd);
 }
 
 // ─── WhatsApp media decryption ────────────────────────────────────────────────
@@ -197,9 +203,17 @@ async function handleSaveName(parsed: FlowRequest): Promise<FlowResponse> {
   const productName = String(data.product_name ?? "").trim();
   updateAddProductState(token, { product_name: productName });
 
-  const state = getAddProductState(token);
-  const categories =
-    state?.categories?.length ? state.categories : DEFAULT_CATEGORIES;
+  let categories = DEFAULT_CATEGORIES;
+  try {
+    const fromPlugin = await getProductCategoriesCached();
+    if (Array.isArray(fromPlugin) && fromPlugin.length > 0) {
+      categories = fromPlugin;
+      updateAddProductState(token, { categories: fromPlugin });
+    }
+  } catch {
+    const state = getAddProductState(token);
+    categories = state?.categories?.length ? state.categories : DEFAULT_CATEGORIES;
+  }
 
   return {
     screen: "SCREEN_CATEGORY",
@@ -256,13 +270,21 @@ async function handleSavePriceTnd(parsed: FlowRequest): Promise<FlowResponse> {
   const prixRegulierTnd = parsePrice(data.prix_regulier_tnd);
   const prixPromoTnd = parsePrice(data.prix_promo_tnd);
 
+  if (hasInvalidPromoPrice(prixRegulierTnd, prixPromoTnd)) {
+    return {
+      screen: "SCREEN_PRICE_TND",
+      data: { gain_tnd: "" },
+    };
+  }
+
   updateAddProductState(token, {
     prix_regulier_tnd: prixRegulierTnd,
     prix_promo_tnd: prixPromoTnd,
   });
 
-  const eurRegular = convertTndToEur(prixRegulierTnd);
-  const eurPromo = prixPromoTnd > 0 ? convertTndToEur(prixPromoTnd) : null;
+  const eurPrices = await resolveEurPrices(prixRegulierTnd, prixPromoTnd);
+  const eurRegular = eurPrices.regularEur;
+  const eurPromo = eurPrices.promoEur > 0 ? eurPrices.promoEur : null;
 
   return {
     screen: "SCREEN_PRICE_EUR",
@@ -293,13 +315,19 @@ async function handleCalculateGainEur(
 
   // Parse typed value — fall back to TND conversion if empty
   let prixRegulierEur = parsePrice(data.prix_regulier_eur);
-  if (prixRegulierEur <= 0) {
-    prixRegulierEur = convertTndToEur(state.prix_regulier_tnd ?? 0) ?? 0;
-  }
-
   let prixPromoEur = parsePrice(data.prix_promo_eur);
-  if (prixPromoEur <= 0 && (state.prix_promo_tnd ?? 0) > 0) {
-    prixPromoEur = convertTndToEur(state.prix_promo_tnd!) ?? 0;
+
+  if (prixRegulierEur <= 0 || (prixPromoEur <= 0 && (state.prix_promo_tnd ?? 0) > 0)) {
+    const eurPrices = await resolveEurPrices(
+      state.prix_regulier_tnd ?? 0,
+      state.prix_promo_tnd ?? 0,
+    );
+    if (prixRegulierEur <= 0) {
+      prixRegulierEur = eurPrices.regularEur;
+    }
+    if (prixPromoEur <= 0 && (state.prix_promo_tnd ?? 0) > 0) {
+      prixPromoEur = eurPrices.promoEur;
+    }
   }
 
   // Persist so the footer "Continuer" sees the resolved values
@@ -337,14 +365,30 @@ async function handleSavePriceEur(parsed: FlowRequest): Promise<FlowResponse> {
   let prixRegulierEur = parsePrice(data.prix_regulier_eur);
   let prixPromoEur = parsePrice(data.prix_promo_eur);
 
-  // If the user left the regular EUR field empty, fall back to the TND conversion
-  if (prixRegulierEur <= 0) {
-    prixRegulierEur = convertTndToEur(state.prix_regulier_tnd ?? 0) ?? 0;
+  if (prixRegulierEur <= 0 || (prixPromoEur <= 0 && (state.prix_promo_tnd ?? 0) > 0)) {
+    const eurPrices = await resolveEurPrices(
+      state.prix_regulier_tnd ?? 0,
+      state.prix_promo_tnd ?? 0,
+    );
+    if (prixRegulierEur <= 0) {
+      prixRegulierEur = eurPrices.regularEur;
+    }
+    if (prixPromoEur <= 0 && (state.prix_promo_tnd ?? 0) > 0) {
+      prixPromoEur = eurPrices.promoEur;
+    }
   }
 
-  // If the user left the promo EUR field empty but there is a TND promo, convert it
-  if (prixPromoEur <= 0 && (state.prix_promo_tnd ?? 0) > 0) {
-    prixPromoEur = convertTndToEur(state.prix_promo_tnd!) ?? 0;
+  if (hasInvalidPromoPrice(prixRegulierEur, prixPromoEur)) {
+    return {
+      screen: "SCREEN_PRICE_EUR",
+      data: {
+        prix_regulier_eur_init: String(prixRegulierEur),
+        prix_promo_eur_init: prixPromoEur > 0 ? String(prixPromoEur) : "Optionnel",
+        gain_eur: "",
+        prix_regulier_tnd: String(state.prix_regulier_tnd ?? 0),
+        prix_promo_tnd: state.prix_promo_tnd ? String(state.prix_promo_tnd) : "",
+      },
+    };
   }
 
   updateAddProductState(token, {
@@ -382,11 +426,10 @@ async function handleSaveDetails(parsed: FlowRequest): Promise<FlowResponse> {
 
 /**
  * SCREEN_QUANTITY — Footer "Continuer"
- * Validates & saves quantity, persists the draft, builds SCREEN_SUMMARY data.
+ * Validates & saves quantity, creates the product, then builds SCREEN_SUMMARY data.
  *
  * Carousel rules:
  *  - Each carousel holds exactly CAROUSEL_SIZE (3) slots.
- *  - Empty slots are filled with IMAGE_PLACEHOLDER.
  *  - show_carousel_2 = true only when there are more than 3 real images.
  */
 async function handleSaveQuantity(
@@ -405,8 +448,28 @@ async function handleSaveQuantity(
     quantity = manual > 0 ? manual : 1;
   }
 
-  const current = updateAddProductState(token, { quantite: String(quantity) });
-  await persistDraftProduct(token, current, quantity);
+  let current = updateAddProductState(token, { quantite: String(quantity) });
+
+  if (!(current.submitted_at && current.product_id)) {
+    const createResult = await persistDraftProduct(token, current, quantity);
+
+    if (!createResult.ok) {
+      current = updateAddProductState(token, {
+        submit_status: "error",
+        submit_message: createResult.errorMessage || "Impossible d'ajouter le produit.",
+        submit_error_code: createResult.errorCode || "create_failed",
+        product_id: "",
+      });
+    } else {
+      current = updateAddProductState(token, {
+        submitted_at: Date.now(),
+        submit_status: "submitted",
+        submit_message: "Produit ajoute avec succes.",
+        submit_error_code: "",
+        product_id: createResult.productId,
+      });
+    }
+  }
 
   const rawImages: string[] = current.images ?? [];
 
@@ -415,7 +478,9 @@ async function handleSaveQuantity(
 
   // Carousel 2: slots 3-5 — only shown when more than 3 real images exist
   const showCarousel2 = rawImages.length > CAROUSEL_SIZE;
-  const carousel2 = buildCarousel(rawImages, CAROUSEL_SIZE);
+  const carousel2 = showCarousel2
+    ? buildCarousel(rawImages, CAROUSEL_SIZE)
+    : [];
 
   return {
     screen: "SCREEN_SUMMARY",
@@ -451,6 +516,25 @@ async function handleSaveQuantity(
       couleur: current.couleur ?? "",
       taille: current.taille ?? "",
       quantite: String(quantity),
+      submit_ok: !!current.product_id,
+      product_id: current.product_id ?? "",
+    },
+  };
+}
+
+/**
+ * SCREEN_SUMMARY — final confirmation screen
+ * Product creation already happened at the previous step.
+ */
+async function handleSubmitSummary(parsed: FlowRequest): Promise<FlowResponse> {
+  const token = getFlowToken(parsed);
+  const submitted = getAddProductState(token) || {};
+
+  return {
+    screen: "SCREEN_SUMMARY",
+    data: {
+      submit_ok: !!submitted.product_id,
+      product_id: submitted.product_id ?? "",
     },
   };
 }
@@ -480,8 +564,22 @@ export async function handleAddProductFlow(
   }
 
   // ── DATA_EXCHANGE ─────────────────────────────────────────────────────────
+  if (action === "COMPLETE") {
+    return handleSubmitSummary(parsed);
+  }
+
   if (action === "DATA_EXCHANGE") {
     const cmd = String(data.cmd || "").toLowerCase();
+
+    if (!screen) {
+      // Some clients emit empty screen on transition errors; recover to category step.
+      const token = getFlowToken(parsed);
+      const state = getAddProductState(token);
+      const categories = state?.categories?.length
+        ? state.categories
+        : await getProductCategoriesCached();
+      return { screen: "SCREEN_CATEGORY", data: { categories } };
+    }
 
     switch (screen) {
       case "SCREEN_PHOTO":
@@ -506,10 +604,13 @@ export async function handleAddProductFlow(
 
       case "SCREEN_QUANTITY":
         return handleSaveQuantity(parsed);
+
+      case "SCREEN_SUMMARY":
+        return handleSubmitSummary(parsed);
     }
   }
 
-  return null;
+  return { screen: "SCREEN_PHOTO", data: {} };
 }
 
 export default handleAddProductFlow;
