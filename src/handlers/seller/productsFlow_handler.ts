@@ -116,7 +116,8 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
         product.image_gallery,
         product.image_src,
         `Image principale de ${product.name || "produit"}`,
-        mapImageUrl,
+        mapImageUrl
+         
       );
 
       return {

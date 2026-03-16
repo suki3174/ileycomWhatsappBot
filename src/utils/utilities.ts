@@ -104,3 +104,16 @@ export async function resolveEurPrices(
 ): Promise<{ regularEur: number; promoEur: number }> {
   return convertTndPricesToEur(regularTnd, promoTnd);
 }
+
+export function safeInitLabel(
+  value: unknown,
+  options: { fallback?: string; maxLen?: number } = {},
+): string {
+  const fallback = String(options.fallback ?? "N/A");
+  const maxLenRaw = Number(options.maxLen ?? 20);
+  const maxLen = Number.isFinite(maxLenRaw) ? Math.max(1, Math.floor(maxLenRaw)) : 20;
+  const trimmed = String(value ?? "").trim();
+  const effective = trimmed ? trimmed : fallback;
+  const sliced = effective.slice(0, maxLen);
+  return sliced || fallback.slice(0, maxLen);
+}
