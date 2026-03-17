@@ -13,15 +13,44 @@ function corruptionScore(input: string): number {
 function tryRepairMojibake(input: string): string {
   if (!looksLikeMojibake(input)) return input;
 
-  try {
-    const repaired = Buffer.from(input, "latin1").toString("utf8");
-    // Keep repair only when it materially improves text quality.
-    const beforeScore = corruptionScore(input);
-    const afterScore = corruptionScore(repaired);
-    return afterScore < beforeScore ? repaired : input;
-  } catch {
-    return input;
+  let best = input;
+  let bestScore = corruptionScore(input);
+
+  // Apply a couple of latin1->utf8 passes; some strings are double-corrupted.
+  for (let i = 0; i < 2; i += 1) {
+    try {
+      const candidate = Buffer.from(best, "latin1").toString("utf8");
+      const score = corruptionScore(candidate);
+      if (score < bestScore) {
+        best = candidate;
+        bestScore = score;
+      } else {
+        break;
+      }
+    } catch {
+      break;
+    }
   }
+
+  // Target common French artifacts that survive generic conversion.
+  const patched = best
+    .replace(/Ã‰/g, "É")
+    .replace(/Ã©/g, "é")
+    .replace(/Ã¨/g, "è")
+    .replace(/Ãª/g, "ê")
+    .replace(/Ã /g, "à")
+    .replace(/Ã¢/g, "â")
+    .replace(/Ã®/g, "î")
+    .replace(/Ã´/g, "ô")
+    .replace(/Ã»/g, "û")
+    .replace(/Ã§/g, "ç")
+    .replace(/�0/g, "É")
+    .replace(/â€™/g, "'")
+    .replace(/â€“/g, "-")
+    .replace(/â€”/g, "-");
+
+  const patchedScore = corruptionScore(patched);
+  return patchedScore <= bestScore ? patched : best;
 }
 
 export function normText(value: unknown): string {

@@ -138,6 +138,7 @@ export interface AddProductState {
   images?: string[];
   product_name?: string;
   product_category?: string;
+  product_category_label?: string;
   categories?: { id: string; title: string }[];
   prix_regulier_tnd?: number;
   prix_promo_tnd?: number;
@@ -157,9 +158,9 @@ export interface AddProductState {
   submit_status?: string;
   submit_message?: string;
   submit_error_code?: string;
-  product_subcategory?:string
-  subcategories?: { id: string; title: string }[]
-  ;// pour stocker les sous-catégories associées à la catégorie sélectionnée
+  product_subcategory?: string;
+  product_subcategory_label?: string;
+  subcategories?: Record<string, SubCategory[]>;
 }
 
 

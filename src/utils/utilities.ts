@@ -2,6 +2,8 @@
 
 import { FlowRequest } from "@/models/flowRequest";
 import crypto from "crypto";
+import { PLUGIN_TIMEOUT_MS, pluginPostWithRetry } from "@/utils/plugin_client";
+import { asRecord, parsePluginJsonSafe } from "@/utils/repository_utils";
 
 export function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -102,7 +104,36 @@ export async function resolveEurPrices(
   regularTnd: number,
   promoTnd: number
 ): Promise<{ regularEur: number; promoEur: number }> {
-  return convertTndPricesToEur(regularTnd, promoTnd);
+  const safeRegular = toNumber(regularTnd, 0);
+  const safePromo = toNumber(promoTnd, 0);
+
+  try {
+    const res = await pluginPostWithRetry(
+      "/seller/pricing/convert",
+      { regular_tnd: safeRegular, promo_tnd: safePromo },
+      { timeoutMs: Math.max(PLUGIN_TIMEOUT_MS, 8_000), retries: 0, retryDelayMs: 250 },
+    );
+
+    if (!res.ok) {
+      return {
+        regularEur: safeRegular > 0 ? convertTndToEur(safeRegular) : 0,
+        promoEur: safePromo > 0 ? convertTndToEur(safePromo) : 0,
+      };
+    }
+
+    const payload = await parsePluginJsonSafe(res, "plugin pricing/convert");
+    const data = asRecord(payload?.data);
+
+    return {
+      regularEur: toNumber(data?.regular_eur, safeRegular > 0 ? convertTndToEur(safeRegular) : 0),
+      promoEur: toNumber(data?.promo_eur, safePromo > 0 ? convertTndToEur(safePromo) : 0),
+    };
+  } catch {
+    return {
+      regularEur: safeRegular > 0 ? convertTndToEur(safeRegular) : 0,
+      promoEur: safePromo > 0 ? convertTndToEur(safePromo) : 0,
+    };
+  }
 }
 
 export function safeInitLabel(

@@ -3,5 +3,6 @@ export interface ProductCategory {
   title: string;
 }
 export interface SubCategory extends ProductCategory {
-  parentId: string;
+  parentId?: string;
+  description?: string;
 }

@@ -38,6 +38,7 @@ function buildCreatePayload(
       flowToken,
       product_name: normText(state.product_name),
       product_category: normText(state.product_category),
+      product_subcategory: normText(state.product_subcategory),
       prix_regulier_tnd: state.prix_regulier_tnd ?? 0,
       prix_promo_tnd: state.prix_promo_tnd ?? 0,
       prix_regulier_eur: state.prix_regulier_eur ?? 0,
@@ -53,6 +54,9 @@ function buildCreatePayload(
     product: {
       name: normText(state.product_name),
       category_id: normText(state.product_category),
+      subcategory_id: normText(state.product_subcategory),
+      category_label: normText(state.product_category_label),
+      subcategory_label: normText(state.product_subcategory_label),
       images_base64: Array.isArray(state.images) ? state.images : [],
       pricing: {
         regular_tnd: state.prix_regulier_tnd ?? 0,
