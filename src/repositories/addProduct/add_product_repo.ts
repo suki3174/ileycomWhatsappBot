@@ -31,6 +31,7 @@ function buildCreatePayload(
   flowToken: string,
   state: AddProductState,
   quantity: number,
+  sellerAbbr?: string,
 ): Record<string, unknown> {
   const idempotencyKey = crypto
     .createHash("sha256")
@@ -82,6 +83,8 @@ function buildCreatePayload(
       short_description: "",
       description: "",
       status: "draft",
+      auto_generate_sku: true,
+      sku_prefix: sellerAbbr ? normText(sellerAbbr).toUpperCase() : "GEN",
     },
   };
 }
@@ -104,13 +107,14 @@ export async function saveProductDraft(
   flowToken: string,
   state: AddProductState,
   quantity: number,
+  sellerAbbr?: string,
 ): Promise<CreateProductResult> {
   const token = normToken(flowToken);
   const qty = Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
 
   const res = await pluginPostWithRetry(
     "/seller/product/create/by-flow-token",
-    buildCreatePayload(token, state, qty),
+    buildCreatePayload(token, state, qty, sellerAbbr),
     { timeoutMs: ADD_PRODUCT_TIMEOUT_MS, retries: 1, retryDelayMs: 300 },
   );
 

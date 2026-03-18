@@ -12,6 +12,7 @@ import {
 } from "@/repositories/update_product_cache";
 import {
   loadProductForEdit,
+  loadSubcategoriesForCategory,
   prefetchUpdateProductData,
   updateProductNow,
 } from "@/services/update_product_service";
@@ -48,7 +49,19 @@ async function handleLoadProducts(parsed: FlowRequest): Promise<FlowResponse> {
   const requestedPage = Number(rawData.page ?? 1);
   const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
   const products = await getProductsForToken(token);
-  return buildProductListResponse(products, page);
+  const response = await buildProductListResponse(products, page);
+  const list = Array.isArray(response.data?.products) ? response.data.products : [];
+
+  // Reuse shared product list builder but remap click command for update flow.
+  for (const item of list) {
+    const click = (item as Record<string, unknown>)?.["on-click-action"] as Record<string, unknown> | undefined;
+    const payload = click?.payload as Record<string, unknown> | undefined;
+    if (payload && String(payload.cmd ?? "").toLowerCase() === "details") {
+      payload.cmd = "load_product_for_edit";
+    }
+  }
+
+  return response;
 }
 
 async function handleLoadProductForEdit(parsed: FlowRequest): Promise<FlowResponse> {
@@ -93,7 +106,9 @@ async function handleLoadProductForEdit(parsed: FlowRequest): Promise<FlowRespon
     taille: "",
     quantite: safeInitLabel(product.stock_quantity ?? "", { fallback: "0" }),
     product_category: (product.categories?.[0] ?? "Autre").toString(),
+    product_category_label: (product.categories?.[0] ?? "Autre").toString(),
     product_subcategory: (product.categories?.[0] ?? "Autre").toString(),
+    product_subcategory_label: (product.categories?.[0] ?? "Autre").toString(),
   });
   const rawImages: string[] = product.image_gallery ?? [];
   const carousel1   = buildCarousel(rawImages, 0);
@@ -216,8 +231,8 @@ async function handleSaveInfoAndContinue(parsed: FlowRequest): Promise<FlowRespo
     screen: "SCREEN_CATEGORY_INFO",
     data: {
       product_id: productId,
-      current_category_label: safeInitLabel(st.product_category, { fallback: "Autre", maxLen: 40 }),
-      current_subcategory_label: safeInitLabel(st.product_subcategory, { fallback: "Autre", maxLen: 60 }),
+      current_category_label: safeInitLabel(st.product_category_label || st.product_category, { fallback: "Autre", maxLen: 40 }),
+      current_subcategory_label: safeInitLabel(st.product_subcategory_label || st.product_subcategory, { fallback: "Autre", maxLen: 60 }),
     },
   };
 }
@@ -228,12 +243,14 @@ async function handleGoEditCategory(parsed: FlowRequest): Promise<FlowResponse> 
   const productId = String(data.product_id ?? "").trim();
   const state = getUpdateProductState(token) || {};
   const categories = (state.categories && state.categories.length > 0) ? state.categories : [];
+  const selectedCategory = String(state.product_category || "").trim();
 
   return {
     screen: "SCREEN_EDIT_CATEGORY",
     data: {
       product_id: productId,
       categories,
+      product_category: selectedCategory,
     },
   };
 }
@@ -244,7 +261,17 @@ async function handleLoadSubcategories(parsed: FlowRequest): Promise<FlowRespons
   const productId = String(data.product_id ?? "").trim();
   const categoryId = String(data.product_category ?? "").trim();
   const state = getUpdateProductState(token) || {};
-  const subcats = state.subcategoriesByCategory?.[categoryId] ?? [];
+  let subcats = state.subcategoriesByCategory?.[categoryId] ?? [];
+
+  if (subcats.length === 0 && categoryId) {
+    subcats = await loadSubcategoriesForCategory(categoryId);
+    updateUpdateProductState(token, {
+      subcategoriesByCategory: {
+        ...(state.subcategoriesByCategory || {}),
+        [categoryId]: subcats,
+      },
+    });
+  }
 
   const parentLabel =
     (state.categories || []).find((c) => c.id === categoryId)?.title || categoryId;
@@ -268,7 +295,12 @@ async function handleSaveCategoryAndContinue(parsed: FlowRequest): Promise<FlowR
   const label =
     (state.categories || []).find((c) => c.id === categoryId)?.title || categoryId;
 
-  updateUpdateProductState(token, { product_category: label });
+  updateUpdateProductState(token, {
+    product_category: categoryId,
+    product_category_label: label,
+    product_subcategory: "",
+    product_subcategory_label: "",
+  });
 
   return handleLoadSubcategories({
     ...parsed,
@@ -293,7 +325,10 @@ async function handleSaveSubcategoryAndContinue(parsed: FlowRequest): Promise<Fl
     }
   }
 
-  updateUpdateProductState(token, { product_subcategory: label });
+  updateUpdateProductState(token, {
+    product_subcategory: subcatId,
+    product_subcategory_label: label,
+  });
   return buildSummaryScreen(token, productId);
 }
 
@@ -307,8 +342,22 @@ async function handleSkipCategory(parsed: FlowRequest): Promise<FlowResponse> {
 async function buildSummaryScreen(token: string, productId: string): Promise<FlowResponse> {
   const state = getUpdateProductState(token) || {};
 
-  // Photos: if user modified photos, use cached base64; else load current product URLs and convert to base64 4:3
-  const rawImages: string[] = state.images ?? [];
+  let rawImages: string[] = [];
+  if (Array.isArray(state.images) && state.images.length > 0) {
+    rawImages = state.images;
+  } else {
+    const product = await loadProductForEdit(productId);
+    if (Array.isArray(product?.image_gallery) && product.image_gallery.length > 0) {
+      rawImages = await Promise.all(
+        product.image_gallery.slice(0, 10).map((url) => toCarouselBase64(String(url || ""))),
+      );
+    } else {
+      const fallbackUrl = resolveFlowImageUrl(String(product?.image_src || ""), {});
+      const mapped = await fallbackUrl;
+      rawImages = mapped ? [mapped] : [];
+    }
+  }
+
   const carousel1   = buildCarousel(rawImages, 0);
   const showCarousel2 = rawImages.length > CAROUSEL_SIZE;
   const carousel2   = showCarousel2 ? buildCarousel(rawImages, CAROUSEL_SIZE) : [];
@@ -322,8 +371,8 @@ async function buildSummaryScreen(token: string, productId: string): Promise<Flo
       show_carousel_2: showCarousel2,
       photos_modifiees: !!state.photos_modifiees,
       product_name: safeInitLabel(state.product_name, { fallback: "Produit", maxLen: 80 }),
-      product_category: safeInitLabel(state.product_category, { fallback: "Autre", maxLen: 40 }),
-      product_subcategory: safeInitLabel(state.product_subcategory, { fallback: "Autre", maxLen: 60 }),
+      product_category: safeInitLabel(state.product_category_label || state.product_category, { fallback: "Autre", maxLen: 40 }),
+      product_subcategory: safeInitLabel(state.product_subcategory_label || state.product_subcategory, { fallback: "Autre", maxLen: 60 }),
       prix_regulier_tnd: safeInitLabel(state.prix_regulier_tnd, { fallback: "" }),
       prix_promo_tnd: safeInitLabel(state.prix_promo_tnd, { fallback: "" }),
       prix_regulier_eur: safeInitLabel(state.prix_regulier_eur, { fallback: "" }),
@@ -355,8 +404,28 @@ async function handleSubmitUpdate(parsed: FlowRequest): Promise<FlowResponse> {
     };
   }
 
-  const ok = await updateProductNow(productId, {
-    ...state,
+  const ok = await updateProductNow(productId, token, {
+    product_id: productId,
+    product_name: state.product_name,
+    product_category: state.product_category,
+    product_category_label: state.product_category_label,
+    product_subcategory: state.product_subcategory,
+    product_subcategory_label: state.product_subcategory_label,
+    prix_regulier_tnd: state.prix_regulier_tnd,
+    prix_promo_tnd: state.prix_promo_tnd,
+    prix_regulier_eur: state.prix_regulier_eur,
+    prix_promo_eur: state.prix_promo_eur,
+    longueur: state.longueur,
+    largeur: state.largeur,
+    profondeur: state.profondeur,
+    unite_dimension: state.unite_dimension,
+    valeur_poids: state.valeur_poids,
+    unite_poids: state.unite_poids,
+    couleur: state.couleur,
+    taille: state.taille,
+    quantite: state.quantite,
+    images_base64: Array.isArray(state.images) ? state.images : [],
+    photos_modifiees: !!state.photos_modifiees,
     submittedAt: Date.now(),
   });
 

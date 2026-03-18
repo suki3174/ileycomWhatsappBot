@@ -19,7 +19,9 @@ export interface UpdateProductState {
   taille?: string;
   quantite?: string;
   product_category?: string;
+  product_category_label?: string;
   product_subcategory?: string;
+  product_subcategory_label?: string;
   categories?: { id: string; title: string }[];
   subcategoriesByCategory?: Record<
     string,

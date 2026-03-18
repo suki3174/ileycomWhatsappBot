@@ -4,6 +4,7 @@ import {
   markProductConfirmed,
   type CreateProductResult,
 } from "@/repositories/addProduct/add_product_repo";
+import { findSellerByTokenOrPhone } from "@/services/auth_service";
 import {
   fetchAllProductCategories,
   fetchSubCategoriesByCategory,
@@ -22,7 +23,24 @@ export async function persistDraftProduct(
   if (!token) {
     return saveProductDraft("unknown", state, quantity);
   }
-  return saveProductDraft(token, state, quantity);
+
+  // Extract seller abbreviation from seller name
+  let sellerAbbr = "GEN";
+  try {
+    const seller = await findSellerByTokenOrPhone(flowToken);
+    if (seller?.name) {
+      // Extract first letters of each word (e.g., "Taher Vendor" => "TAHER")
+      sellerAbbr = seller.name
+        .split(/\s+/)
+        .map(w => w.charAt(0).toUpperCase())
+        .join("")
+        .substring(0, 10);
+    }
+  } catch (err) {
+    console.warn("Could not extract seller abbr:", err);
+  }
+
+  return saveProductDraft(token, state, quantity, sellerAbbr);
 }
 
 export async function confirmProduct(productId: string): Promise<void> {

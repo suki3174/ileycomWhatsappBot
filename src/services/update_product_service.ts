@@ -13,16 +13,11 @@ export async function prefetchUpdateProductData(): Promise<{
   subcategoriesByCategory: Record<string, ProductSubcategory[]>;
 }> {
   const categories = await findAllCategories();
-  const subcategoriesByCategory: Record<string, ProductSubcategory[]> = {};
+  return { categories, subcategoriesByCategory: {} };
+}
 
-  // Placeholder: prefetch subcategories only for known categories; keep fast.
-  await Promise.all(
-    categories.map(async (c) => {
-      subcategoriesByCategory[c.id] = await findSubcategoriesByCategory(c.id);
-    }),
-  );
-
-  return { categories, subcategoriesByCategory };
+export async function loadSubcategoriesForCategory(categoryId: string): Promise<ProductSubcategory[]> {
+  return findSubcategoriesByCategory(categoryId);
 }
 
 export async function loadProductForEdit(productId: string): Promise<Product | undefined> {
@@ -31,8 +26,9 @@ export async function loadProductForEdit(productId: string): Promise<Product | u
 
 export async function updateProductNow(
   productId: string,
+  flowToken: string,
   patch: Record<string, unknown>,
 ): Promise<boolean> {
-  return persistProductUpdate(productId, patch);
+  return persistProductUpdate(productId, flowToken, patch);
 }
 
