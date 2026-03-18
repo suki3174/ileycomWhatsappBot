@@ -1,5 +1,8 @@
 import type { Product } from "@/models/product_model";
-import { getProductById } from "@/services/products_service";
+import {
+  getProductById,
+  getSellerProductsPageByFlowToken as getSellerProductsPage,
+} from "@/services/products_service";
 import {
   findAllCategories,
   findSubcategoriesByCategory,
@@ -7,6 +10,15 @@ import {
   type ProductSubcategory,
 } from "@/repositories/update_product_repo";
 import type { ProductCategory } from "@/models/category_model";
+import type { ProductsPageResult } from "@/repositories/products/product_repo";
+
+export async function getSellerProductsPageByFlowToken(
+  flowToken: string,
+  page = 1,
+  perPage = 5,
+): Promise<ProductsPageResult> {
+  return getSellerProductsPage(flowToken, page, perPage);
+}
 
 export async function prefetchUpdateProductData(): Promise<{
   categories: ProductCategory[];

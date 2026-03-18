@@ -3,14 +3,18 @@ import type { FlowRequest } from "@/models/flowRequest";
 import type { FlowResponse } from "@/models/flowResponse";
 import { getFlowToken, safeInitLabel } from "@/utils/utilities";
 import { buildCarousel, toCarouselBase64, toCarouselBase64FromBase64 } from "@/utils/image_utils";
-import { buildProductCarouselImages, buildProductListResponse, resolveFlowImageUrl } from "@/utils/products_flow_utils";
-import { getProductsForToken } from "@/repositories/products/poducts_cache";
+import {
+  buildProductCarouselImages,
+  buildProductListPagedResponse,
+  resolveFlowImageUrl,
+} from "@/utils/products_flow_utils";
 import {
   clearUpdateProductState,
   getUpdateProductState,
   updateUpdateProductState,
 } from "@/repositories/update_product_cache";
 import {
+  getSellerProductsPageByFlowToken,
   loadProductForEdit,
   loadSubcategoriesForCategory,
   prefetchUpdateProductData,
@@ -48,8 +52,13 @@ async function handleLoadProducts(parsed: FlowRequest): Promise<FlowResponse> {
   const rawData = parsed.data || {};
   const requestedPage = Number(rawData.page ?? 1);
   const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
-  const products = await getProductsForToken(token);
-  const response = await buildProductListResponse(products, page);
+  const pageResult = await getSellerProductsPageByFlowToken(token, page, 5);
+  const response = await buildProductListPagedResponse(
+    pageResult.products,
+    pageResult.page,
+    pageResult.hasMore,
+    pageResult.nextPage,
+  );
   const list = Array.isArray(response.data?.products) ? response.data.products : [];
 
   // Reuse shared product list builder but remap click command for update flow.
