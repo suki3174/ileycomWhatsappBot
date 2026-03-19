@@ -31,6 +31,7 @@ function buildCreatePayload(
   flowToken: string,
   state: AddProductState,
   quantity: number,
+  sellerAbbr?: string,
 ): Record<string, unknown> {
   const idempotencyKey = crypto
     .createHash("sha256")
@@ -38,6 +39,7 @@ function buildCreatePayload(
       flowToken,
       product_name: normText(state.product_name),
       product_category: normText(state.product_category),
+      product_subcategory: normText(state.product_subcategory),
       prix_regulier_tnd: state.prix_regulier_tnd ?? 0,
       prix_promo_tnd: state.prix_promo_tnd ?? 0,
       prix_regulier_eur: state.prix_regulier_eur ?? 0,
@@ -53,6 +55,9 @@ function buildCreatePayload(
     product: {
       name: normText(state.product_name),
       category_id: normText(state.product_category),
+      subcategory_id: normText(state.product_subcategory),
+      category_label: normText(state.product_category_label),
+      subcategory_label: normText(state.product_subcategory_label),
       images_base64: Array.isArray(state.images) ? state.images : [],
       pricing: {
         regular_tnd: state.prix_regulier_tnd ?? 0,
@@ -78,6 +83,8 @@ function buildCreatePayload(
       short_description: "",
       description: "",
       status: "draft",
+      auto_generate_sku: true,
+      sku_prefix: sellerAbbr ? normText(sellerAbbr).toUpperCase() : "GEN",
     },
   };
 }
@@ -100,13 +107,14 @@ export async function saveProductDraft(
   flowToken: string,
   state: AddProductState,
   quantity: number,
+  sellerAbbr?: string,
 ): Promise<CreateProductResult> {
   const token = normToken(flowToken);
   const qty = Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
 
   const res = await pluginPostWithRetry(
     "/seller/product/create/by-flow-token",
-    buildCreatePayload(token, state, qty),
+    buildCreatePayload(token, state, qty, sellerAbbr),
     { timeoutMs: ADD_PRODUCT_TIMEOUT_MS, retries: 1, retryDelayMs: 300 },
   );
 

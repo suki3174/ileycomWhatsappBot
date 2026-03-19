@@ -19,7 +19,6 @@ import {
   getProductCategoriesCached,
   getSubcategoriesByCategoryCached,
   persistDraftProduct,
-  convertTndPricesToEur,
 } from "@/services/add_product_service";
 import { buildCarousel, toCarouselBase64FromBase64 } from "@/utils/image_utils";
 import crypto from "crypto";
@@ -106,7 +105,18 @@ const DEFAULT_SUBCATEGORIES: Record<
 };
 
 
-const CAROUSEL_SIZE=3
+const CAROUSEL_SIZE = 3;
+
+function previewLabels(
+  items: Array<{ id: string; title: string; description?: string }>,
+  max = 8,
+): Array<{ id: string; title: string; description?: string }> {
+  return items.slice(0, max).map((item) => ({
+    id: item.id,
+    title: item.title,
+    ...(item.description ? { description: item.description } : {}),
+  }));
+}
 
 /**
  * Returns the subcategories for a given category id, trying the service first
@@ -133,6 +143,16 @@ async function resolveSubcategories(
   return DEFAULT_SUBCATEGORIES[categoryId] ?? [
     { id: "autre", title: "Autre", description: `${categoryId} > Autre` },
   ];
+}
+
+function toFlowSubcategories(items: SubCategory[]): Array<{ id: string; title: string; description: string }> {
+  return items
+    .map((s) => ({
+      id: String(s.id ?? "").trim(),
+      title: String(s.title ?? "").trim(),
+      description: String(s.description ?? s.title ?? "").trim(),
+    }))
+    .filter((s) => s.id.length > 0 && s.title.length > 0);
 }
 
 
@@ -202,6 +222,11 @@ async function handleSaveName(parsed: FlowRequest): Promise<FlowResponse> {
     } catch { /* keep defaults */ }
   }
 
+  console.log("AddProduct categories payload", {
+    count: categories.length,
+    sample: previewLabels(categories),
+  });
+
   return { screen: "SCREEN_CATEGORY", data: { categories } };
 }
 
@@ -227,15 +252,33 @@ async function handleSaveCategory(parsed: FlowRequest): Promise<FlowResponse> {
 
   updateAddProductState(token, {
     product_category: categoryId,
+    product_category_label: categoryLabel,
+    product_subcategory: "",
+    product_subcategory_label: "",
   });
 
   const subcategories = await resolveSubcategories(token, categoryId);
+  const flowSubcategories = toFlowSubcategories(subcategories);
+  const refreshedState = getAddProductState(token);
+  updateAddProductState(token, {
+    subcategories: {
+      ...(refreshedState?.subcategories ?? {}),
+      [categoryId]: subcategories,
+    },
+  });
+
+  console.log("AddProduct subcategories payload", {
+    categoryId,
+    categoryLabel,
+    count: flowSubcategories.length,
+    sample: previewLabels(flowSubcategories),
+  });
 
   return {
     screen: "SCREEN_SUBCATEGORY",
     data: {
       parent_category_label: categoryLabel,
-      subcategories,
+      subcategories: flowSubcategories,
     },
   };
 }
@@ -252,7 +295,7 @@ async function handleSaveSubcategory(parsed: FlowRequest): Promise<FlowResponse>
 
   // Build the human-readable breadcrumb label from the cached subcategories map
   const categoryId    = state?.product_category ?? "";
-  const cachedSubs: Array<{ id: string; title: string; description: string }> =
+  const cachedSubs: Array<{ id: string; title: string; description?: string }> =
     state?.subcategories?.[categoryId] ??
     DEFAULT_SUBCATEGORIES[categoryId] ??
     [];
@@ -263,6 +306,7 @@ async function handleSaveSubcategory(parsed: FlowRequest): Promise<FlowResponse>
 
   updateAddProductState(token, {
     product_subcategory: subcategoryId,
+    product_subcategory_label: subcategoryLabel,
   });
 
   return { screen: "SCREEN_PRICE_TND", data: { gain_tnd: "" } };
@@ -451,8 +495,8 @@ async function handleSaveQuantity(parsed: FlowRequest): Promise<FlowResponse> {
       show_carousel_2: showCarousel2,
 
       product_name:         current.product_name         ?? "",
-      product_category:      current.product_category ?? "",
-      product_subcategory: current.product_subcategory ?? "",
+      product_category:      current.product_category_label ?? current.product_category ?? "",
+      product_subcategory: current.product_subcategory_label ?? current.product_subcategory ?? "",
 
       prix_regulier_tnd: current.prix_regulier_tnd ? String(current.prix_regulier_tnd) : "",
       prix_promo_tnd:    current.prix_promo_tnd    ? String(current.prix_promo_tnd)    : "",
@@ -540,37 +584,11 @@ export async function handleAddProductFlow(
     const token = getFlowToken(parsed);
 
     if (token) {
-      // Fetch categories and all subcategories in parallel so every subsequent
-      // screen transition is instant (no extra round-trips to the service).
-      try {
-        const [categories, subcategoriesMap] = await Promise.all([
-          getProductCategoriesCached(),
-          // Fetch subcategories for every known category id upfront
-          (async () => {
-            const catList: Array<{ id: string }> =
-              await getProductCategoriesCached().catch(() => DEFAULT_CATEGORIES);
-
-            const entries = await Promise.all(
-              catList.map(async (cat) => {
-                try {
-                  const subs = await getSubcategoriesByCategoryCached(cat.id);
-                  return [cat.id, subs] as const;
-                } catch {
-                  return [cat.id, DEFAULT_SUBCATEGORIES[cat.id] ?? []] as const;
-                }
-              })
-            );
-            return Object.fromEntries(entries);
-          })(),
-        ]);
-
-        updateAddProductState(token, {
-          categories,
-          subcategories: subcategoriesMap,
-        });
-      } catch {
-        // Ignore errors and rely on defaults in the handlers; better to show something than nothing
-      }
+      // Keep INIT fast and deterministic; categories/subcategories are loaded on-demand.
+      updateAddProductState(token, {
+        categories: DEFAULT_CATEGORIES,
+        subcategories: {},
+      });
     }
 
     return { screen: "SCREEN_PHOTO", data: {} };
@@ -583,13 +601,41 @@ export async function handleAddProductFlow(
     const cmd = String(data.cmd || "").toLowerCase();
 
     if (!screen) {
-      // Recover gracefully: send the user back to the category step
-      const token      = getFlowToken(parsed);
-      const state      = getAddProductState(token);
+      // Recover gracefully from client transition glitches.
+      const token = getFlowToken(parsed);
+      const state = getAddProductState(token);
       const categories =
         Array.isArray(state?.categories) && state.categories.length > 0
           ? state.categories
           : await getProductCategoriesCached().catch(() => DEFAULT_CATEGORIES);
+
+      const categoryFromRequest = String(data.product_category ?? "").trim();
+      if (categoryFromRequest) {
+        const categoryLabel =
+          categories.find((c) => c.id === categoryFromRequest)?.title ?? categoryFromRequest;
+
+        updateAddProductState(token, {
+          product_category: categoryFromRequest,
+          product_category_label: categoryLabel,
+        });
+
+        const subcategories = await resolveSubcategories(token, categoryFromRequest);
+        const flowSubcategories = toFlowSubcategories(subcategories);
+        console.log("AddProduct empty-screen recovery to subcategories", {
+          categoryFromRequest,
+          categoryLabel,
+          count: flowSubcategories.length,
+          sample: previewLabels(flowSubcategories),
+        });
+        return {
+          screen: "SCREEN_SUBCATEGORY",
+          data: {
+            parent_category_label: categoryLabel,
+            subcategories: flowSubcategories,
+          },
+        };
+      }
+
       return { screen: "SCREEN_CATEGORY", data: { categories } };
     }
 
@@ -601,6 +647,7 @@ export async function handleAddProductFlow(
         return handleSaveName(parsed);
 
       case "SCREEN_CATEGORY":
+        if (cmd === "load_subcategories") return handleSaveCategory(parsed);
         return handleSaveCategory(parsed);
 
       case "SCREEN_SUBCATEGORY":
