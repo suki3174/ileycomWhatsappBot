@@ -12,6 +12,8 @@ import {
   getOrderStatusCounters,
 } from "@/services/order_service";
 import { buildOrderListResponse, formatOrderDetail, formatOrderArticlesPage } from "@/utils/oders_flow_utils";
+import { findSeller } from "@/services/auth_service";
+import { sendMenu } from "@/services/menu_service";
 
 const ORDER_LIST_PAGE_SIZE = 5;
 const ORDER_ARTICLES_PAGE_SIZE = 3;
@@ -305,6 +307,15 @@ export async function handleOrdersFlow(
 ): Promise<FlowResponse> {
   const action = (parsed.action || "").toUpperCase();
   const screen = parsed.screen || "";
+  const token = getFlowToken(parsed);
+  const seller = await findSeller(token)
+  if (!seller) {
+    return {
+      screen: "WELCOME",
+      data: { error_msg: "Seller not found" },
+    };
+  }
+  await sendMenu(token)
 
   if (action === "INIT" || action === "NAVIGATE") {
     return { screen: "WELCOME_SCREEN", data: {} };
@@ -328,7 +339,6 @@ export async function handleOrdersFlow(
         });
       }
 
-      const token = getFlowToken(parsed);
       if (token) {
         // If WhatsApp sends an incomplete packet (empty screen), keep the user
         // inside orders flow instead of resetting to WELCOME_SCREEN.

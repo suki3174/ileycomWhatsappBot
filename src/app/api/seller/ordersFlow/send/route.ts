@@ -1,20 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAllSellers } from "@/services/auth_service";
 import { generateFlowtoken } from "@/utils/auth_utils";
+import { Seller } from "@/models/seller_model";
 
 export async function POST(req: NextRequest) {
-  const sellers = getAllSellers();
-  const results = [];
-  const recipient = String(process.env.TEST_PHONE_NUMBER || "").trim();
+ 
+  const body = await req.json();
+    const seller: Seller = body.seller;
 
-  if (!recipient) {
-    return NextResponse.json({ error: "TEST_PHONE_NUMBER is not configured" }, { status: 500 });
-  }
+    if (!seller) {
+        return NextResponse.json({ error: "seller is required in request body" }, { status: 400 });
+    }
 
-  for (const seller of sellers) {
     try {
-      const deliverySeller = { ...seller, phone: recipient };
-      const token = generateFlowtoken(deliverySeller);
+      const recipient = seller.phone
+
+      const token = generateFlowtoken(seller.phone);
       
 
       const response = await fetch(
@@ -55,13 +55,10 @@ export async function POST(req: NextRequest) {
       );
 
       const data = await response.json();
-      results.push({ seller: seller.name, recipient, status: response.status, data });
-
+      return NextResponse.json({ seller: seller.name, recipient: seller.phone, status: response.status, data });
+  
     } catch (error) {
       console.error(`Error sending to ${seller.name}:`, error);
-      results.push({ seller: seller.name, recipient, error: "Failed to send" });
+      return NextResponse.json({ seller: seller.name, error: "Failed to send" }, { status: 500 });
     }
-  }
-
-  return NextResponse.json({ summary: results }, { status: 200 });
 }

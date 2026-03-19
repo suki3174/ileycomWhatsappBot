@@ -172,7 +172,7 @@ export async function upsertSellerState(
   const phone = extractPhoneFromFlowToken(token);
   if (!phone) {
     console.error("plugin state-insert skipped: could not extract phone from flow token", {
-      token,
+      token
     });
     return undefined;
   }
@@ -184,6 +184,7 @@ export async function upsertSellerState(
       ...extraState,
       phone,
       flow_token: token,
+
     };
 
     // Include code only when explicitly provided to avoid overwriting existing code with null/empty.

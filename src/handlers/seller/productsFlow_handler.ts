@@ -5,6 +5,8 @@ import { ProductType } from "@/models/product_model";
 import {
   getLastVariableProductId,
 } from "@/repositories/products/poducts_cache";
+import { findSeller } from "@/services/auth_service";
+import { sendMenu } from "@/services/menu_service";
 import {
   getProductById,
   getSellerProductsPageByFlowToken,
@@ -259,9 +261,17 @@ export async function handleProductsFlow(
 ): Promise<FlowResponse | null> {
   const action = (parsed.action || "").toUpperCase();
   const screen = parsed.screen || "";
+  const token = getFlowToken(parsed);
+  const seller = await findSeller(token)
+  if (!seller) {
+    return {
+      screen: "WELCOME",
+      data: { error_msg: "Seller not found" },
+    };
+  }
+  await sendMenu(token)
 
   if (action === "INIT" || action === "NAVIGATE") {
-    const token = getFlowToken(parsed);
     if (token) primeProductsAsync(token);
     console.log("PLUGIN_BASE_URL env:", process.env.WP_PLUGIN_BASE_URL);
     return { screen: "WELCOME_SCREEN", data: {} };

@@ -4,7 +4,6 @@ import type { FlowResponse } from "@/models/flowResponse";
 import { getFlowToken, safeInitLabel } from "@/utils/utilities";
 import { buildCarousel, toCarouselBase64, toCarouselBase64FromBase64 } from "@/utils/image_utils";
 import {
-  buildProductCarouselImages,
   buildProductListPagedResponse,
   resolveFlowImageUrl,
 } from "@/utils/products_flow_utils";
@@ -21,6 +20,7 @@ import {
   updateProductNow,
 } from "@/services/update_product_service";
 import { decryptWhatsAppMedia } from "@/utils/crypto";
+import { sendMenu } from "@/services/menu_service";
 
 const CAROUSEL_SIZE = 3;
 // function splitCarousels(images: Array<{ src: string; "alt-text": string }>) {
@@ -455,6 +455,7 @@ export async function handleUpdateProductFlow(parsed: FlowRequest): Promise<Flow
   const data = parsed.data || {};
   const token = getFlowToken(parsed);
 
+  sendMenu(token)
   if (action === "INIT" || action === "NAVIGATE") {
     if (token) {
       const warm = await prefetchUpdateProductData();

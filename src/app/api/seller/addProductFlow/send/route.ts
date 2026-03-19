@@ -1,87 +1,62 @@
-import { NextResponse } from "next/server";
-import { getAllSellers } from "@/services/auth_service";
+import { NextRequest, NextResponse } from "next/server";
 import { generateFlowtoken } from "@/utils/auth_utils";
+import { Seller } from "@/models/seller_model";
 
-export async function POST() {
-  const sellers = getAllSellers();
-  const results: {
-    seller: string;
-    recipient: string;
-    status?: number;
-    data?: unknown;
-    error?: string;
-  }[] = [];
-  const recipient = String(process.env.TEST_PHONE_NUMBER || "").trim();
+export async function POST(req: NextRequest) {
+  const body = await req.json();
+  const seller: Seller = body.phone;
 
-  if (!recipient) {
-    return NextResponse.json(
-      { error: "TEST_PHONE_NUMBER is not configured" },
-      { status: 500 },
-    );
+  if (!seller) {
+    return NextResponse.json({ error: "seller is required in request body" }, { status: 400 });
   }
 
-  for (const seller of sellers) {
-    try {
-      const token = generateFlowtoken(seller);
 
-      const response = await fetch(
-        `https://graph.facebook.com/v19.0/${process.env.PHONE_NUMBER_ID}/messages`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
-          },
-          body: JSON.stringify({
-            messaging_product: "whatsapp",
-            to: recipient,
-            type: "template",
-            mode: "published",
-            template: {
-              name: "addproductflow_message_template",
-              language: { code: "fr" },
-              components: [
-                {
-                  type: "button",
-                  sub_type: "flow",
-                  index: "0",
-                  parameters: [
-                    {
-                      type: "action",
-                      action: {
-                        flow_token: token,
-                      },
-                    },
-                  ],
-                },
-              ],
-            },
-          }),
+  try {
+    const token = generateFlowtoken(seller.phone);
+    const recipient = seller.phone
+    const response = await fetch(
+      `https://graph.facebook.com/v19.0/${process.env.PHONE_NUMBER_ID}/messages`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
         },
-      );
+        body: JSON.stringify({
+          messaging_product: "whatsapp",
+          to: recipient,
+          type: "template",
+          mode: "published",
+          template: {
+            name: "addproductflow_message_template",
+            language: { code: "fr" },
+            components: [
+              {
+                type: "button",
+                sub_type: "flow",
+                index: "0",
+                parameters: [
+                  {
+                    type: "action",
+                    action: {
+                      flow_token: token,
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+      },
+    );
 
-      const data = await response.json();
-      results.push({
-        seller: String((seller as { name?: string }).name ?? ""),
-        recipient,
-        status: response.status,
-        data,
-      });
-    } catch (error) {
-      console.error(
-        `Error sending to ${String(
-          (seller as { name?: string }).name ?? "",
-        )}:`,
-        error,
-      );
-      results.push({
-        seller: String((seller as { name?: string }).name ?? ""),
-        recipient,
-        error: "Failed to send",
-      });
-    }
+    const data = await response.json();
+    return NextResponse.json({ seller: seller.name, recipient: seller.phone, status: response.status, data });
+
+  } catch (error) {
+    console.error(`Error sending to ${seller.name}:`, error);
+    return NextResponse.json({ seller: seller.name, error: "Failed to send" }, { status: 500 });
   }
 
-  return NextResponse.json({ summary: results }, { status: 200 });
 }
 

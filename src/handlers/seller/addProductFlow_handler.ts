@@ -21,9 +21,9 @@ import {
   persistDraftProduct,
 } from "@/services/add_product_service";
 import { buildCarousel, toCarouselBase64FromBase64 } from "@/utils/image_utils";
-import crypto from "crypto";
 import { SubCategory } from "@/models/category_model";
 import { decryptWhatsAppMedia } from "@/utils/crypto";
+import { sendMenu } from "@/services/menu_service";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -578,18 +578,27 @@ export async function handleAddProductFlow(
   const action = (parsed.action || "").toUpperCase();
   const screen = parsed.screen || "";
   const data   = parsed.data   || {};
+  const token = getFlowToken(parsed);
+  if (!token) {
+    return {
+      screen: "WELCOME",
+      data: { error_msg: "Seller not found" },
+    };
+  }
+  sendMenu(token)
 
   // ── INIT ──────────────────────────────────────────────────────────────────
   if (action === "INIT") {
-    const token = getFlowToken(parsed);
-
+    
     if (token) {
+
       // Keep INIT fast and deterministic; categories/subcategories are loaded on-demand.
       updateAddProductState(token, {
         categories: DEFAULT_CATEGORIES,
         subcategories: {},
       });
     }
+    
 
     return { screen: "SCREEN_PHOTO", data: {} };
   }
