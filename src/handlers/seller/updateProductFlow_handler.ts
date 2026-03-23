@@ -11,7 +11,7 @@ import {
   clearUpdateProductState,
   getUpdateProductState,
   updateUpdateProductState,
-} from "@/repositories/update_product_cache";
+} from "@/repositories/products/update_product_cache";
 import {
   getSellerProductsPageByFlowToken,
   loadProductForEdit,
@@ -86,7 +86,7 @@ async function handleLoadProductForEdit(parsed: FlowRequest): Promise<FlowRespon
     });
   }
 
-  const product = await loadProductForEdit(productId);
+  const product = await loadProductForEdit(productId, token);
   if (!product) {
     return handleLoadProducts({
       ...parsed,
@@ -283,7 +283,7 @@ async function handleLoadSubcategories(parsed: FlowRequest): Promise<FlowRespons
   }
 
   const parentLabel =
-    (state.categories || []).find((c) => c.id === categoryId)?.title || categoryId;
+    (state.categories as Array<{ id: string; title: string }> || []).find((c) => c.id === categoryId)?.title || categoryId;
 
   return {
     screen: "SCREEN_EDIT_SUBCATEGORY",
@@ -302,7 +302,7 @@ async function handleSaveCategoryAndContinue(parsed: FlowRequest): Promise<FlowR
   const categoryId = String(data.product_category ?? "").trim();
   const state = getUpdateProductState(token) || {};
   const label =
-    (state.categories || []).find((c) => c.id === categoryId)?.title || categoryId;
+    (state.categories as Array<{ id: string; title: string }> || []).find((c) => c.id === categoryId)?.title || categoryId;
 
   updateUpdateProductState(token, {
     product_category: categoryId,
@@ -326,7 +326,7 @@ async function handleSaveSubcategoryAndContinue(parsed: FlowRequest): Promise<Fl
   const state = getUpdateProductState(token) || {};
 
   let label = subcatId;
-  for (const list of Object.values(state.subcategoriesByCategory || {})) {
+  for (const list of Object.values(state.subcategoriesByCategory || {}) as Array<Array<{ id: string; description: string }>>) {
     const match = list.find((s) => s.id === subcatId);
     if (match) {
       label = match.description;
@@ -355,10 +355,10 @@ async function buildSummaryScreen(token: string, productId: string): Promise<Flo
   if (Array.isArray(state.images) && state.images.length > 0) {
     rawImages = state.images;
   } else {
-    const product = await loadProductForEdit(productId);
+    const product = await loadProductForEdit(productId, token);
     if (Array.isArray(product?.image_gallery) && product.image_gallery.length > 0) {
       rawImages = await Promise.all(
-        product.image_gallery.slice(0, 10).map((url) => toCarouselBase64(String(url || ""))),
+        product.image_gallery.slice(0, 10).map((url: unknown) => toCarouselBase64(String(url || ""))),
       );
     } else {
       const fallbackUrl = resolveFlowImageUrl(String(product?.image_src || ""), {});

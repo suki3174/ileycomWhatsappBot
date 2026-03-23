@@ -346,6 +346,7 @@ export async function buildProductListPagedResponse(
   currentPage: number,
   hasMore: boolean,
   nextPage?: number,
+  options?: { includeImages?: boolean },
 ): Promise<FlowResponse> {
   if (pageItems.length === 0) {
     return {
@@ -357,9 +358,14 @@ export async function buildProductListPagedResponse(
     };
   }
 
-  const imageMap = await prefetchNavListImages(pageItems, 200);
+  const includeImages = options?.includeImages !== false;
+  let imageMap: Map<string, string> | undefined;
+  if (includeImages) {
+    imageMap = await prefetchNavListImages(pageItems, 200);
+  }
+
   const navItems = pageItems.map((p: any) =>
-    formatProductNavItem(p, imageMap.get(String(p.id)) || ""),
+    formatProductNavItem(p, includeImages ? (imageMap?.get(String(p.id)) || "") : ""),
   );
 
   const paginationItems: any[] = [];
