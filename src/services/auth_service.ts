@@ -1,4 +1,4 @@
- import {
+﻿ import {
   activateSellerSessionViaPlugin,
   findAllSellers,
   findSellerByFlowToken,
@@ -12,10 +12,10 @@ import {
   generateFlowtoken,
   hasSellerCodeValue,
   sellerEmailMatches,
-} from "@/utils/auth_utils";
-import { hashPin, verifyStoredPin } from "@/utils/pinHash";
-import { extractPhoneFromFlowToken } from "@/utils/repository_utils";
-import { normToken } from "@/utils/utilities";
+} from "@/utils/seller_auth_helpers";
+import { hashPin, verifyStoredPin } from "@/utils/pin_hash";
+import { extractPhoneFromFlowToken } from "@/utils/data_parser";
+import { normToken } from "@/utils/core_utils";
 
 const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
 

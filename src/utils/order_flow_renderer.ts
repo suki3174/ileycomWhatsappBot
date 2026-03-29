@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+﻿/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Order, OrderArticle } from "@/models/oder_model";
 import { paginateArray } from "./core_utils";
 import { toSizedBase64 } from "./image_processor";
@@ -146,6 +146,55 @@ export async function formatOrderArticlesPage(
     prev_page: hasPrev ? safePage - 1 : null,
     total_pages: totalPages,
     has_next: hasNext,
+    has_prev: hasPrev,
+    page_label: `Page ${safePage} / ${totalPages}`,
+    p1_img: await toSizedBase64(a1?.image ?? "", 120),
+    p1_name: a1?.name ?? "",
+    p1_sku: a1?.sku ?? "",
+    p1_qty_price: a1 ? `${a1.quantity} × ${a1.price} ${a1.currency}` : "",
+    p1_visible: !!a1,
+    p2_img: a2 ? await toSizedBase64(a2.image ?? "", 120) : "",
+    p2_name: a2?.name ?? "",
+    p2_sku: a2?.sku ?? "",
+    p2_qty_price: a2 ? `${a2.quantity} × ${a2.price} ${a2.currency}` : "",
+    p2_visible: !!a2,
+    p3_img: a3 ? await toSizedBase64(a3.image ?? "", 120) : "",
+    p3_name: a3?.name ?? "",
+    p3_sku: a3?.sku ?? "",
+    p3_qty_price: a3 ? `${a3.quantity} × ${a3.price} ${a3.currency}` : "",
+    p3_visible: !!a3,
+  };
+}
+
+export async function formatOrderArticlesServerPage(
+  orderId: string,
+  orderRef: string,
+  articles: OrderArticle[],
+  currentPage: number,
+  pageSize: number,
+  hasMore: boolean,
+  total: number,
+) {
+  const safePage = Number.isFinite(currentPage) && currentPage > 0
+    ? Math.floor(currentPage)
+    : 1;
+  const safePageSize = Number.isFinite(pageSize) && pageSize > 0
+    ? Math.floor(pageSize)
+    : 3;
+  const totalItems = Number.isFinite(total) && total >= 0 ? Math.floor(total) : articles.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / safePageSize));
+  const hasPrev = safePage > 1;
+
+  const [a1, a2, a3] = articles;
+
+  return {
+    order_id: orderId,
+    order_ref: orderRef,
+    current_page: safePage,
+    next_page: hasMore ? safePage + 1 : null,
+    prev_page: hasPrev ? safePage - 1 : null,
+    total_pages: totalPages,
+    has_next: hasMore,
     has_prev: hasPrev,
     page_label: `Page ${safePage} / ${totalPages}`,
     p1_img: await toSizedBase64(a1?.image ?? "", 120),

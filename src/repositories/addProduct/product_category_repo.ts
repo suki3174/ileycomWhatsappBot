@@ -1,4 +1,4 @@
-
+﻿
 import { ProductCategory, SubCategory } from "@/models/category_model";
 import { PLUGIN_TIMEOUT_MS, pluginPostWithRetry } from "@/utils/plugin_client";
 import {
@@ -6,7 +6,7 @@ import {
   normText,
   parsePluginJsonSafe,
   readResponseBodySafe,
-} from "@/utils/repository_utils";
+} from "@/utils/data_parser";
 
 let cachedCategories: ProductCategory[] | null = null;
 let lastFetchAt = 0;

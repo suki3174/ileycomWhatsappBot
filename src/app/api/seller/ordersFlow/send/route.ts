@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
-import { generateFlowtoken } from "@/utils/auth_utils";
+﻿import { NextRequest, NextResponse } from "next/server";
+import { generateFlowtoken } from "@/utils/seller_auth_helpers";
 import { Seller } from "@/models/seller_model";
+import { getSellerByPhone, prepareSellerState } from "@/services/auth_service";
 
 export async function POST(req: NextRequest) {
  
@@ -14,7 +15,10 @@ export async function POST(req: NextRequest) {
     try {
       const recipient = seller.phone
 
-      const token = generateFlowtoken(seller.phone);
+      const sellerFromState = await getSellerByPhone(seller.phone);
+      const persistedToken = String(sellerFromState?.flow_token || "").trim();
+      const token = persistedToken || generateFlowtoken(seller.phone);
+      if (!persistedToken) await prepareSellerState(token);
       
 
       const response = await fetch(

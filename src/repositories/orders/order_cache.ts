@@ -1,4 +1,4 @@
-import type { Order } from "@/models/oder_model";
+﻿import type { Order } from "@/models/oder_model";
 import type { OrderArticle } from "@/models/oder_model";
 import {
   findOrderArticlesByOrderId,
@@ -7,7 +7,7 @@ import {
   findOrderStatusCountersByFlowToken,
   type OrderStatusCounters,
 } from "@/repositories/orders/order_repo";
-import { normToken } from "@/utils/utilities";
+import { normToken } from "@/utils/core_utils";
 
 interface OrderListCacheEntry {
   orders: Order[];

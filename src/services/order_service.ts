@@ -1,16 +1,18 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
+﻿/* eslint-disable @typescript-eslint/no-unused-vars */
 import type { Order, OrderArticle } from "@/models/oder_model";
 import {
   findOrderById,
   findOrderArticlesByOrderId,
+  findOrderArticlesPageByOrderId,
   findOrderStatusCountersByFlowToken,
   findOrderSummariesPageByFlowToken,
   findOrdersBySellerFlowToken,
   filterOrdersByStatus,
+  type OrderArticlesPage,
   type OrderSummariesPage,
   type OrderStatusCounters,
 } from "@/repositories/orders/order_repo";
-import { normToken } from "@/utils/utilities";
+import { normToken } from "@/utils/core_utils";
 
 export async function getSellerOrdersByFlowToken(
   token: string,
@@ -50,6 +52,14 @@ export async function getOrderArticles(
   orderId: string,
 ): Promise<OrderArticle[]> {
   return findOrderArticlesByOrderId(orderId);
+}
+
+export async function getOrderArticlesPage(
+  orderId: string,
+  page = 1,
+  limit = 3,
+): Promise<OrderArticlesPage> {
+  return findOrderArticlesPageByOrderId(orderId, page, limit);
 }
 
 export async function getOrderStatusCounters(

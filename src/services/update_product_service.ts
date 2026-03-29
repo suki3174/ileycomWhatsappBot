@@ -1,4 +1,4 @@
-import {
+﻿import {
   fetchProductsPagedByFlowToken,
   fetchProductPhotosByFlowToken,
   fetchProductEditInfoByFlowToken,
@@ -9,7 +9,7 @@ import {
   fetchAllProductCategories,
   fetchSubCategoriesByCategory,
 } from "@/repositories/addProduct/product_category_repo";
-import { normText } from "@/utils/repository_utils";
+import { normText } from "@/utils/data_parser";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -31,6 +31,8 @@ export type ProductForEdit = {
   color?: string;
   size?: string;
   categories?: (string | number)[];
+  category_id?: string;
+  subcategory_id?: string;
   category_label?: string;
   subcategory_label?: string;
   image_gallery?: string[];
@@ -126,6 +128,8 @@ export async function loadProductForEdit(
     color: editInfo.color,
     size: editInfo.size,
     categories: catInfo?.category_slug ? [catInfo.category_slug] : [],
+    category_id: catInfo?.category_slug ?? "",
+    subcategory_id: catInfo?.subcategory_slug ?? "",
     category_label: catInfo?.category_label ?? "",
     subcategory_label: catInfo?.subcategory_label ?? "",
     image_gallery: imageGallery,

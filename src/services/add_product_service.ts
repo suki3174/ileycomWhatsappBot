@@ -1,4 +1,4 @@
-import type { AddProductState } from "@/models/product_model";
+﻿import type { AddProductState } from "@/models/product_model";
 import {
   saveProductDraft,
   markProductConfirmed,
@@ -12,7 +12,7 @@ import {
   type ProductCategory,
 } from "@/repositories/addProduct/product_category_repo";
 import { convertTndPricesViaPlugin } from "@/repositories/addProduct/pricing_repo";
-import { normToken } from "@/utils/utilities";
+import { normToken } from "@/utils/core_utils";
 
 export async function persistDraftProduct(
   flowToken: string,

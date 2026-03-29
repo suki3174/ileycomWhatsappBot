@@ -1,4 +1,4 @@
-import { normToken } from "@/utils/utilities";
+﻿import { normToken } from "@/utils/core_utils";
 import type { AddProductState } from "@/models/product_model";
 import { PLUGIN_TIMEOUT_MS, pluginPostWithRetry } from "@/utils/plugin_client";
 import crypto from "crypto";
@@ -7,7 +7,7 @@ import {
   readResponseBodySafe,
   asRecord,
   normText,
-} from "@/utils/repository_utils";
+} from "@/utils/data_parser";
 
 interface StoredProduct {
   id: string;

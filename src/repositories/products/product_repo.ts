@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
+﻿/* eslint-disable @typescript-eslint/no-unused-vars */
 import {
   type Product,
   type ProductVariation,
@@ -13,7 +13,7 @@ import {
   toBool,
   toNum,
   toStringArray,
-} from "@/utils/repository_utils";
+} from "@/utils/data_parser";
 
 const PRODUCTS_BY_FLOW_TIMEOUT_MS = Math.max(PLUGIN_TIMEOUT_MS, 20000);
 
