@@ -21,6 +21,7 @@ import {
 } from "@/services/update_product_service";
 import { decryptWhatsAppMedia } from "@/utils/flow_crypto";
 import { sendMenu } from "@/services/menu_service";
+import { findSeller, isSessionActive } from "@/services/auth_service";
 
 const CAROUSEL_SIZE = 3;
 // function splitCarousels(images: Array<{ src: string; "alt-text": string }>) {
@@ -484,6 +485,25 @@ export async function handleUpdateProductFlow(parsed: FlowRequest): Promise<Flow
   const screen = parsed.screen || "";
   const data = parsed.data || {};
   const token = getFlowToken(parsed);
+
+  const seller = await findSeller(token);
+  if (!seller) {
+    return {
+      screen: "WELCOME",
+      data: { error_message: "Seller not found", error_msg: "Seller not found" },
+    };
+  }
+
+  const active = await isSessionActive(token);
+  if (!active) {
+    return {
+      screen: "WELCOME",
+      data: {
+        error_message: "Session expiree. Reconnectez-vous.",
+        error_msg: "Session expiree. Reconnectez-vous.",
+      },
+    };
+  }
 
   if (action === "INIT" || action === "NAVIGATE") {
     // Keep flow startup fast: categories/subcategories are loaded lazily only

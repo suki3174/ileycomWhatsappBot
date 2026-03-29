@@ -12,7 +12,7 @@ import {
   getOrderStatusCounters,
 } from "@/services/order_service";
 import { buildOrderListResponse, formatOrderDetail, formatOrderArticlesServerPage } from "@/utils/order_flow_renderer";
-import { findSeller } from "@/services/auth_service";
+import { findSeller, isSessionActive } from "@/services/auth_service";
 
 const ORDER_LIST_PAGE_SIZE = 5;
 const ORDER_ARTICLES_PAGE_SIZE = 3;
@@ -325,6 +325,14 @@ export async function handleOrdersFlow(
     return {
       screen: "WELCOME",
       data: { error_msg: "Seller not found" },
+    };
+  }
+
+  const active = await isSessionActive(token);
+  if (!active) {
+    return {
+      screen: "WELCOME_SCREEN",
+      data: { error_msg: "Session expiree. Reconnectez-vous." },
     };
   }
 

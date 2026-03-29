@@ -1,7 +1,7 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { generateFlowtoken } from "@/utils/seller_auth_helpers";
 import { Seller } from "@/models/seller_model";
-import { getSellerByPhone, prepareSellerState } from "@/services/auth_service";
+import { getSellerByPhone, isSessionActive } from "@/services/auth_service";
 
 export async function POST(req: NextRequest) {
 
@@ -17,7 +17,20 @@ export async function POST(req: NextRequest) {
     const sellerFromState = await getSellerByPhone(seller.phone);
     const persistedToken = String(sellerFromState?.flow_token || "").trim();
     const token = persistedToken || generateFlowtoken(seller.phone);
-    if (!persistedToken) await prepareSellerState(token);
+    if (!persistedToken) {
+      return NextResponse.json(
+        { error: "Session inactive. Please sign in first." },
+        { status: 401 },
+      );
+    }
+
+    const active = await isSessionActive(token);
+    if (!active) {
+      return NextResponse.json(
+        { error: "Session expired. Please sign in again." },
+        { status: 401 },
+      );
+    }
     const recipient = seller.phone
 
     const response = await fetch(

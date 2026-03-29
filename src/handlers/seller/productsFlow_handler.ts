@@ -27,6 +27,7 @@ import {
   toPositivePage,
 } from "@/utils/product_flow_renderer";
 import { getFlowToken } from "@/utils/core_utils";
+import { isSessionActive } from "@/services/auth_service";
 
 
 
@@ -266,6 +267,14 @@ export async function handleProductsFlow(
     return {
       screen: "WELCOME",
       data: { error_msg: "Seller not found" },
+    };
+  }
+
+  const active = await isSessionActive(token);
+  if (!active) {
+    return {
+      screen: "WELCOME_SCREEN",
+      data: { error_msg: "Session expiree. Reconnectez-vous." },
     };
   }
 

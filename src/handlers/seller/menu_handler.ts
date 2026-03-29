@@ -13,6 +13,8 @@ const TRIGGER_TO_ENDPOINT: Record<string, string> = {
   "Modifier un produit": "/api/seller/updateProductFlow/send",
 };
 
+const AUTH_FLOW_SEND_ENDPOINT = "/api/seller/authFlow/send";
+
 export async function handleIncomingMessage(
   phone: string,
   messageBody: string
@@ -39,7 +41,22 @@ export async function handleIncomingMessage(
   const active = await isSessionActive(seller.flow_token ?? "");
 
   if (!active) {
-    console.log(`[handleIncomingMessage] Session expired for ${phone}, skipping flow.`);
+    console.log(`[handleIncomingMessage] Session expired for ${phone}, sending auth flow.`);
+
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000";
+      const authResponse = await fetch(`${baseUrl}${AUTH_FLOW_SEND_ENDPOINT}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ seller }),
+      });
+
+      const authData = await authResponse.json();
+      console.log(`[handleIncomingMessage] Session inactive -> auth flow sent`, authData);
+    } catch (error) {
+      console.error(`[handleIncomingMessage] Failed to send auth flow for ${phone}:`, error);
+    }
+
     return;
   }
 
