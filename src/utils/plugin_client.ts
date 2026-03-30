@@ -1,3 +1,5 @@
+﻿import { extractPhoneFromFlowToken } from "@/utils/data_parser";
+
 interface PluginPostOptions {
   timeoutMs?: number;
 }
@@ -16,20 +18,13 @@ export const PLUGIN_TIMEOUT_MS = Number.isFinite(timeoutFromEnv)
   ? Math.max(timeoutFromEnv, 1000)
   : 5000;
 
-function extractPhoneFromFlowToken(token: string): string {
-  const normalized = String(token || "").trim();
-  const match = normalized.match(/^flowtoken-(\d+)-\d+$/i);
-  if (match?.[1]) return match[1];
-  return "";
-}
-
 function summarizeFlowToken(payload: Record<string, unknown>): { token: string; phone: string } {
   const raw = payload.flow_token;
   const token = typeof raw === "string" ? raw.trim() : String(raw ?? "").trim();
   if (!token) return { token: "", phone: "" };
   return {
     token,
-    phone: extractPhoneFromFlowToken(token),
+    phone: extractPhoneFromFlowToken(token) ?? "",
   };
 }
 

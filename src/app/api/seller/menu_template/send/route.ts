@@ -1,4 +1,5 @@
-import { generateFlowtoken } from "@/utils/auth_utils";
+﻿import { generateFlowtoken } from "@/utils/seller_auth_helpers";
+import { getSellerByPhone, prepareSellerState } from "@/services/auth_service";
 import { NextRequest, NextResponse } from "next/server";
 
 
@@ -10,7 +11,10 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "phone is required in request body" }, { status: 400 });
     }
     try {
-        const token = generateFlowtoken(phone);
+        const sellerFromState = await getSellerByPhone(phone);
+        const persistedToken = String(sellerFromState?.flow_token || "").trim();
+        const token = persistedToken || generateFlowtoken(phone);
+        if (!persistedToken) await prepareSellerState(token);
         const recipient = phone
 
         const response = await fetch(

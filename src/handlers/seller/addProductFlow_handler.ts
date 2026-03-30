@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+﻿/* eslint-disable @typescript-eslint/no-explicit-any */
 import { FlowRequest } from "@/models/flowRequest";
 import { FlowResponse } from "@/models/flowResponse";
 import {
@@ -10,7 +10,7 @@ import {
   hasInvalidPromoPrice,
   parsePrice,
   resolveEurPrices,
-} from "@/utils/utilities";
+} from "@/utils/core_utils";
 import {
   getAddProductState,
   updateAddProductState,
@@ -20,9 +20,9 @@ import {
   getSubcategoriesByCategoryCached,
   persistDraftProduct,
 } from "@/services/add_product_service";
-import { buildCarousel, toCarouselBase64FromBase64 } from "@/utils/image_utils";
+import { buildCarousel, toCarouselBase64FromBase64 } from "@/utils/image_processor";
 import { SubCategory } from "@/models/category_model";
-import { decryptWhatsAppMedia } from "@/utils/crypto";
+import { decryptWhatsAppMedia } from "@/utils/flow_crypto";
 import { sendMenu } from "@/services/menu_service";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -567,6 +567,7 @@ async function handleSubmitSummary(parsed: FlowRequest): Promise<FlowResponse> {
     product_id:        createResult.productId,
   });
 
+  await sendMenu(token);
   return { screen: "SUCCESS", data: {} };
 }
 
@@ -585,7 +586,6 @@ export async function handleAddProductFlow(
       data: { error_msg: "Seller not found" },
     };
   }
-  sendMenu(token)
 
   // ── INIT ──────────────────────────────────────────────────────────────────
   if (action === "INIT") {

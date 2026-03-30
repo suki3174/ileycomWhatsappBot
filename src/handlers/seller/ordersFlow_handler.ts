@@ -1,19 +1,18 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+﻿/* eslint-disable @typescript-eslint/no-explicit-any */
 import { FlowRequest } from "@/models/flowRequest";
 import { FlowResponse } from "@/models/flowResponse";
 import {
   getFlowToken,
 
-} from "@/utils/utilities";
+} from "@/utils/core_utils";
 import {
   getOrderById,
-  getOrderArticles,
+  getOrderArticlesPage,
   getSellerOrderSummariesPage,
   getOrderStatusCounters,
 } from "@/services/order_service";
-import { buildOrderListResponse, formatOrderDetail, formatOrderArticlesPage } from "@/utils/oders_flow_utils";
-import { findSeller } from "@/services/auth_service";
-import { sendMenu } from "@/services/menu_service";
+import { buildOrderListResponse, formatOrderDetail, formatOrderArticlesServerPage } from "@/utils/order_flow_renderer";
+import { findSeller, isSessionActive } from "@/services/auth_service";
 
 const ORDER_LIST_PAGE_SIZE = 5;
 const ORDER_ARTICLES_PAGE_SIZE = 3;
@@ -237,13 +236,19 @@ async function handleOrderDetail(parsed: FlowRequest): Promise<FlowResponse> {
     return { screen: "ORDER_DETAIL", data };
   }
 
-  const articles = await getOrderArticles(orderId);
-  const articlesPage = await formatOrderArticlesPage(
+  const articlesPageResult = await getOrderArticlesPage(
     orderId,
-    orderRef || `Commande #${orderId}`,
-    articles,
     page,
     ORDER_ARTICLES_PAGE_SIZE,
+  );
+  const articlesPage = await formatOrderArticlesServerPage(
+    orderId,
+    orderRef || `Commande #${orderId}`,
+    articlesPageResult.articles,
+    articlesPageResult.page,
+    articlesPageResult.limit,
+    articlesPageResult.hasMore,
+    articlesPageResult.total,
   );
 
   return {
@@ -279,17 +284,24 @@ async function handleOrderArticles(
     return { screen: "ORDER_ARTICLES", data };
   }
 
-  const articles = await getOrderArticles(orderId);
   const requestedPage = Number(data.page ?? data.current_page ?? 1);
   const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
   console.log("handleOrderArticles — page:", page);
 
-  const articlesPage = await formatOrderArticlesPage(
+  const articlesPageResult = await getOrderArticlesPage(
     orderId,
-    orderRef || `Commande #${orderId}`,
-    articles,
     page,
     ORDER_ARTICLES_PAGE_SIZE,
+  );
+
+  const articlesPage = await formatOrderArticlesServerPage(
+    orderId,
+    orderRef || `Commande #${orderId}`,
+    articlesPageResult.articles,
+    articlesPageResult.page,
+    articlesPageResult.limit,
+    articlesPageResult.hasMore,
+    articlesPageResult.total,
   );
 
   return {
@@ -315,7 +327,14 @@ export async function handleOrdersFlow(
       data: { error_msg: "Seller not found" },
     };
   }
-  await sendMenu(token)
+
+  const active = await isSessionActive(token);
+  if (!active) {
+    return {
+      screen: "WELCOME_SCREEN",
+      data: { error_msg: "Session expiree. Reconnectez-vous." },
+    };
+  }
 
   if (action === "INIT" || action === "NAVIGATE") {
     return { screen: "WELCOME_SCREEN", data: {} };

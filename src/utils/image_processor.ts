@@ -16,6 +16,7 @@ import { env } from "process";
 
  const CAROUSEL_SIZE = 3;
 const MAX_BYTES = 90_000; // 90KB — leave headroom under 100KB limit
+const IMAGE_FETCH_TIMEOUT_MS = 1200;
 // 1x1 transparent PNG fallback to avoid empty image fields on transient failures.
 const FALLBACK_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Z2ioAAAAASUVORK5CYII=";
@@ -136,7 +137,7 @@ async function buildImageBase64(
 
     if (!inputBuffer && imageUrl) {
       const response = await fetch(imageUrl, {
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS),
       });
 
       if (!response.ok) {

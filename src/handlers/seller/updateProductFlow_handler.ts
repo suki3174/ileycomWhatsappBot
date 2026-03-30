@@ -1,17 +1,17 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+﻿/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { FlowRequest } from "@/models/flowRequest";
 import type { FlowResponse } from "@/models/flowResponse";
-import { getFlowToken, safeInitLabel } from "@/utils/utilities";
-import { buildCarousel, toCarouselBase64, toCarouselBase64FromBase64 } from "@/utils/image_utils";
+import { getFlowToken, safeInitLabel } from "@/utils/core_utils";
+import { buildCarousel, toCarouselBase64, toCarouselBase64FromBase64 } from "@/utils/image_processor";
 import {
   buildProductListPagedResponse,
   resolveFlowImageUrl,
-} from "@/utils/products_flow_utils";
+} from "@/utils/product_flow_renderer";
 import {
   clearUpdateProductState,
   getUpdateProductState,
   updateUpdateProductState,
-} from "@/repositories/update_product_cache";
+} from "@/repositories/products/update_product_cache";
 import {
   getSellerProductsPageByFlowToken,
   loadProductForEdit,
@@ -19,8 +19,9 @@ import {
   prefetchUpdateProductData,
   updateProductNow,
 } from "@/services/update_product_service";
-import { decryptWhatsAppMedia } from "@/utils/crypto";
+import { decryptWhatsAppMedia } from "@/utils/flow_crypto";
 import { sendMenu } from "@/services/menu_service";
+import { findSeller, isSessionActive } from "@/services/auth_service";
 
 const CAROUSEL_SIZE = 3;
 // function splitCarousels(images: Array<{ src: string; "alt-text": string }>) {
@@ -86,7 +87,7 @@ async function handleLoadProductForEdit(parsed: FlowRequest): Promise<FlowRespon
     });
   }
 
-  const product = await loadProductForEdit(productId);
+  const product = await loadProductForEdit(productId, token);
   if (!product) {
     return handleLoadProducts({
       ...parsed,
@@ -114,12 +115,24 @@ async function handleLoadProductForEdit(parsed: FlowRequest): Promise<FlowRespon
     couleur: "",
     taille: "",
     quantite: safeInitLabel(product.stock_quantity ?? "", { fallback: "0" }),
-    product_category: (product.categories?.[0] ?? "Autre").toString(),
-    product_category_label: (product.categories?.[0] ?? "Autre").toString(),
-    product_subcategory: (product.categories?.[0] ?? "Autre").toString(),
-    product_subcategory_label: (product.categories?.[0] ?? "Autre").toString(),
+    product_category: safeInitLabel(product.category_id ?? product.categories?.[0] ?? "", { fallback: "autre" }),
+    product_category_label: safeInitLabel(product.category_label ?? product.category_id ?? "", { fallback: "Autre" }),
+    product_subcategory: safeInitLabel(product.subcategory_id ?? "", { fallback: "" }),
+    product_subcategory_label: safeInitLabel(product.subcategory_label ?? product.subcategory_id ?? "", { fallback: "Autre" }),
   });
-  const rawImages: string[] = product.image_gallery ?? [];
+  const rawImages: string[] = Array.isArray(product.image_gallery)
+    ? product.image_gallery.filter((img) => typeof img === "string" && img.trim().length > 0)
+    : [];
+
+  // Some products have no gallery in plugin payload; provide a safe fallback
+  // so SCREEN_PHOTOS always receives at least one image slot.
+  if (rawImages.length === 0) {
+    const fallback = await toCarouselBase64(String(product.image_src || ""));
+    if (fallback) {
+      rawImages.push(fallback);
+    }
+  }
+
   const carousel1   = buildCarousel(rawImages, 0);
   const showCarousel2 = rawImages.length > CAROUSEL_SIZE;
   const carousel2   = showCarousel2 ? buildCarousel(rawImages, CAROUSEL_SIZE) : [];
@@ -130,7 +143,8 @@ async function handleLoadProductForEdit(parsed: FlowRequest): Promise<FlowRespon
       product_id: productId,
       product_name_display: safeInitLabel(product.name, { fallback: "Produit", maxLen: 40 }),
       images: carousel1,
-      images_2:carousel2
+      images_2: carousel2,
+      show_carousel_2: showCarousel2,
     },
   };
 }
@@ -251,8 +265,24 @@ async function handleGoEditCategory(parsed: FlowRequest): Promise<FlowResponse> 
   const data = parsed.data || {};
   const productId = String(data.product_id ?? "").trim();
   const state = getUpdateProductState(token) || {};
-  const categories = (state.categories && state.categories.length > 0) ? state.categories : [];
-  const selectedCategory = String(state.product_category || "").trim();
+
+  let categories = (state.categories && state.categories.length > 0)
+    ? state.categories
+    : [];
+
+  if (categories.length === 0) {
+    const warm = await prefetchUpdateProductData();
+    const fetched = Array.isArray(warm.categories)
+      ? warm.categories as Array<{ id: string; title: string }>
+      : [];
+    categories = fetched;
+    updateUpdateProductState(token, { categories: fetched });
+  }
+
+  let selectedCategory = String(state.product_category || "").trim();
+  if (!selectedCategory && categories.length > 0) {
+    selectedCategory = String(categories[0]?.id || "").trim();
+  }
 
   return {
     screen: "SCREEN_EDIT_CATEGORY",
@@ -283,7 +313,7 @@ async function handleLoadSubcategories(parsed: FlowRequest): Promise<FlowRespons
   }
 
   const parentLabel =
-    (state.categories || []).find((c) => c.id === categoryId)?.title || categoryId;
+    (state.categories as Array<{ id: string; title: string }> || []).find((c) => c.id === categoryId)?.title || categoryId;
 
   return {
     screen: "SCREEN_EDIT_SUBCATEGORY",
@@ -302,7 +332,7 @@ async function handleSaveCategoryAndContinue(parsed: FlowRequest): Promise<FlowR
   const categoryId = String(data.product_category ?? "").trim();
   const state = getUpdateProductState(token) || {};
   const label =
-    (state.categories || []).find((c) => c.id === categoryId)?.title || categoryId;
+    (state.categories as Array<{ id: string; title: string }> || []).find((c) => c.id === categoryId)?.title || categoryId;
 
   updateUpdateProductState(token, {
     product_category: categoryId,
@@ -326,7 +356,7 @@ async function handleSaveSubcategoryAndContinue(parsed: FlowRequest): Promise<Fl
   const state = getUpdateProductState(token) || {};
 
   let label = subcatId;
-  for (const list of Object.values(state.subcategoriesByCategory || {})) {
+  for (const list of Object.values(state.subcategoriesByCategory || {}) as Array<Array<{ id: string; description: string }>>) {
     const match = list.find((s) => s.id === subcatId);
     if (match) {
       label = match.description;
@@ -355,10 +385,10 @@ async function buildSummaryScreen(token: string, productId: string): Promise<Flo
   if (Array.isArray(state.images) && state.images.length > 0) {
     rawImages = state.images;
   } else {
-    const product = await loadProductForEdit(productId);
+    const product = await loadProductForEdit(productId, token);
     if (Array.isArray(product?.image_gallery) && product.image_gallery.length > 0) {
       rawImages = await Promise.all(
-        product.image_gallery.slice(0, 10).map((url) => toCarouselBase64(String(url || ""))),
+        product.image_gallery.slice(0, 10).map((url: unknown) => toCarouselBase64(String(url || ""))),
       );
     } else {
       const fallbackUrl = resolveFlowImageUrl(String(product?.image_src || ""), {});
@@ -445,6 +475,7 @@ async function handleSubmitUpdate(parsed: FlowRequest): Promise<FlowResponse> {
     };
   }
 
+  await sendMenu(token);
   clearUpdateProductState(token);
   return { screen: "SUCCESS", data: {} };
 }
@@ -455,12 +486,28 @@ export async function handleUpdateProductFlow(parsed: FlowRequest): Promise<Flow
   const data = parsed.data || {};
   const token = getFlowToken(parsed);
 
-  sendMenu(token)
+  const seller = await findSeller(token);
+  if (!seller) {
+    return {
+      screen: "WELCOME",
+      data: { error_message: "Seller not found", error_msg: "Seller not found" },
+    };
+  }
+
+  const active = await isSessionActive(token);
+  if (!active) {
+    return {
+      screen: "WELCOME",
+      data: {
+        error_message: "Session expiree. Reconnectez-vous.",
+        error_msg: "Session expiree. Reconnectez-vous.",
+      },
+    };
+  }
+
   if (action === "INIT" || action === "NAVIGATE") {
-    if (token) {
-      const warm = await prefetchUpdateProductData();
-      updateUpdateProductState(token, warm);
-    }
+    // Keep flow startup fast: categories/subcategories are loaded lazily only
+    // when the seller reaches category-edit screens.
     return { screen: "WELCOME", data: {} };
   }
 
@@ -476,6 +523,7 @@ export async function handleUpdateProductFlow(parsed: FlowRequest): Promise<Flow
       return { screen: "WELCOME", data: {} };
     case "PRODUCT_LIST":
       if (cmd === "paginate" || cmd === "load_products") return handleLoadProducts(parsed);
+      if (cmd === "details") return handleLoadProductForEdit(parsed);
       if (cmd === "load_product_for_edit") return handleLoadProductForEdit(parsed);
       return handleLoadProducts(parsed);
     case "SCREEN_PHOTOS":

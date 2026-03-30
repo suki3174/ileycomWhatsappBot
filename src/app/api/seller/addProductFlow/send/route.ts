@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
-import { generateFlowtoken } from "@/utils/auth_utils";
+﻿import { NextRequest, NextResponse } from "next/server";
+import { generateFlowtoken } from "@/utils/seller_auth_helpers";
 import { Seller } from "@/models/seller_model";
+import { getSellerByPhone, prepareSellerState } from "@/services/auth_service";
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const seller: Seller = body.phone;
+  const seller: Seller = body.seller;
 
   if (!seller) {
     return NextResponse.json({ error: "seller is required in request body" }, { status: 400 });
@@ -12,7 +13,10 @@ export async function POST(req: NextRequest) {
 
 
   try {
-    const token = generateFlowtoken(seller.phone);
+    const sellerFromState = await getSellerByPhone(seller.phone);
+    const persistedToken = String(sellerFromState?.flow_token || "").trim();
+    const token = persistedToken || generateFlowtoken(seller.phone);
+    if (!persistedToken) await prepareSellerState(token);
     const recipient = seller.phone
     const response = await fetch(
       `https://graph.facebook.com/v19.0/${process.env.PHONE_NUMBER_ID}/messages`,
