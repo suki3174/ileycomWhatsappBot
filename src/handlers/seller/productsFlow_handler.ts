@@ -94,7 +94,7 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
       (await getProductById(selectedId)) ||
       pageProducts.find((p: any) => String(p.id) === selectedId);
 
-      console.log("produit:",product)
+    console.log("produit:", product)
 
     if (!product) {
       console.log("product not found:", selectedId);
@@ -119,7 +119,7 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
         product.image_src,
         `Image principale de ${product.name || "produit"}`,
         mapImageUrl
-         
+
       );
 
       return {
@@ -132,13 +132,13 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
           short_desc: normalizeFlowLabel(
             sanitizeRichText(
               product.short_description ||
-                "Description courte non renseignee",
+              "Description courte non renseignee",
             ),
           ),
           full_desc: normalizeFlowLabel(
             sanitizeRichText(
               product.full_description ||
-                "Description complete non renseignee",
+              "Description complete non renseignee",
             ),
           ),
           prices: formatSimplePrices(product),
@@ -153,7 +153,7 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
     rememberVariableProduct(token, String(product.id));
     return {
       screen: "PRODUCT_DETAIL_VARIABLE",
-      data: await buildVariableDetailData(product,mapImageUrl),
+      data: await buildVariableDetailData(product, mapImageUrl),
     };
   }
 
@@ -181,13 +181,13 @@ async function handleVariationDetail(parsed: FlowRequest): Promise<FlowResponse>
 
     if (productId) {
       const product = await getProductById(productId);
-            console.log("produit:",product)
+      console.log("produit:", product)
 
       if (product) {
         rememberVariableProduct(token, String(product.id));
         return {
           screen: "PRODUCT_DETAIL_VARIABLE",
-          data: await buildVariableDetailData(product,mapImageUrl),
+          data: await buildVariableDetailData(product, mapImageUrl),
         };
       }
     }
@@ -241,16 +241,7 @@ async function handleVariationDetail(parsed: FlowRequest): Promise<FlowResponse>
   };
 }
 
-async function handleSimpleDetail(parsed: FlowRequest): Promise<FlowResponse> {
-  const data = parsed.data || {};
-  const page = toPositivePage(data.current_page ?? data.page) ?? 1;
 
-  return handleProductList({
-    ...parsed,
-    screen: "PRODUCT_LIST",
-    data: { ...data, cmd: "paginate", page },
-  });
-}
 
 // ---------------------------------------------------------------------------
 // Main entry point
@@ -285,10 +276,12 @@ export async function handleProductsFlow(
       case "PRODUCT_LIST":
         return handleProductList(parsed);
       case "PRODUCT_DETAIL_SIMPLE":
-        return handleSimpleDetail(parsed);
+        return { screen: "SUCCESS", data: {} };
       case "PRODUCT_DETAIL_VARIABLE":
-      case "VARIATION_DETAIL":
         return handleVariationDetail(parsed);
+      case "VARIATION_DETAIL":
+        return { screen: "SUCCESS", data: {} };
+
       default:
         return { screen: "WELCOME_SCREEN", data: {} };
     }

@@ -8,7 +8,7 @@ export async function POST(req: Request) {
   const seller = sellers.find(
     sl =>
       sl.reset_token === token &&
-      sl.reset_token_expiry &&
+      sl.reset_token &&
       sl.reset_token_expiry > Date.now()
   );
 
