@@ -1,6 +1,6 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-import { getFlowToken, isValidEmail } from "@/utils/utilities"
-import { extractPhoneFromFlowToken } from "@/utils/repository_utils";
+﻿/* eslint-disable @typescript-eslint/no-unused-vars */
+import { getFlowToken, isValidEmail } from "@/utils/core_utils"
+import { extractPhoneFromFlowToken } from "@/utils/data_parser";
 import { findSellerByFlowToken, findSellerStateByPhone } from "@/repositories/auth/seller_repo";
 import {
   prepareSellerState,
@@ -11,7 +11,7 @@ import {
   startSellerSession,
   findSeller,
 } from "@/services/auth_service";
-import { isPinStrong } from "@/utils/auth_utils";
+import { isPinStrong } from "@/utils/seller_auth_helpers";
 import { sendResetEmail } from "@/services/reset_code_service";
 import { FlowRequest } from "@/models/flowRequest";
 import { FlowResponse } from "@/models/flowResponse";
@@ -112,7 +112,7 @@ async function handleSignIn(parsed: FlowRequest,seller: Seller): Promise<FlowRes
 
     // Update session_active_until timestamp (runs in background)
     await startSellerSession(token);
-    sendMenu(token)
+    await sendMenu(token);
     return {
       screen: "SUCCESS",
       data: { message: "Connexion réussie." },

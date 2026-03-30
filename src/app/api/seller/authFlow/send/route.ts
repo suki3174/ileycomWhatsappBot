@@ -1,7 +1,7 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
+﻿/* eslint-disable @typescript-eslint/no-unused-vars */
 import { NextRequest, NextResponse } from "next/server";
-import { getAllSellers } from "@/services/auth_service";
-import { generateFlowtoken } from "@/utils/auth_utils";
+import { getAllSellers, getSellerByPhone, prepareSellerState } from "@/services/auth_service";
+import { generateFlowtoken } from "@/utils/seller_auth_helpers";
 import { Seller } from "@/models/seller_model";
 
 export async function  POST( req: NextRequest) {
@@ -15,7 +15,10 @@ export async function  POST( req: NextRequest) {
       const limited = seller.name.length > 50 ? seller.name.slice(0, 50) + "..." : seller.name;
       const recipient = seller.phone
 
-      const token = generateFlowtoken(seller.phone);
+      const sellerFromState = await getSellerByPhone(seller.phone);
+      const persistedToken = String(sellerFromState?.flow_token || "").trim();
+      const token = persistedToken || generateFlowtoken(seller.phone);
+      if (!persistedToken) await prepareSellerState(token);
 
       const response = await fetch(
         `https://graph.facebook.com/v19.0/${process.env.PHONE_NUMBER_ID}/messages`,

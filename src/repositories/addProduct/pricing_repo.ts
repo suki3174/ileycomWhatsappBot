@@ -1,6 +1,6 @@
-import { pluginPostWithRetry, PLUGIN_TIMEOUT_MS } from "@/utils/plugin_client";
-import { asRecord, parsePluginJsonSafe, normText } from "@/utils/repository_utils";
-import { convertTndToEur } from "@/utils/utilities";
+﻿import { pluginPostWithRetry, PLUGIN_TIMEOUT_MS } from "@/utils/plugin_client";
+import { asRecord, parsePluginJsonSafe, normText } from "@/utils/data_parser";
+import { convertTndToEur } from "@/utils/core_utils";
 
 export interface PricingConversionResult {
   regularEur: number;

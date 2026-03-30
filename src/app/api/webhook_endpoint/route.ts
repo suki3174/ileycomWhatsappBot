@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { handleIncomingMessage } from "@/handlers/seller/menu_handler";
-import { generateFlowtoken } from "@/utils/auth_utils";
 
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 
@@ -37,13 +36,11 @@ export async function POST(request: Request) {
     const messageType = message?.type;               
 
 
-    const token =generateFlowtoken(senderPhone)
-    if (messageBody) {
-       
+    if (messageBody && senderPhone) {
 
         if (messageType=== "text" && messageBody) {
           if (MENU_TRIGGERS.has(messageBody.trim())) {
-            await handleIncomingMessage(token, messageBody);
+            await handleIncomingMessage(senderPhone, messageBody);
           } else {
             console.log(`[webhook] Ignored message: "${messageBody}"`);
           }

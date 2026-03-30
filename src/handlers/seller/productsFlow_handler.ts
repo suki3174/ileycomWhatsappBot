@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+﻿/* eslint-disable @typescript-eslint/no-explicit-any */
 import { FlowRequest } from "@/models/flowRequest";
 import { FlowResponse } from "@/models/flowResponse";
 import { ProductType } from "@/models/product_model";
@@ -6,7 +6,6 @@ import {
   getLastVariableProductId,
 } from "@/repositories/products/poducts_cache";
 import { findSeller } from "@/services/auth_service";
-import { sendMenu } from "@/services/menu_service";
 import {
   getProductById,
   getSellerProductsPageByFlowToken,
@@ -26,8 +25,9 @@ import {
   resolveFlowImageUrl,
   sanitizeRichText,
   toPositivePage,
-} from "@/utils/products_flow_utils";
-import { getFlowToken } from "@/utils/utilities";
+} from "@/utils/product_flow_renderer";
+import { getFlowToken } from "@/utils/core_utils";
+import { isSessionActive } from "@/services/auth_service";
 
 
 
@@ -269,7 +269,14 @@ export async function handleProductsFlow(
       data: { error_msg: "Seller not found" },
     };
   }
-  await sendMenu(token)
+
+  const active = await isSessionActive(token);
+  if (!active) {
+    return {
+      screen: "WELCOME_SCREEN",
+      data: { error_msg: "Session expiree. Reconnectez-vous." },
+    };
+  }
 
   if (action === "INIT" || action === "NAVIGATE") {
     if (token) primeProductsAsync(token);
