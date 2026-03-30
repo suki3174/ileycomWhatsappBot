@@ -87,7 +87,7 @@ export async function fetchSubCategoriesByCategory(categoryId: string): Promise<
   try {
     const res = await pluginPostWithRetry(
       "/seller/product/subcategories/list",
-      { category_id: normalizedCategoryId, include_empty: false, limit: MAX_FLOW_CATEGORIES },
+        { category_id: normalizedCategoryId, include_empty: true, limit: MAX_FLOW_CATEGORIES },
       { timeoutMs: Math.max(PLUGIN_TIMEOUT_MS, 8_000), retries: 0, retryDelayMs: 250 },
     );
 
@@ -126,7 +126,7 @@ export async function fetchAllProductCategories(): Promise<ProductCategory[]> {
   try {
     const res = await pluginPostWithRetry(
       "/seller/product/categories/list",
-      { include_empty: false, parent_only: true, limit: MAX_FLOW_CATEGORIES },
+        { include_empty: true, parent_only: true, limit: MAX_FLOW_CATEGORIES },
       { timeoutMs: Math.max(PLUGIN_TIMEOUT_MS, 8_000), retries: 0, retryDelayMs: 250 },
     );
 
