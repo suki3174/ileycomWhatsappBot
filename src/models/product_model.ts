@@ -37,6 +37,7 @@ export interface Product {
   id: string;
   name: string;
   type: ProductType;
+  status?: string;
   sku: string;
   image_src: string;
   image_gallery?: string[];
