@@ -24,6 +24,7 @@ import { buildCarousel, toCarouselBase64FromBase64 } from "@/utils/image_process
 import { SubCategory } from "@/models/category_model";
 import { decryptWhatsAppMedia } from "@/utils/flow_crypto";
 import { sendMenu } from "@/services/menu_service";
+import { extractPhoneFromFlowToken } from "@/utils/data_parser";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -561,11 +562,46 @@ async function handleSubmitSummary(parsed: FlowRequest): Promise<FlowResponse> {
 
   updateAddProductState(token, {
     submitted_at:      Date.now(),
+    created_at:        new Date().toLocaleDateString("fr-FR"),
     submit_status:     "submitted",
     submit_message:    "Produit ajouté avec succès.",
     submit_error_code: "",
     product_id:        createResult.productId,
   });
+
+  // ─── Trigger AI Optimization ─────────────────────────────────────────────
+  // After product is created, send only the product ID to AI for optimization (async)
+  // The request is non-blocking and AI will fetch full product details from your backend
+  try {
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000";
+    const sellerPhone = extractPhoneFromFlowToken(token);
+    
+    const aiResponse = await fetch(
+      `${baseUrl}/api/seller/optimizedProductFlow/genAI_endpoint`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          productId: createResult.productId,
+          sellerPhone: sellerPhone
+        }),
+      }
+    );
+
+    if (aiResponse.ok) {
+      console.info(
+        `[addProductFlow] AI optimization triggered for product ${createResult.productId} (seller: ${sellerPhone})`
+      );
+    } else {
+      console.warn(
+        `[addProductFlow] AI optimization request failed: ${aiResponse.status}`
+      );
+    }
+  } catch (err) {
+    // Don't fail the product creation if AI optimization fails
+    console.warn("[addProductFlow] Error triggering AI optimization:", err);
+  }
+  // ──────────────────────────────────────────────────────────────────────
 
   await sendMenu(token);
   return { screen: "SUCCESS", data: {} };

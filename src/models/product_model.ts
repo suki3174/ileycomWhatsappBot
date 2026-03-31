@@ -155,6 +155,7 @@ export interface AddProductState {
   quantite?: string;
   product_id?: string;
   submitted_at?: number;
+  created_at?: string; // Date in format "dd/mm/yyyy"
   submit_status?: string;
   submit_message?: string;
   submit_error_code?: string;

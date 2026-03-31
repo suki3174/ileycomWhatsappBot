@@ -14,13 +14,26 @@ const MAX_CAROUSEL_IMAGES = 3;
 
 export function formatSimplePrices(product: any): string {
   const euro = String(
-    product?.promo_price_euro ?? product?.general_price_euro ?? "",
+    product?.general_price_euro ?? "",
   ).trim();
   const tnd = String(
-    product?.promo_price_tnd ?? product?.general_price_tnd ?? "",
+    product?.general_price_tnd ?? "",
   ).trim();
 
   if (!euro && !tnd) return "Prix non renseigne";
+  if (!euro) return `${tnd} TND`;
+  if (!tnd) return `${euro} EUR`;
+  return `${euro} EUR | ${tnd} TND`;
+}
+export function formatPromoPrices(product: any): string {
+  const euro = String(
+    product.promo_price_euro ?? "",
+  ).trim();
+  const tnd = String(
+    product.promo_price_tnd ?? "",
+  ).trim();
+
+  if (!euro && !tnd) return "";
   if (!euro) return `${tnd} TND`;
   if (!tnd) return `${euro} EUR`;
   return `${euro} EUR | ${tnd} TND`;
