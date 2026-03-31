@@ -1,21 +1,21 @@
 ﻿/* eslint-disable @typescript-eslint/no-unused-vars */
 import { getFlowToken, isValidEmail } from "@/utils/core_utils"
 import { extractPhoneFromFlowToken } from "@/utils/data_parser";
-import { findSellerByFlowToken, findSellerStateByPhone } from "@/repositories/auth/seller_repo";
+import { findSellerStateByPhone } from "@/repositories/auth/seller_repo";
 import {
   prepareSellerState,
+  primeAuthWarmupAsync,
   sellerHasCodeByFlowToken,
   setSellerCode,
   verifyCode,
   verifySellerEmail,
   startSellerSession,
-  findSeller,
 } from "@/services/auth_service";
+import { getCachedAuthDecision, updateAuthWarmupCache } from "@/repositories/auth/auth_cache";
 import { isPinStrong } from "@/utils/seller_auth_helpers";
 import { sendResetEmail } from "@/services/reset_code_service";
 import { FlowRequest } from "@/models/flowRequest";
 import { FlowResponse } from "@/models/flowResponse";
-import { Seller } from "@/models/seller_model";
 import { sendMenu } from "@/services/menu_service";
 
 
@@ -39,6 +39,15 @@ async function handleWelcome(parsed: FlowRequest): Promise<FlowResponse> {
       };
     }
 
+    // Fast path: use warmup cache to avoid blocking flow transitions.
+    const cachedDecision = getCachedAuthDecision(token);
+    if (cachedDecision) {
+      return {
+        screen: cachedDecision.hasCode ? "SIGN_IN" : "SIGN_UP",
+        data: { error_msg: "" },
+      };
+    }
+
     // Extract phone from flow token and search seller_state
     const phone = extractPhoneFromFlowToken(token);
     
@@ -54,6 +63,11 @@ async function handleWelcome(parsed: FlowRequest): Promise<FlowResponse> {
     // No cache dependency, works on first run after app restart.
     const seller = await findSellerStateByPhone(phone);
     const hasCode = !!seller?.code && String(seller.code).trim() !== "";
+
+    updateAuthWarmupCache(token, {
+      hasCode,
+      preparedAt: Date.now(),
+    });
     
     // Route: if seller has a code, they're already registered → SIGN_IN
     // Otherwise → SIGN_UP to create account and set PIN code
@@ -86,7 +100,7 @@ async function handleWelcome(parsed: FlowRequest): Promise<FlowResponse> {
 /* SIGN IN */
 /* -------------------------------- */
 
-async function handleSignIn(parsed: FlowRequest,seller: Seller): Promise<FlowResponse> {
+async function handleSignIn(parsed: FlowRequest): Promise<FlowResponse> {
   const data = parsed.data || {};
   const pin = String(data.pin_code ?? "").trim();
 
@@ -110,9 +124,21 @@ async function handleSignIn(parsed: FlowRequest,seller: Seller): Promise<FlowRes
       };
     }
 
-    // Update session_active_until timestamp (runs in background)
-    await startSellerSession(token);
-    await sendMenu(token);
+    // Do not block flow transition on network side effects.
+    void (async () => {
+      try {
+        await startSellerSession(token);
+      } catch (err) {
+        console.error("SIGN_IN session activation failed", err);
+      }
+
+      try {
+        await sendMenu(token);
+      } catch (err) {
+        console.error("SIGN_IN menu send failed", err);
+      }
+    })();
+
     return {
       screen: "SUCCESS",
       data: { message: "Connexion réussie." },
@@ -285,25 +311,13 @@ export async function handleAuthFlow(
 ): Promise<FlowResponse> {
   const rawAction = parsed.action || "";
   const action = rawAction.toUpperCase();
-  let  seller : Seller|undefined =undefined 
   const token = getFlowToken(parsed);
-  seller = await findSeller(token)
-
-
-  if (!seller) {
-    return {
-      screen: "WELCOME",
-      data: { error_msg: "Seller not found" },
-    };
-  }
-  
 
   // INIT / NAVIGATE: warm up seller state without blocking.
   if (action === "INIT" || action === "NAVIGATE") {
-    
-    
     if (token) {
       void prepareSellerState(token);
+      void primeAuthWarmupAsync(token);
     }
 
     return {
@@ -320,8 +334,7 @@ export async function handleAuthFlow(
 
 
       case "SIGN_IN":
-
-        return handleSignIn(parsed,seller);
+        return handleSignIn(parsed);
 
       case "SIGN_UP":
 

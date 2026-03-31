@@ -3,7 +3,9 @@ import { FlowRequest } from "@/models/flowRequest";
 import { FlowResponse } from "@/models/flowResponse";
 import { ProductType } from "@/models/product_model";
 import {
+  getCachedProductListPageData,
   getLastVariableProductId,
+  setCachedProductListPageData,
 } from "@/repositories/products/poducts_cache";
 import { findSeller } from "@/services/auth_service";
 import {
@@ -27,7 +29,7 @@ import {
   toPositivePage,
 } from "@/utils/product_flow_renderer";
 import { getFlowToken } from "@/utils/core_utils";
-import { isSessionActive } from "@/services/auth_service";
+
 
 
 
@@ -50,24 +52,34 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
   const pageResult = await getSellerProductsPageByFlowToken(token, page, 5);
   const pageProducts = pageResult.products;
 
-  // Noop — empty list item tapped
-  if (mode === "noop") {
-    return await buildProductListPagedResponse(
+  const pageSignature = pageProducts
+    .map((p: any) => `${String(p?.id ?? "")}:${String(p?.image_src ?? "")}`)
+    .join("|");
+
+  const renderCachedPage = async (): Promise<FlowResponse> => {
+    const cached = getCachedProductListPageData(token, pageResult.page, pageSignature);
+    if (cached) {
+      return cached as FlowResponse;
+    }
+
+    const built = await buildProductListPagedResponse(
       pageProducts,
       pageResult.page,
       pageResult.hasMore,
       pageResult.nextPage,
     );
+    setCachedProductListPageData(token, pageResult.page, pageSignature, built);
+    return built;
+  };
+
+  // Noop — empty list item tapped
+  if (mode === "noop") {
+    return await renderCachedPage();
   }
 
   // Paginate — re-render at new page
   if (mode === "paginate") {
-    return await buildProductListPagedResponse(
-      pageProducts,
-      pageResult.page,
-      pageResult.hasMore,
-      pageResult.nextPage,
-    );
+    return await renderCachedPage();
   }
 
   // Product tapped — navigate to detail
@@ -77,12 +89,7 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
     console.log("details — product_id:", selectedId);
 
     if (!selectedId || selectedId === "empty" || selectedId.startsWith("nav_")) {
-      return await buildProductListPagedResponse(
-        pageProducts,
-        pageResult.page,
-        pageResult.hasMore,
-        pageResult.nextPage,
-      );
+      return await renderCachedPage();
     }
 
     const requestHost = String(rawData.__request_host || "").trim();
@@ -98,12 +105,7 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
 
     if (!product) {
       console.log("product not found:", selectedId);
-      return await buildProductListPagedResponse(
-        pageProducts,
-        pageResult.page,
-        pageResult.hasMore,
-        pageResult.nextPage,
-      );
+      return await renderCachedPage();
     }
 
     const categories = (product.categories || []).join(", ") || "Sans categorie";
@@ -158,12 +160,7 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
   }
 
   // Default — initial load or unknown cmd
-  return await buildProductListPagedResponse(
-    pageProducts,
-    pageResult.page,
-    pageResult.hasMore,
-    pageResult.nextPage,
-  );
+  return await renderCachedPage();
 }
 
 async function handleVariationDetail(parsed: FlowRequest): Promise<FlowResponse> {
@@ -270,7 +267,8 @@ export async function handleProductsFlow(
     };
   }
 
-  const active = await isSessionActive(token);
+  const sessionUntil = Number(seller.session_active_until || 0);
+  const active = sessionUntil > Date.now();
   if (!active) {
     return {
       screen: "WELCOME_SCREEN",
@@ -278,24 +276,35 @@ export async function handleProductsFlow(
     };
   }
 
+  const sellerToken = String(seller.flow_token || "").trim();
+  const effectiveToken = sellerToken || token;
+  const effectiveParsed: FlowRequest = {
+    ...parsed,
+    flow_token: effectiveToken,
+    data: {
+      ...(parsed.data || {}),
+      flow_token: effectiveToken,
+    },
+  };
+
   if (action === "INIT" || action === "NAVIGATE") {
-    if (token) primeProductsAsync(token);
+    if (effectiveToken) primeProductsAsync(effectiveToken);
     console.log("PLUGIN_BASE_URL env:", process.env.WP_PLUGIN_BASE_URL);
     return { screen: "WELCOME_SCREEN", data: {} };
   }
 
   if (action === "DATA_EXCHANGE") {
-    if (!screen) return handleProductList(parsed);
+    if (!screen) return handleProductList(effectiveParsed);
 
     switch (screen) {
       case "WELCOME_SCREEN":
       case "PRODUCT_LIST":
-        return handleProductList(parsed);
+        return handleProductList(effectiveParsed);
       case "PRODUCT_DETAIL_SIMPLE":
-        return handleSimpleDetail(parsed);
+        return handleSimpleDetail(effectiveParsed);
       case "PRODUCT_DETAIL_VARIABLE":
       case "VARIATION_DETAIL":
-        return handleVariationDetail(parsed);
+        return handleVariationDetail(effectiveParsed);
       default:
         return { screen: "WELCOME_SCREEN", data: {} };
     }

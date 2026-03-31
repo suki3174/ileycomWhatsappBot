@@ -1,8 +1,7 @@
 ﻿import type { Product, ProductVariation } from "@/models/product_model";
-import { loadAndCacheProducts, setLastVariableProductId } from "@/repositories/products/poducts_cache";
+import { getProductsForToken, loadAndCacheProducts, setLastVariableProductId } from "@/repositories/products/poducts_cache";
 import {
   findProductsBySellerFlowToken,
-  findProductsPageBySellerFlowToken,
   findProductById,
   findVariationById,
   type ProductsPageResult,
@@ -46,7 +45,7 @@ export async function getSellerProductsByFlowToken(
 ): Promise<Product[]> {
   const normalized = normToken(token);
   if (!normalized) return [];
-  return await findProductsBySellerFlowToken(normalized);
+  return await getProductsForToken(normalized);
 }
 
 export async function getSellerProductsPageByFlowToken(
@@ -59,7 +58,23 @@ export async function getSellerProductsPageByFlowToken(
     return { products: [], page: 1, perPage: 5, hasMore: false };
   }
 
-  return await findProductsPageBySellerFlowToken(normalized, page, perPage);
+  const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+  const safePerPage = Number.isFinite(perPage) && perPage > 0
+    ? Math.min(50, Math.floor(perPage))
+    : 5;
+
+  const products = await getProductsForToken(normalized);
+  const start = (safePage - 1) * safePerPage;
+  const pageItems = products.slice(start, start + safePerPage);
+  const hasMore = start + safePerPage < products.length;
+
+  return {
+    products: pageItems,
+    page: safePage,
+    perPage: safePerPage,
+    hasMore,
+    nextPage: hasMore ? safePage + 1 : undefined,
+  };
 }
 
 export async function getProductById(
