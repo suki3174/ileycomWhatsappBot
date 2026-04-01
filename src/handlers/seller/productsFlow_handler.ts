@@ -324,7 +324,7 @@ export async function handleProductsFlow(
       case "PRODUCT_DETAIL_SIMPLE":
         return { screen: "SUCCESS", data: {} };
       case "PRODUCT_DETAIL_VARIABLE":
-        return handleVariationDetail(parsed);
+        return handleVariationDetail(effectiveParsed);
       case "VARIATION_DETAIL":
         return { screen: "SUCCESS", data: {} };
 

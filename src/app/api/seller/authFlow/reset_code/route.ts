@@ -8,10 +8,10 @@ export async function POST(req: Request) {
 
   const sellers = getAllSellers();
   const seller = sellers.find(
-    sl =>
-      sl.reset_token === token &&
-      sl.reset_token_expiry &&
-      sl.reset_token_expiry > Date.now()
+    sl => {
+      const expiry = (sl as { reset_token_expiry?: number | null }).reset_token_expiry;
+      return sl.reset_token === token && !!expiry && expiry > Date.now();
+    }
   );
 
   if (!seller) {
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
     seller.code = hashed;
   }
   seller.reset_token = null;
-  seller.reset_token_expiry = null;
+  (seller as { reset_token_expiry?: number | null }).reset_token_expiry = null;
 
   return NextResponse.json({ message: "Password updated" });
 }

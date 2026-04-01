@@ -42,7 +42,7 @@ export async function handleOptimizedProductDetail(
  */
 async function handleInitialization(token: string): Promise<FlowResponse> {
   // Get the product ID from the previous add product state
-  const addProductState = getAddProductState(token);
+  const addProductState = await getAddProductState(token);
   const productId = addProductState?.product_id;
 
   if (!productId) {
@@ -69,7 +69,7 @@ async function handleInitialization(token: string): Promise<FlowResponse> {
  */
 async function handleShowOptimizedProduct(token: string): Promise<FlowResponse> {
   const flowState = getOptimizedProductFlowState(token);
-  const addProductState = getAddProductState(token) || {};
+  const addProductState = (await getAddProductState(token)) || {};
   const productId = flowState?.product_id;
 
   if (!productId) {
