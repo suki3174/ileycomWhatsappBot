@@ -7,14 +7,6 @@ import {
   parsePluginJsonSafe,
   readResponseBodySafe,
 } from "@/utils/data_parser";
-
-let cachedCategories: ProductCategory[] | null = null;
-let lastFetchAt = 0;
-let cachedCategoriesSource: "plugin" | "fallback" | null = null;
-const cachedSubcategoriesByCategory: Record<string, SubCategory[]> = {};
-const subcategoriesFetchAtByCategory: Record<string, number> = {};
-const CATEGORIES_TTL_MS = 60 * 60 * 1000;
-const FALLBACK_CATEGORIES_TTL_MS = 5 * 1000;
 const MAX_FLOW_CATEGORIES = 60;
 
 const DEFAULT_CATEGORIES: ProductCategory[] = [
@@ -78,12 +70,6 @@ export async function fetchSubCategoriesByCategory(categoryId: string): Promise<
   const normalizedCategoryId = normText(categoryId);
   if (!normalizedCategoryId) return [];
 
-  const lastSubFetch = subcategoriesFetchAtByCategory[normalizedCategoryId] ?? 0;
-  const cachedSub = cachedSubcategoriesByCategory[normalizedCategoryId] ?? [];
-  if (cachedSub.length && Date.now() - lastSubFetch <= CATEGORIES_TTL_MS) {
-    return cachedSub;
-  }
-
   try {
     const res = await pluginPostWithRetry(
       "/seller/product/subcategories/list",
@@ -102,10 +88,7 @@ export async function fetchSubCategoriesByCategory(categoryId: string): Promise<
     }
 
     const payload = await parsePluginJsonSafe(res, "plugin product/subcategories/list");
-    const subcategories = extractSubcategories(payload, normalizedCategoryId);
-    cachedSubcategoriesByCategory[normalizedCategoryId] = subcategories;
-    subcategoriesFetchAtByCategory[normalizedCategoryId] = Date.now();
-    return subcategories;
+    return extractSubcategories(payload, normalizedCategoryId);
   } catch (err) {
     console.error("plugin product/subcategories/list exception", err);
     return [];
@@ -113,16 +96,6 @@ export async function fetchSubCategoriesByCategory(categoryId: string): Promise<
 }
 
 export async function fetchAllProductCategories(): Promise<ProductCategory[]> {
-  const now = Date.now();
-  const cacheTtl =
-    cachedCategoriesSource === "fallback"
-      ? FALLBACK_CATEGORIES_TTL_MS
-      : CATEGORIES_TTL_MS;
-
-  if (cachedCategories && now - lastFetchAt <= cacheTtl) {
-    return cachedCategories;
-  }
-
   try {
     const res = await pluginPostWithRetry(
       "/seller/product/categories/list",
@@ -137,49 +110,20 @@ export async function fetchAllProductCategories(): Promise<ProductCategory[]> {
         statusText: res.statusText,
         body,
       });
-
-      // Keep serving last known good plugin categories on transient failures.
-      if (cachedCategories && cachedCategoriesSource === "plugin") {
-        return cachedCategories;
-      }
-
-      cachedCategories = DEFAULT_CATEGORIES;
-      cachedCategoriesSource = "fallback";
-      lastFetchAt = now;
-      return cachedCategories;
+      return DEFAULT_CATEGORIES;
     }
 
     const payload = await parsePluginJsonSafe(res, "plugin product/categories/list");
     const categories = extractCategories(payload);
 
     if (categories.length) {
-      cachedCategories = categories;
-      cachedCategoriesSource = "plugin";
-      lastFetchAt = now;
-      return cachedCategories;
+      return categories;
     }
 
-    // If plugin responds with an empty list, keep existing plugin cache if available.
-    if (cachedCategories && cachedCategoriesSource === "plugin") {
-      return cachedCategories;
-    }
-
-    cachedCategories = DEFAULT_CATEGORIES;
-    cachedCategoriesSource = "fallback";
-    lastFetchAt = now;
-    return cachedCategories;
+    return DEFAULT_CATEGORIES;
   } catch (err) {
     console.error("plugin product/categories/list exception", err);
-
-    // Keep serving last known good plugin categories on transient failures.
-    if (cachedCategories && cachedCategoriesSource === "plugin") {
-      return cachedCategories;
-    }
-
-    cachedCategories = DEFAULT_CATEGORIES;
-    cachedCategoriesSource = "fallback";
-    lastFetchAt = now;
-    return cachedCategories;
+    return DEFAULT_CATEGORIES;
   }
 }
 

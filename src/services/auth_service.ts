@@ -7,7 +7,6 @@
   updateSellerCode,
 } from "@/repositories/auth/seller_repo";
 import type { Seller } from "@/models/seller_model";
-import { consumePendingCode, updateAuthWarmupCache } from "@/repositories/auth/auth_cache";
 import {
   generateFlowtoken,
   hasSellerCodeValue,
@@ -18,23 +17,6 @@ import { extractPhoneFromFlowToken } from "@/utils/data_parser";
 import { normToken } from "@/utils/core_utils";
 
 const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
-
-export function primeAuthWarmupAsync(token: string): void {
-  const normalized = token ? String(token).trim() : "";
-  if (!normalized) return;
-
-  void (async () => {
-    try {
-      const hasCode = await sellerHasCode(normalized);
-      updateAuthWarmupCache(normalized, {
-        hasCode,
-        preparedAt: Date.now(),
-      });
-    } catch (err) {
-      console.error("auth warmup failed", err);
-    }
-  })();
-}
 
 // Returns seller resolved by phone from plugin-backed repository.
 export async function getSellerByPhone(phone: string ): Promise<Seller | undefined> {
@@ -145,12 +127,7 @@ export async function prepareSellerState(token: string): Promise<boolean> {
 
 // Verifies provided code against the seller code stored in plugin state.
 export async function verifyCode(token: string, code: string): Promise<boolean> {
-  // Fast path: if we have a recent cached code for this token, use it.
-  const pending = consumePendingCode(token) ?? "";
   const provided = String(code).trim();
-  if (pending && pending === provided) {
-    return true;
-  }
 
   const seller = await findSeller(token);
   if (!seller) return false;

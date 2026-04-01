@@ -2,11 +2,6 @@
 import { FlowRequest } from "@/models/flowRequest";
 import { FlowResponse } from "@/models/flowResponse";
 import { ProductType } from "@/models/product_model";
-import {
-  getCachedProductListPageData,
-  getLastVariableProductId,
-  setCachedProductListPageData,
-} from "@/repositories/products/poducts_cache";
 import { findSeller } from "@/services/auth_service";
 import {
   getProductById,
@@ -52,34 +47,22 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
   const pageResult = await getSellerProductsPageByFlowToken(token, page, 5);
   const pageProducts = pageResult.products;
 
-  const pageSignature = pageProducts
-    .map((p: any) => `${String(p?.id ?? "")}:${String(p?.image_src ?? "")}`)
-    .join("|");
-
-  const renderCachedPage = async (): Promise<FlowResponse> => {
-    const cached = getCachedProductListPageData(token, pageResult.page, pageSignature);
-    if (cached) {
-      return cached as FlowResponse;
-    }
-
-    const built = await buildProductListPagedResponse(
+  const renderPage = async (): Promise<FlowResponse> =>
+    await buildProductListPagedResponse(
       pageProducts,
       pageResult.page,
       pageResult.hasMore,
       pageResult.nextPage,
     );
-    setCachedProductListPageData(token, pageResult.page, pageSignature, built);
-    return built;
-  };
 
   // Noop — empty list item tapped
   if (mode === "noop") {
-    return await renderCachedPage();
+    return await renderPage();
   }
 
   // Paginate — re-render at new page
   if (mode === "paginate") {
-    return await renderCachedPage();
+    return await renderPage();
   }
 
   // Product tapped — navigate to detail
@@ -89,7 +72,7 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
     console.log("details — product_id:", selectedId);
 
     if (!selectedId || selectedId === "empty" || selectedId.startsWith("nav_")) {
-      return await renderCachedPage();
+      return await renderPage();
     }
 
     const requestHost = String(rawData.__request_host || "").trim();
@@ -105,7 +88,7 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
 
     if (!product) {
       console.log("product not found:", selectedId);
-      return await renderCachedPage();
+      return await renderPage();
     }
 
     const categories = (product.categories || []).join(", ") || "Sans categorie";
@@ -160,7 +143,7 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
   }
 
   // Default — initial load or unknown cmd
-  return await renderCachedPage();
+  return await renderPage();
 }
 
 async function handleVariationDetail(parsed: FlowRequest): Promise<FlowResponse> {
@@ -173,7 +156,7 @@ async function handleVariationDetail(parsed: FlowRequest): Promise<FlowResponse>
 
   if (data.confirm_action || data.error === "invalid-screen-transition") {
     const productId = String(
-      data.product_id ?? data.parent_product_id ?? getLastVariableProductId(token) ?? "",
+      data.product_id ?? data.parent_product_id ?? "",
     ).trim();
 
     if (productId) {
@@ -196,7 +179,7 @@ async function handleVariationDetail(parsed: FlowRequest): Promise<FlowResponse>
   }
 
   const productId = String(
-    data.product_id ?? data.parent_product_id ?? getLastVariableProductId(token) ?? "",
+    data.product_id ?? data.parent_product_id ?? "",
   ).trim();
   const variationId = String(
     data.variation_id ?? data.selected_variation_id ?? data.id ?? "",

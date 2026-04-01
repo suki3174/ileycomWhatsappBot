@@ -4,14 +4,12 @@ import { extractPhoneFromFlowToken } from "@/utils/data_parser";
 import { findSellerStateByPhone } from "@/repositories/auth/seller_repo";
 import {
   prepareSellerState,
-  primeAuthWarmupAsync,
   sellerHasCodeByFlowToken,
   setSellerCode,
   verifyCode,
   verifySellerEmail,
   startSellerSession,
 } from "@/services/auth_service";
-import { getCachedAuthDecision, updateAuthWarmupCache } from "@/repositories/auth/auth_cache";
 import { isPinStrong } from "@/utils/seller_auth_helpers";
 import { sendResetEmail } from "@/services/reset_code_service";
 import { FlowRequest } from "@/models/flowRequest";
@@ -39,15 +37,6 @@ async function handleWelcome(parsed: FlowRequest): Promise<FlowResponse> {
       };
     }
 
-    // Fast path: use warmup cache to avoid blocking flow transitions.
-    const cachedDecision = getCachedAuthDecision(token);
-    if (cachedDecision) {
-      return {
-        screen: cachedDecision.hasCode ? "SIGN_IN" : "SIGN_UP",
-        data: { error_msg: "" },
-      };
-    }
-
     // Extract phone from flow token and search seller_state
     const phone = extractPhoneFromFlowToken(token);
     
@@ -63,11 +52,6 @@ async function handleWelcome(parsed: FlowRequest): Promise<FlowResponse> {
     // No cache dependency, works on first run after app restart.
     const seller = await findSellerStateByPhone(phone);
     const hasCode = !!seller?.code && String(seller.code).trim() !== "";
-
-    updateAuthWarmupCache(token, {
-      hasCode,
-      preparedAt: Date.now(),
-    });
     
     // Route: if seller has a code, they're already registered → SIGN_IN
     // Otherwise → SIGN_UP to create account and set PIN code
@@ -317,7 +301,6 @@ export async function handleAuthFlow(
   if (action === "INIT" || action === "NAVIGATE") {
     if (token) {
       void prepareSellerState(token);
-      void primeAuthWarmupAsync(token);
     }
 
     return {

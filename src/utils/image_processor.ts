@@ -17,21 +17,10 @@ import { env } from "process";
  const CAROUSEL_SIZE = 3;
 const MAX_BYTES = 90_000; // 90KB — leave headroom under 100KB limit
 const IMAGE_FETCH_TIMEOUT_MS = 1200;
-const IMAGE_CACHE_SUCCESS_TTL_MS = 30 * 60 * 1000;
-const IMAGE_CACHE_FAILURE_TTL_MS = 60 * 1000;
 // 1x1 transparent PNG fallback to avoid empty image fields on transient failures.
 const FALLBACK_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Z2ioAAAAASUVORK5CYII=";
 const PLACEHOLDER_PATH = path.resolve(process.cwd(), "public", "placeholder.png");
-
-interface ImageCacheEntry {
-  base64: string;
-  expiresAt: number;
-}
-
-// In-memory cache with TTL to reuse processed images and short-cache failures.
-const imageCache = new Map<string, ImageCacheEntry>();
-const imageInflight = new Map<string, Promise<string>>();
 
 let placeholderBufferPromise: Promise<Buffer | null> | null = null;
 
@@ -134,85 +123,50 @@ async function buildImageBase64(
   width: number,
   height: number,
 ): Promise<string> {
-  const cacheKey = `${imageUrl || "__placeholder__"}::${width}x${height}`;
+  try {
+    let inputBuffer = imageUrl ? await readLocalImage(imageUrl) : null;
 
-  const now = Date.now();
-  const cached = imageCache.get(cacheKey);
-  if (cached && cached.expiresAt > now) {
-    return cached.base64;
-  }
-
-  const running = imageInflight.get(cacheKey);
-  if (running) {
-    return await running;
-  }
-
-  const task = (async (): Promise<string> => {
-    try {
-      let inputBuffer = imageUrl ? await readLocalImage(imageUrl) : null;
-
-      let isLocalhostUrl = false;
-      if (imageUrl) {
-        try {
-          const parsed = new URL(imageUrl);
-          isLocalhostUrl = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
-        } catch {
-          isLocalhostUrl = false;
-        }
+    let isLocalhostUrl = false;
+    if (imageUrl) {
+      try {
+        const parsed = new URL(imageUrl);
+        isLocalhostUrl = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+      } catch {
+        isLocalhostUrl = false;
       }
-
-      // If localhost file wasn't found on disk, skip HTTP fetch to avoid repeated timeout penalties
-      // during flow rendering and fall back to placeholder image immediately.
-      if (!inputBuffer && imageUrl && isLocalhostUrl) {
-        inputBuffer = await readPlaceholderImage();
-      }
-
-      if (!inputBuffer && imageUrl) {
-        const response = await fetch(imageUrl, {
-          signal: AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS),
-        });
-
-        if (!response.ok) {
-          console.warn("navlist image fetch failed:", imageUrl, response.status);
-        } else {
-          const arrayBuffer = await response.arrayBuffer();
-          inputBuffer = Buffer.from(arrayBuffer);
-        }
-      }
-
-      if (!inputBuffer) {
-        inputBuffer = await readPlaceholderImage();
-      }
-
-      if (!inputBuffer) {
-        imageCache.set(cacheKey, {
-          base64: FALLBACK_BASE64,
-          expiresAt: Date.now() + IMAGE_CACHE_FAILURE_TTL_MS,
-        });
-        return FALLBACK_BASE64;
-      }
-
-      const outputBuffer = await processBufferToCarousel(inputBuffer, width, height);
-      const base64 = outputBuffer.toString("base64");
-      imageCache.set(cacheKey, {
-        base64,
-        expiresAt: Date.now() + IMAGE_CACHE_SUCCESS_TTL_MS,
-      });
-      return base64;
-    } catch (err) {
-      console.warn("navlist image processing error:", imageUrl, err);
-      imageCache.set(cacheKey, {
-        base64: FALLBACK_BASE64,
-        expiresAt: Date.now() + IMAGE_CACHE_FAILURE_TTL_MS,
-      });
-      return FALLBACK_BASE64;
-    } finally {
-      imageInflight.delete(cacheKey);
     }
-  })();
 
-  imageInflight.set(cacheKey, task);
-  return await task;
+    if (!inputBuffer && imageUrl && isLocalhostUrl) {
+      inputBuffer = await readPlaceholderImage();
+    }
+
+    if (!inputBuffer && imageUrl) {
+      const response = await fetch(imageUrl, {
+        signal: AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS),
+      });
+
+      if (!response.ok) {
+        console.warn("navlist image fetch failed:", imageUrl, response.status);
+      } else {
+        const arrayBuffer = await response.arrayBuffer();
+        inputBuffer = Buffer.from(arrayBuffer);
+      }
+    }
+
+    if (!inputBuffer) {
+      inputBuffer = await readPlaceholderImage();
+    }
+
+    if (!inputBuffer) {
+      return FALLBACK_BASE64;
+    }
+
+    const outputBuffer = await processBufferToCarousel(inputBuffer, width, height);
+    return outputBuffer.toString("base64");
+  } catch (err) {
+    console.warn("navlist image processing error:", imageUrl, err);
+    return FALLBACK_BASE64;
+  }
 }
 
 /**

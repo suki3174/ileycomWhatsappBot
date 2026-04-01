@@ -15,19 +15,6 @@ const TRIGGER_TO_ENDPOINT: Record<string, string> = {
 };
 
 const AUTH_FLOW_SEND_ENDPOINT = "/api/seller/authFlow/send";
-const MESSAGE_ID_TTL_MS = 10 * 60 * 1000;
-const TRIGGER_COOLDOWN_MS = 8 * 1000;
-
-declare global {
-  var inboundMessageSeenAt: Map<string, number> | undefined;
-  var inboundTriggerSeenAt: Map<string, number> | undefined;
-}
-
-globalThis.inboundMessageSeenAt = globalThis.inboundMessageSeenAt || new Map<string, number>();
-globalThis.inboundTriggerSeenAt = globalThis.inboundTriggerSeenAt || new Map<string, number>();
-
-const inboundMessageSeenAt = globalThis.inboundMessageSeenAt;
-const inboundTriggerSeenAt = globalThis.inboundTriggerSeenAt;
 
 function normalizePhoneCandidates(phone: string): string[] {
   const normalized = normalizeSellerPhone(phone);
@@ -49,25 +36,7 @@ export async function handleIncomingMessage(
 ): Promise<void> {
   const trigger = messageBody.trim();
   const senderPhone = normalizeSellerPhone(phone);
-  const messageId = String(options?.messageId || "").trim();
-  const now = Date.now();
-
-  if (messageId) {
-    const seenAt = inboundMessageSeenAt.get(messageId);
-    if (seenAt && now - seenAt <= MESSAGE_ID_TTL_MS) {
-      console.log(`[handleIncomingMessage] Duplicate message id ignored: ${messageId}`);
-      return;
-    }
-    inboundMessageSeenAt.set(messageId, now);
-  }
-
-  const triggerKey = `${senderPhone}::${trigger}`;
-  const lastTriggerAt = inboundTriggerSeenAt.get(triggerKey) || 0;
-  if (lastTriggerAt && now - lastTriggerAt <= TRIGGER_COOLDOWN_MS) {
-    console.log(`[handleIncomingMessage] Trigger cooldown ignored: ${triggerKey}`);
-    return;
-  }
-  inboundTriggerSeenAt.set(triggerKey, now);
+  void options;
 
   if (!MENU_TRIGGERS.has(trigger)) {
     console.log(`[handleIncomingMessage] Ignored unknown trigger: "${trigger}"`);
