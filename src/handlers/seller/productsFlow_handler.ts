@@ -11,6 +11,16 @@ import {
   rememberVariableProduct,
 } from "@/services/products_service";
 import {
+  getProductSimpleScreenCache,
+  getProductsPageScreenCache,
+  getProductVariableScreenCache,
+  getVariationScreenCache,
+  writeProductSimpleScreenCache,
+  writeProductsPageScreenCache,
+  writeProductVariableScreenCache,
+  writeVariationScreenCache,
+} from "@/services/products_cache_service";
+import {
   buildProductCarouselImages,
   buildProductListPagedResponse,
   buildVariableDetailData,
@@ -44,16 +54,31 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
   const requestedPage = Number(rawData.page ?? 1);
   const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
 
-  const pageResult = await getSellerProductsPageByFlowToken(token, page, 5);
-  const pageProducts = pageResult.products;
+  let pageResultPromise:
+    | Promise<Awaited<ReturnType<typeof getSellerProductsPageByFlowToken>>>
+    | undefined;
 
-  const renderPage = async (): Promise<FlowResponse> =>
-    await buildProductListPagedResponse(
-      pageProducts,
+  const getPageResult = async () => {
+    if (!pageResultPromise) {
+      pageResultPromise = getSellerProductsPageByFlowToken(token, page, 5);
+    }
+    return await pageResultPromise;
+  };
+
+  const renderPage = async (): Promise<FlowResponse> => {
+    const cached = await getProductsPageScreenCache(token, page, 5);
+    if (cached) return cached;
+
+    const pageResult = await getPageResult();
+    const built = await buildProductListPagedResponse(
+      pageResult.products,
       pageResult.page,
       pageResult.hasMore,
       pageResult.nextPage,
     );
+    await writeProductsPageScreenCache(token, pageResult.page, 5, built);
+    return built;
+  };
 
   // Noop — empty list item tapped
   if (mode === "noop") {
@@ -82,7 +107,7 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
 
     const product =
       (await getProductById(selectedId)) ||
-      pageProducts.find((p: any) => String(p.id) === selectedId);
+      (await getPageResult()).products.find((p: any) => String(p.id) === selectedId);
 
       console.log("produit:",product)
 
@@ -98,6 +123,9 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
     const tags = (product.tags ?? []).join(" · ") || "";
 
     if (product.type === ProductType.SIMPLE && !product.is_variable) {
+      const cachedSimple = await getProductSimpleScreenCache(token, selectedId);
+      if (cachedSimple) return cachedSimple;
+
       const image = await mapImageUrl(product.image_src || "");
       const carouselImages = await buildProductCarouselImages(
         product.image_gallery,
@@ -107,7 +135,7 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
          
       );
 
-      return {
+      const response: FlowResponse = {
         screen: "PRODUCT_DETAIL_SIMPLE",
         data: {
           name: normalizeFlowLabel(product.name),
@@ -133,13 +161,20 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
           date_creation: normalizeFlowLabel(dateCreation),
         },
       };
+      await writeProductSimpleScreenCache(token, selectedId, response);
+      return response;
     }
 
+    const cachedVariable = await getProductVariableScreenCache(token, String(product.id));
+    if (cachedVariable) return cachedVariable;
+
     rememberVariableProduct(token, String(product.id));
-    return {
+    const response: FlowResponse = {
       screen: "PRODUCT_DETAIL_VARIABLE",
       data: await buildVariableDetailData(product,mapImageUrl),
     };
+    await writeProductVariableScreenCache(token, String(product.id), response);
+    return response;
   }
 
   // Default — initial load or unknown cmd
@@ -164,11 +199,16 @@ async function handleVariationDetail(parsed: FlowRequest): Promise<FlowResponse>
             console.log("produit:",product)
 
       if (product) {
+        const cachedVariable = await getProductVariableScreenCache(token, String(product.id));
+        if (cachedVariable) return cachedVariable;
+
         rememberVariableProduct(token, String(product.id));
-        return {
+        const response: FlowResponse = {
           screen: "PRODUCT_DETAIL_VARIABLE",
           data: await buildVariableDetailData(product,mapImageUrl),
         };
+        await writeProductVariableScreenCache(token, String(product.id), response);
+        return response;
       }
     }
 
@@ -202,13 +242,16 @@ async function handleVariationDetail(parsed: FlowRequest): Promise<FlowResponse>
     return { screen: "PRODUCT_DETAIL_VARIABLE", data: { error_msg: "Variation introuvable." } };
   }
 
+  const cachedVariation = await getVariationScreenCache(token, productId, variationId);
+  if (cachedVariation) return cachedVariation;
+
   let displaySku = String(variation.sku || "").trim();
   if (!displaySku && productId) {
     const parent = await getProductById(productId);
     displaySku = String(parent?.sku || "").trim();
   }
 
-  return {
+  const response: FlowResponse = {
     screen: "VARIATION_DETAIL",
     data: {
       var_img: await mapImageUrl(variation.image_src || ""),
@@ -219,6 +262,8 @@ async function handleVariationDetail(parsed: FlowRequest): Promise<FlowResponse>
       price_tnd: variation.price_tnd || "",
     },
   };
+  await writeVariationScreenCache(token, productId, variationId, response);
+  return response;
 }
 
 async function handleSimpleDetail(parsed: FlowRequest): Promise<FlowResponse> {

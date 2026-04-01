@@ -6,6 +6,14 @@ import {
   type ProductsPageResult,
 } from "@/repositories/products/product_repo";
 import { normToken } from "@/utils/core_utils";
+import {
+  getProductsListByTokenCache,
+  getProductByIdCache,
+  getVariationByIdsCache,
+  writeProductByIdCache,
+  writeProductsListByTokenCache,
+  writeVariationByIdsCache,
+} from "@/services/products_cache_service";
 
 
 export async function getSellerProductsByFlowToken(
@@ -13,7 +21,15 @@ export async function getSellerProductsByFlowToken(
 ): Promise<Product[]> {
   const normalized = normToken(token);
   if (!normalized) return [];
-  return await findProductsBySellerFlowToken(normalized);
+
+  const cached = await getProductsListByTokenCache(normalized);
+  if (Array.isArray(cached)) {
+    return cached;
+  }
+
+  const fetched = await findProductsBySellerFlowToken(normalized);
+  await writeProductsListByTokenCache(normalized, fetched);
+  return fetched;
 }
 
 export async function getSellerProductsPageByFlowToken(
@@ -31,7 +47,7 @@ export async function getSellerProductsPageByFlowToken(
     ? Math.min(50, Math.floor(perPage))
     : 5;
 
-  const products = await findProductsBySellerFlowToken(normalized);
+  const products = await getSellerProductsByFlowToken(normalized);
   const start = (safePage - 1) * safePerPage;
   const pageItems = products.slice(start, start + safePerPage);
   const hasMore = start + safePerPage < products.length;
@@ -50,7 +66,14 @@ export async function getProductById(
 ): Promise<Product | undefined> {
   const pid = String(productId || "").trim();
   if (!pid) return undefined;
-  return await findProductById(pid);
+  const cached = await getProductByIdCache(pid);
+  if (cached) return cached;
+
+  const fetched = await findProductById(pid);
+  if (fetched) {
+    await writeProductByIdCache(pid, fetched);
+  }
+  return fetched;
 }
 
 export async function getVariationDetail(
@@ -60,11 +83,20 @@ export async function getVariationDetail(
   const pid = String(productId || "").trim();
   const vid = String(variationId || "").trim();
   if (!pid || !vid) return undefined;
-  return await findVariationById(pid, vid);
+
+  const cached = await getVariationByIdsCache(pid, vid);
+  if (cached) return cached;
+
+  const fetched = await findVariationById(pid, vid);
+  if (fetched) {
+    await writeVariationByIdsCache(pid, vid, fetched);
+  }
+  return fetched;
 }
 
 export function primeProductsAsync(token: string): void {
-  void token;
+  void getSellerProductsByFlowToken(token)
+    .catch(() => undefined);
 }
 
 export function rememberVariableProduct(token: string, productId: string): void {

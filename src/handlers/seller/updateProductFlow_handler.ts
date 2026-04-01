@@ -22,6 +22,7 @@ import {
 import { decryptWhatsAppMedia } from "@/utils/flow_crypto";
 import { sendMenu } from "@/services/menu_service";
 import { findSeller, isSessionActive } from "@/services/auth_service";
+import { invalidateProductsListByTokenCache } from "@/services/products_cache_service";
 
 const CAROUSEL_SIZE = 3;
 // function splitCarousels(images: Array<{ src: string; "alt-text": string }>) {
@@ -97,7 +98,7 @@ async function handleLoadProductForEdit(parsed: FlowRequest): Promise<FlowRespon
   }
 
   // Reset per-product edit state
-  updateUpdateProductState(token, {
+  await updateUpdateProductState(token, {
     product_id: productId,
     photos_modifiees: false,
     images: undefined,
@@ -182,7 +183,7 @@ async function handleSavePhotos(parsed: FlowRequest): Promise<FlowResponse> {
     )
   ).filter((b64): b64 is string => typeof b64 === "string" && b64.length > 0);
 
-  updateUpdateProductState(token, {
+  await updateUpdateProductState(token, {
     product_id: productId,
     images: images,
     photos_modifiees: true,
@@ -219,7 +220,7 @@ function buildEditInfoPayload(state: any, productId: string) {
 }
 
 async function buildEditInfoScreen(token: string, productId: string): Promise<FlowResponse> {
-  const state = getUpdateProductState(token) || {};
+  const state = (await getUpdateProductState(token)) || {};
   return {
     screen: "SCREEN_EDIT_INFO",
     data: buildEditInfoPayload(state, productId),
@@ -231,7 +232,7 @@ async function handleSaveInfoAndContinue(parsed: FlowRequest): Promise<FlowRespo
   const data = parsed.data || {};
   const productId = String(data.product_id ?? "").trim();
 
-  updateUpdateProductState(token, {
+  await updateUpdateProductState(token, {
     product_id: productId,
     product_name: String(data.product_name ?? "").trim(),
     prix_regulier_tnd: safeInitLabel(data.prix_regulier_tnd, { fallback: "" }),
@@ -249,7 +250,7 @@ async function handleSaveInfoAndContinue(parsed: FlowRequest): Promise<FlowRespo
     quantite: safeInitLabel(data.quantite, { fallback: "" }),
   });
 
-  const st = getUpdateProductState(token) || {};
+  const st = (await getUpdateProductState(token)) || {};
   return {
     screen: "SCREEN_CATEGORY_INFO",
     data: {
@@ -264,7 +265,7 @@ async function handleGoEditCategory(parsed: FlowRequest): Promise<FlowResponse> 
   const token = getFlowToken(parsed);
   const data = parsed.data || {};
   const productId = String(data.product_id ?? "").trim();
-  const state = getUpdateProductState(token) || {};
+  const state = (await getUpdateProductState(token)) || {};
 
   let categories = (state.categories && state.categories.length > 0)
     ? state.categories
@@ -276,7 +277,7 @@ async function handleGoEditCategory(parsed: FlowRequest): Promise<FlowResponse> 
       ? warm.categories as Array<{ id: string; title: string }>
       : [];
     categories = fetched;
-    updateUpdateProductState(token, { categories: fetched });
+    await updateUpdateProductState(token, { categories: fetched });
   }
 
   let selectedCategory = String(state.product_category || "").trim();
@@ -299,12 +300,12 @@ async function handleLoadSubcategories(parsed: FlowRequest): Promise<FlowRespons
   const data = parsed.data || {};
   const productId = String(data.product_id ?? "").trim();
   const categoryId = String(data.product_category ?? "").trim();
-  const state = getUpdateProductState(token) || {};
+  const state = (await getUpdateProductState(token)) || {};
   let subcats = state.subcategoriesByCategory?.[categoryId] ?? [];
 
   if (subcats.length === 0 && categoryId) {
     subcats = await loadSubcategoriesForCategory(categoryId);
-    updateUpdateProductState(token, {
+    await updateUpdateProductState(token, {
       subcategoriesByCategory: {
         ...(state.subcategoriesByCategory || {}),
         [categoryId]: subcats,
@@ -330,11 +331,11 @@ async function handleSaveCategoryAndContinue(parsed: FlowRequest): Promise<FlowR
   const data = parsed.data || {};
   const productId = String(data.product_id ?? "").trim();
   const categoryId = String(data.product_category ?? "").trim();
-  const state = getUpdateProductState(token) || {};
+  const state = (await getUpdateProductState(token)) || {};
   const label =
     (state.categories as Array<{ id: string; title: string }> || []).find((c) => c.id === categoryId)?.title || categoryId;
 
-  updateUpdateProductState(token, {
+  await updateUpdateProductState(token, {
     product_category: categoryId,
     product_category_label: label,
     product_subcategory: "",
@@ -353,7 +354,7 @@ async function handleSaveSubcategoryAndContinue(parsed: FlowRequest): Promise<Fl
   const data = parsed.data || {};
   const productId = String(data.product_id ?? "").trim();
   const subcatId = String(data.product_subcategory ?? "").trim();
-  const state = getUpdateProductState(token) || {};
+  const state = (await getUpdateProductState(token)) || {};
 
   let label = subcatId;
   for (const list of Object.values(state.subcategoriesByCategory || {}) as Array<Array<{ id: string; description: string }>>) {
@@ -364,7 +365,7 @@ async function handleSaveSubcategoryAndContinue(parsed: FlowRequest): Promise<Fl
     }
   }
 
-  updateUpdateProductState(token, {
+  await updateUpdateProductState(token, {
     product_subcategory: subcatId,
     product_subcategory_label: label,
   });
@@ -379,7 +380,7 @@ async function handleSkipCategory(parsed: FlowRequest): Promise<FlowResponse> {
 }
 
 async function buildSummaryScreen(token: string, productId: string): Promise<FlowResponse> {
-  const state = getUpdateProductState(token) || {};
+  const state = (await getUpdateProductState(token)) || {};
 
   let rawImages: string[] = [];
   if (Array.isArray(state.images) && state.images.length > 0) {
@@ -434,7 +435,7 @@ async function handleSubmitUpdate(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
   const data = parsed.data || {};
   const productId = String(data.product_id ?? "").trim();
-  const state = getUpdateProductState(token) || {};
+  const state = (await getUpdateProductState(token)) || {};
 
   if (!productId) {
     return {
@@ -475,8 +476,9 @@ async function handleSubmitUpdate(parsed: FlowRequest): Promise<FlowResponse> {
     };
   }
 
+  await invalidateProductsListByTokenCache(token);
   await sendMenu(token);
-  clearUpdateProductState(token);
+  await clearUpdateProductState(token);
   return { screen: "SUCCESS", data: {} };
 }
 
