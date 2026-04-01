@@ -2,7 +2,7 @@ import { Seller } from "@/models/seller_model";
 import {
   markInboundMessageSeen,
   markInboundTriggerSeen,
-} from "@/services/auth_cache_service";
+} from "@/services/cache/auth_cache_service";
 import { getSellerByPhone, isSessionActive } from "@/services/auth_service";
 import { normalizeSellerPhone } from "@/utils/seller_auth_helpers";
 

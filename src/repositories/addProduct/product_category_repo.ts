@@ -7,10 +7,13 @@ import {
   parsePluginJsonSafe,
   readResponseBodySafe,
 } from "@/utils/data_parser";
-import { ensureRedisConnected, getRedisPrefix } from "@/lib/redis/client";
+import {
+  getAddProductCategoriesCache,
+  getAddProductSubcategoriesCache,
+  writeAddProductCategoriesCache,
+  writeAddProductSubcategoriesCache,
+} from "@/services/cache/add_product_cache_service";
 const MAX_FLOW_CATEGORIES = 60;
-const CATEGORY_CACHE_TTL_SEC = 30 * 60;
-const SUBCATEGORY_CACHE_TTL_SEC = 20 * 60;
 
 const DEFAULT_CATEGORIES: ProductCategory[] = [
   { id: "mode", title: "Mode & Vetements" },
@@ -24,71 +27,6 @@ const DEFAULT_CATEGORIES: ProductCategory[] = [
   { id: "livres", title: "Livres & Papeterie" },
   { id: "autre", title: "Autre" },
 ];
-
-function isRedisEnabled(): boolean {
-  return String(process.env.REDIS_ENABLED || "false").toLowerCase() === "true";
-}
-
-function isAddProductCacheDebugEnabled(): boolean {
-  const raw = String(process.env.ADD_PRODUCT_CACHE_DEBUG || "true").trim().toLowerCase();
-  return raw !== "false" && raw !== "0" && raw !== "off";
-}
-
-function cacheLog(event: string, details: Record<string, unknown>): void {
-  if (!isAddProductCacheDebugEnabled()) return;
-  console.log("[add-product-cache]", event, details);
-}
-
-async function getRedisOrNull() {
-  if (!isRedisEnabled()) return null;
-  try {
-    return await ensureRedisConnected();
-  } catch {
-    return null;
-  }
-}
-
-function keyCategories(): string {
-  return `${getRedisPrefix()}:add-product:categories`;
-}
-
-function keySubcategories(categoryId: string): string {
-  return `${getRedisPrefix()}:add-product:subcategories:${categoryId}`;
-}
-
-async function readCachedJson<T>(key: string): Promise<T | undefined> {
-  const redis = await getRedisOrNull();
-  if (!redis) {
-    cacheLog("skip-read-redis-unavailable", { key });
-    return undefined;
-  }
-
-  const raw = await redis.get(key);
-  if (!raw) {
-    cacheLog("miss", { key });
-    return undefined;
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as T;
-    cacheLog("hit", { key });
-    return parsed;
-  } catch {
-    cacheLog("invalid-json", { key });
-    return undefined;
-  }
-}
-
-async function writeCachedJson<T>(key: string, value: T, ttlSec: number): Promise<void> {
-  const redis = await getRedisOrNull();
-  if (!redis) {
-    cacheLog("skip-write-redis-unavailable", { key, ttlSec });
-    return;
-  }
-
-  await redis.set(key, JSON.stringify(value), { EX: ttlSec });
-  cacheLog("write", { key, ttlSec });
-}
 
 
 function extractCategories(payload: Record<string, unknown> | undefined): ProductCategory[] {
@@ -138,7 +76,7 @@ export async function fetchSubCategoriesByCategory(categoryId: string): Promise<
   const normalizedCategoryId = normText(categoryId);
   if (!normalizedCategoryId) return [];
 
-  const cached = await readCachedJson<SubCategory[]>(keySubcategories(normalizedCategoryId));
+  const cached = await getAddProductSubcategoriesCache(normalizedCategoryId);
   if (Array.isArray(cached) && cached.length > 0) {
     return cached;
   }
@@ -163,11 +101,7 @@ export async function fetchSubCategoriesByCategory(categoryId: string): Promise<
     const payload = await parsePluginJsonSafe(res, "plugin product/subcategories/list");
     const subcategories = extractSubcategories(payload, normalizedCategoryId);
     if (subcategories.length > 0) {
-      await writeCachedJson(
-        keySubcategories(normalizedCategoryId),
-        subcategories,
-        SUBCATEGORY_CACHE_TTL_SEC,
-      );
+      await writeAddProductSubcategoriesCache(normalizedCategoryId, subcategories);
     }
     return subcategories;
   } catch (err) {
@@ -177,7 +111,7 @@ export async function fetchSubCategoriesByCategory(categoryId: string): Promise<
 }
 
 export async function fetchAllProductCategories(): Promise<ProductCategory[]> {
-  const cached = await readCachedJson<ProductCategory[]>(keyCategories());
+  const cached = await getAddProductCategoriesCache();
   if (Array.isArray(cached) && cached.length > 0) {
     return cached;
   }
@@ -203,7 +137,7 @@ export async function fetchAllProductCategories(): Promise<ProductCategory[]> {
     const categories = extractCategories(payload);
 
     if (categories.length) {
-      await writeCachedJson(keyCategories(), categories, CATEGORY_CACHE_TTL_SEC);
+      await writeAddProductCategoriesCache(categories);
       return categories;
     }
 

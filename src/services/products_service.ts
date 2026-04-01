@@ -13,7 +13,7 @@ import {
   writeProductByIdCache,
   writeProductsListByTokenCache,
   writeVariationByIdsCache,
-} from "@/services/products_cache_service";
+} from "@/services/cache/products_cache_service";
 
 
 export async function getSellerProductsByFlowToken(

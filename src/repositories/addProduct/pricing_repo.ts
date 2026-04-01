@@ -1,6 +1,10 @@
 ﻿import { pluginPostWithRetry, PLUGIN_TIMEOUT_MS } from "@/utils/plugin_client";
 import { asRecord, parsePluginJsonSafe, normText } from "@/utils/data_parser";
 import { convertTndToEur } from "@/utils/core_utils";
+import {
+  getAddProductPriceConversionCache,
+  writeAddProductPriceConversionCache,
+} from "@/services/cache/add_product_cache_service";
 
 export interface PricingConversionResult {
   regularEur: number;
@@ -26,6 +30,11 @@ export async function convertTndPricesViaPlugin(
   const safeRegular = toFiniteNumber(regularTnd);
   const safePromo = toFiniteNumber(promoTnd);
 
+  const cached = await getAddProductPriceConversionCache(safeRegular, safePromo);
+  if (cached) {
+    return cached;
+  }
+
   try {
     const res = await pluginPostWithRetry(
       "/seller/pricing/convert",
@@ -43,10 +52,12 @@ export async function convertTndPricesViaPlugin(
       return fallbackConvert(safeRegular, safePromo);
     }
 
-    return {
+    const result = {
       regularEur: toFiniteNumber(data.regular_eur),
       promoEur: toFiniteNumber(data.promo_eur),
     };
+    await writeAddProductPriceConversionCache(safeRegular, safePromo, result);
+    return result;
   } catch (err) {
     console.error("plugin pricing/convert exception", normText((err as Error | undefined)?.message));
     return fallbackConvert(safeRegular, safePromo);

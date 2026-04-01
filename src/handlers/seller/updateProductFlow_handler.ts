@@ -22,7 +22,7 @@ import {
 import { decryptWhatsAppMedia } from "@/utils/flow_crypto";
 import { sendMenu } from "@/services/menu_service";
 import { findSeller, isSessionActive } from "@/services/auth_service";
-import { invalidateProductsListByTokenCache } from "@/services/products_cache_service";
+import { invalidateProductsListByTokenCache } from "@/services/cache/products_cache_service";
 
 const CAROUSEL_SIZE = 3;
 // function splitCarousels(images: Array<{ src: string; "alt-text": string }>) {

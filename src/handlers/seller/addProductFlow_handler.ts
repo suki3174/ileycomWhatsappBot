@@ -24,7 +24,7 @@ import { buildCarousel, toCarouselBase64FromBase64 } from "@/utils/image_process
 import { SubCategory } from "@/models/category_model";
 import { decryptWhatsAppMedia } from "@/utils/flow_crypto";
 import { sendMenu } from "@/services/menu_service";
-import { invalidateProductsListByTokenCache } from "@/services/products_cache_service";
+import { invalidateProductsListByTokenCache } from "@/services/cache/products_cache_service";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 

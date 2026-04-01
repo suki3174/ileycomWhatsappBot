@@ -19,7 +19,7 @@ import {
   writeProductsPageScreenCache,
   writeProductVariableScreenCache,
   writeVariationScreenCache,
-} from "@/services/products_cache_service";
+} from "@/services/cache/products_cache_service";
 import {
   buildProductCarouselImages,
   buildProductListPagedResponse,

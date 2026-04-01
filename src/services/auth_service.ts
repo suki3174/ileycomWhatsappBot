@@ -12,7 +12,7 @@ import {
   getSellerSessionByToken,
   invalidateSellerSessionCache,
   writeSellerSessionCache,
-} from "@/services/auth_cache_service";
+} from "@/services/cache/auth_cache_service";
 import {
   generateFlowtoken,
   hasSellerCodeValue,

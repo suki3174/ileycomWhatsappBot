@@ -1,30 +1,16 @@
 ﻿import { normToken } from "@/utils/core_utils";
 import { AddProductState } from "@/models/product_model";
-import { ensureRedisConnected, getRedisPrefix } from "@/lib/redis/client";
+import {
+  clearAddProductDraftStateCache,
+  getAddProductDraftStateCache,
+  writeAddProductDraftStateCache,
+} from "@/services/cache/add_product_cache_service";
 
 interface AddProductCacheEntry {
   state: AddProductState;
 }
 
-const ADD_PRODUCT_STATE_TTL_SEC = 30 * 60;
 const addProductStateStore = new Map<string, AddProductCacheEntry>();
-
-function isRedisEnabled(): boolean {
-  return String(process.env.REDIS_ENABLED || "false").toLowerCase() === "true";
-}
-
-function stateKey(token: string): string {
-  return `${getRedisPrefix()}:add-product:state:${token}`;
-}
-
-async function getRedisOrNull() {
-  if (!isRedisEnabled()) return null;
-  try {
-    return await ensureRedisConnected();
-  } catch {
-    return null;
-  }
-}
 
 export async function getAddProductState(
   token: string,
@@ -37,19 +23,13 @@ export async function getAddProductState(
     return local.state;
   }
 
-  const redis = await getRedisOrNull();
-  if (!redis) return undefined;
-
-  const raw = await redis.get(stateKey(normalized));
-  if (!raw) return undefined;
-
-  try {
-    const parsed = JSON.parse(raw) as AddProductState;
+  const parsed = await getAddProductDraftStateCache(normalized);
+  if (parsed) {
     addProductStateStore.set(normalized, { state: parsed });
     return parsed;
-  } catch {
-    return undefined;
   }
+
+  return undefined;
 }
 
 export async function updateAddProductState(
@@ -71,12 +51,7 @@ export async function updateAddProductState(
     state: merged,
   });
 
-  const redis = await getRedisOrNull();
-  if (redis) {
-    await redis.set(stateKey(normalized), JSON.stringify(merged), {
-      EX: ADD_PRODUCT_STATE_TTL_SEC,
-    });
-  }
+  await writeAddProductDraftStateCache(normalized, merged);
 
   return merged;
 }
@@ -86,9 +61,6 @@ export async function clearAddProductState(token: string): Promise<void> {
   if (!normalized) return;
 
   addProductStateStore.delete(normalized);
-
-  const redis = await getRedisOrNull();
-  if (!redis) return;
-  await redis.del(stateKey(normalized));
+  await clearAddProductDraftStateCache(normalized);
 }
 

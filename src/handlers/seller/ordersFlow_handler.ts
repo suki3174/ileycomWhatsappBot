@@ -11,6 +11,16 @@ import {
   getSellerOrderSummariesPage,
   getOrderStatusCounters,
 } from "@/services/order_service";
+import {
+  getOrderArticlesScreenCache,
+  getOrderDetailScreenCache,
+  getOrderListScreenCache,
+  getOrderStatusScreenCache,
+  writeOrderArticlesScreenCache,
+  writeOrderDetailScreenCache,
+  writeOrderListScreenCache,
+  writeOrderStatusScreenCache,
+} from "@/services/cache/orders_cache_service";
 import { buildOrderListResponse, formatOrderDetail, formatOrderArticlesServerPage } from "@/utils/order_flow_renderer";
 import { findSeller, isSessionActive } from "@/services/auth_service";
 
@@ -29,9 +39,27 @@ async function handleOrderStatus(parsed: FlowRequest): Promise<FlowResponse> {
   const data = parsed.data || {};
   const requestedFilter = String(data.status_filter || "all");
 
+  if (!data.status_filter) {
+    const cachedStatus = await getOrderStatusScreenCache(token);
+    if (cachedStatus) {
+      return cachedStatus;
+    }
+  }
+
   // User submitted the status filter form — transition to ORDER_LIST
   if (data.status_filter) {
     const statusFilter = String(data.status_filter);
+
+    const cachedList = await getOrderListScreenCache(
+      token,
+      statusFilter,
+      1,
+      ORDER_LIST_PAGE_SIZE,
+    );
+    if (cachedList) {
+      return cachedList;
+    }
+
     const pageResult = await getSellerOrderSummariesPage(
       token,
       statusFilter,
@@ -60,13 +88,21 @@ async function handleOrderStatus(parsed: FlowRequest): Promise<FlowResponse> {
         data: { error_msg: "Aucune commande avec le statut sélectionné.", statuses },
       };
     }
-    return buildOrderListResponse(
+    const built = buildOrderListResponse(
       pageResult.orders,
       pageResult.page,
       pageResult.statusFilter,
       pageResult.hasMore,
       pageResult.nextPage,
     );
+    await writeOrderListScreenCache(
+      token,
+      pageResult.statusFilter,
+      pageResult.page,
+      ORDER_LIST_PAGE_SIZE,
+      built,
+    );
+    return built;
   }
 
   const counters = await getOrderStatusCounters(token);
@@ -84,10 +120,12 @@ async function handleOrderStatus(parsed: FlowRequest): Promise<FlowResponse> {
     { id: "to_deliver", title: `📦 À Livrer  —  ${counters.to_deliver}` },
   ];
 
-  return {
+  const response: FlowResponse = {
     screen: "ORDER_STATUS",
     data: { error_msg: "", statuses },
   };
+  await writeOrderStatusScreenCache(token, response);
+  return response;
 }
 
 async function handleOrderList(parsed: FlowRequest): Promise<FlowResponse> {
@@ -107,6 +145,18 @@ async function handleOrderList(parsed: FlowRequest): Promise<FlowResponse> {
   const requestedPage = Number(rawData.page ?? 1);
   const page =
     Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+
+  if (mode === "noop" || mode === "paginate" || mode === "") {
+    const cachedList = await getOrderListScreenCache(
+      token,
+      statusFilter,
+      page,
+      ORDER_LIST_PAGE_SIZE,
+    );
+    if (cachedList) {
+      return cachedList;
+    }
+  }
 
   // Order tapped — navigate to detail without refetching the list first.
   if (mode === "order_details") {
@@ -131,13 +181,20 @@ async function handleOrderList(parsed: FlowRequest): Promise<FlowResponse> {
       );
     }
 
-    const detailOrder = await getOrderById(orderId);
+    const cachedDetail = await getOrderDetailScreenCache(token, orderId);
+    if (cachedDetail) {
+      return cachedDetail;
+    }
+
+    const detailOrder = await getOrderById(orderId, token);
     if (detailOrder) {
       const detail = formatOrderDetail(detailOrder);
-      return {
+      const response: FlowResponse = {
         screen: "ORDER_DETAIL",
         data: detail,
       };
+      await writeOrderDetailScreenCache(token, orderId, response);
+      return response;
     }
 
     const pageResult = await getSellerOrderSummariesPage(
@@ -146,13 +203,21 @@ async function handleOrderList(parsed: FlowRequest): Promise<FlowResponse> {
       page,
       ORDER_LIST_PAGE_SIZE,
     );
-    return buildOrderListResponse(
+    const built = buildOrderListResponse(
       pageResult.orders,
       pageResult.page,
       pageResult.statusFilter,
       pageResult.hasMore,
       pageResult.nextPage,
     );
+    await writeOrderListScreenCache(
+      token,
+      pageResult.statusFilter,
+      pageResult.page,
+      ORDER_LIST_PAGE_SIZE,
+      built,
+    );
+    return built;
   }
 
   const pageResult = await getSellerOrderSummariesPage(
@@ -172,48 +237,25 @@ async function handleOrderList(parsed: FlowRequest): Promise<FlowResponse> {
   });
 
   // Explicit noop — empty state item tapped
-  if (mode === "noop") {
-    return buildOrderListResponse(
-      pageResult.orders,
-      pageResult.page,
-      pageResult.statusFilter,
-      pageResult.hasMore,
-      pageResult.nextPage,
-    );
-  }
-
-  if (mode === "paginate") {
-    return buildOrderListResponse(
-      pageResult.orders,
-      pageResult.page,
-      pageResult.statusFilter,
-      pageResult.hasMore,
-      pageResult.nextPage,
-    );
-  }
-
-  // Empty action — re-render current page
-  if (mode === "") {
-    return buildOrderListResponse(
-      pageResult.orders,
-      pageResult.page,
-      pageResult.statusFilter,
-      pageResult.hasMore,
-      pageResult.nextPage,
-    );
-  }
-
-  // Fallback — unknown action, re-render list
-  return buildOrderListResponse(
+  const built = buildOrderListResponse(
     pageResult.orders,
     pageResult.page,
     pageResult.statusFilter,
     pageResult.hasMore,
     pageResult.nextPage,
   );
+  await writeOrderListScreenCache(
+    token,
+    pageResult.statusFilter,
+    pageResult.page,
+    ORDER_LIST_PAGE_SIZE,
+    built,
+  );
+  return built;
 }
 
 async function handleOrderDetail(parsed: FlowRequest): Promise<FlowResponse> {
+  const token = getFlowToken(parsed);
   const data = parsed.data || {};
   const mode = String(data.cmd || "").toLowerCase();
 
@@ -236,10 +278,21 @@ async function handleOrderDetail(parsed: FlowRequest): Promise<FlowResponse> {
     return { screen: "ORDER_DETAIL", data };
   }
 
+  const cachedArticles = await getOrderArticlesScreenCache(
+    token,
+    orderId,
+    page,
+    ORDER_ARTICLES_PAGE_SIZE,
+  );
+  if (cachedArticles) {
+    return cachedArticles;
+  }
+
   const articlesPageResult = await getOrderArticlesPage(
     orderId,
     page,
     ORDER_ARTICLES_PAGE_SIZE,
+    token,
   );
   const articlesPage = await formatOrderArticlesServerPage(
     orderId,
@@ -251,15 +304,24 @@ async function handleOrderDetail(parsed: FlowRequest): Promise<FlowResponse> {
     articlesPageResult.total,
   );
 
-  return {
+  const response: FlowResponse = {
     screen: "ORDER_ARTICLES",
     data: articlesPage,
   };
+  await writeOrderArticlesScreenCache(
+    token,
+    orderId,
+    page,
+    ORDER_ARTICLES_PAGE_SIZE,
+    response,
+  );
+  return response;
 }
 
 async function handleOrderArticles(
   parsed: FlowRequest,
 ): Promise<FlowResponse> {
+  const token = getFlowToken(parsed);
   const data = parsed.data || {};
   const mode = String(data.cmd || "").toLowerCase();
 
@@ -288,10 +350,21 @@ async function handleOrderArticles(
   const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
   console.log("handleOrderArticles — page:", page);
 
+  const cachedArticles = await getOrderArticlesScreenCache(
+    token,
+    orderId,
+    page,
+    ORDER_ARTICLES_PAGE_SIZE,
+  );
+  if (cachedArticles) {
+    return cachedArticles;
+  }
+
   const articlesPageResult = await getOrderArticlesPage(
     orderId,
     page,
     ORDER_ARTICLES_PAGE_SIZE,
+    token,
   );
 
   const articlesPage = await formatOrderArticlesServerPage(
@@ -304,10 +377,18 @@ async function handleOrderArticles(
     articlesPageResult.total,
   );
 
-  return {
+  const response: FlowResponse = {
     screen: "ORDER_ARTICLES",
     data: articlesPage,
   };
+  await writeOrderArticlesScreenCache(
+    token,
+    orderId,
+    page,
+    ORDER_ARTICLES_PAGE_SIZE,
+    response,
+  );
+  return response;
 }
 
 // ---------------------------------------------------------------------------

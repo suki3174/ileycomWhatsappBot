@@ -12,7 +12,7 @@ import {
   invalidateUpdateProductsByToken,
   setCachedUpdateProductForEdit,
   setCachedUpdateProductsPage,
-} from "@/services/update_product_cache_service";
+} from "@/services/cache/update_product_cache_service";
 import {
   fetchAllProductCategories,
   fetchSubCategoriesByCategory,
