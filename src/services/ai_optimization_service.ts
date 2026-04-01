@@ -37,7 +37,7 @@ export async function triggerProductOptimization(
 ): Promise<OptimizationState> {
 
   // Check if already in progress
-  const existing = getOptimizationState(productId);
+  const existing = await getOptimizationState(productId);
   if (existing && existing.status === OptimizationStatus.PROCESSING) {
     console.info(`[AI Service] Optimization already in progress for product ${productId}`);
     return existing;
@@ -52,14 +52,14 @@ export async function triggerProductOptimization(
     retryCount: 0,
   };
 
-  setOptimizationState(productId, initialState);
+  await setOptimizationState(productId, initialState);
 
   try {
     // Send request to AI service (non-blocking, fire-and-forget)
     // The request is queued and returns immediately
-    submitToAIService(productId, sellerPhone).catch((err) => {
+    submitToAIService(productId, sellerPhone).catch(async (err) => {
       console.error(`[AI Service] Failed to submit optimization for product ${productId}:`, err);
-      updateOptimizationState(productId, {
+      await updateOptimizationState(productId, {
         status: OptimizationStatus.FAILED,
         errorMessage: "Failed to submit to AI service",
         completedAt: Date.now(),
@@ -67,13 +67,13 @@ export async function triggerProductOptimization(
     });
 
     // Update state to processing
-    return updateOptimizationState(productId, {
+    return (await updateOptimizationState(productId, {
       status: OptimizationStatus.PROCESSING,
-    }) || initialState;
+    })) || initialState;
   } catch (error) {
     console.error(`[AI Service] Error triggering optimization for product ${productId}:`, error);
 
-    updateOptimizationState(productId, {
+    await updateOptimizationState(productId, {
       status: OptimizationStatus.FAILED,
       errorMessage: String(error),
       completedAt: Date.now(),
@@ -86,17 +86,19 @@ export async function triggerProductOptimization(
 /**
  * Get current optimization status for a product
  */
-export function getOptimizationStatus(productId: string): OptimizationState | null {
+export async function getOptimizationStatus(
+  productId: string
+): Promise<OptimizationState | null> {
   return getOptimizationState(productId);
 }
 
 /**
  * Retrieve optimization result (only if completed)
  */
-export function getOptimizationResult(
+export async function getOptimizationResult(
   productId: string
-): AIOptimizationResponse | null {
-  const state = getOptimizationState(productId);
+): Promise<AIOptimizationResponse | null> {
+  const state = await getOptimizationState(productId);
 
   if (!state) {
     return null;
@@ -150,7 +152,7 @@ async function submitToAIService(productId: string, sellerPhone?: string): Promi
     const result: AIOptimizationResponse = await response.json();
 
     // Store successful result
-    updateOptimizationState(productId, {
+    await updateOptimizationState(productId, {
       status: OptimizationStatus.COMPLETED,
       result,
       completedAt: Date.now(),
@@ -235,7 +237,7 @@ export async function retryProductOptimization(
   productId: string,
   sellerPhone?: string
 ): Promise<OptimizationState> {
-  const state = getOptimizationState(productId);
+  const state = await getOptimizationState(productId);
 
   if (!state) {
     throw new Error(`No optimization state found for product ${productId}`);
@@ -249,7 +251,7 @@ export async function retryProductOptimization(
   }
 
   // Update retry count and reset status
-  updateOptimizationState(productId, {
+  await updateOptimizationState(productId, {
     status: OptimizationStatus.PENDING,
     retryCount: state.retryCount + 1,
   });
