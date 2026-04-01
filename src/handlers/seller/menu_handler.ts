@@ -1,4 +1,8 @@
 import { Seller } from "@/models/seller_model";
+import {
+  markInboundMessageSeen,
+  markInboundTriggerSeen,
+} from "@/services/auth_cache_service";
 import { getSellerByPhone, isSessionActive } from "@/services/auth_service";
 import { normalizeSellerPhone } from "@/utils/seller_auth_helpers";
 
@@ -36,7 +40,21 @@ export async function handleIncomingMessage(
 ): Promise<void> {
   const trigger = messageBody.trim();
   const senderPhone = normalizeSellerPhone(phone);
-  void options;
+  const messageId = String(options?.messageId || "").trim();
+
+  if (messageId) {
+    const alreadySeen = await markInboundMessageSeen(messageId);
+    if (alreadySeen) {
+      console.log(`[handleIncomingMessage] Duplicate message id ignored: ${messageId}`);
+      return;
+    }
+  }
+
+  const triggerAlreadySeen = await markInboundTriggerSeen(senderPhone, trigger);
+  if (triggerAlreadySeen) {
+    console.log(`[handleIncomingMessage] Trigger cooldown ignored: ${senderPhone}::${trigger}`);
+    return;
+  }
 
   if (!MENU_TRIGGERS.has(trigger)) {
     console.log(`[handleIncomingMessage] Ignored unknown trigger: "${trigger}"`);
