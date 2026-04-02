@@ -1,61 +1,66 @@
 ﻿import { normToken } from "@/utils/core_utils";
 import { AddProductState } from "@/models/product_model";
+import {
+  clearAddProductDraftStateCache,
+  getAddProductDraftStateCache,
+  writeAddProductDraftStateCache,
+} from "@/services/cache/add_product_cache_service";
 
-
-const ADD_PRODUCT_TTL_MS = 60 * 60 * 1000;
- interface AddProductCacheEntry {
+interface AddProductCacheEntry {
   state: AddProductState;
-  updatedAt: number;
-}
-declare global {
-  var addProductStateCache:
-    | Map<string, AddProductCacheEntry>
-    | undefined;
 }
 
-globalThis.addProductStateCache =
-  globalThis.addProductStateCache ||
-  new Map<string, AddProductCacheEntry>();
+const addProductStateStore = new Map<string, AddProductCacheEntry>();
 
-const addProductStateCache = globalThis.addProductStateCache;
-
-export function getAddProductState(
+export async function getAddProductState(
   token: string,
-): AddProductState | undefined {
+): Promise<AddProductState | undefined> {
   const normalized = normToken(token);
   if (!normalized) return undefined;
-  const entry = addProductStateCache.get(normalized);
-  if (!entry) return undefined;
-  if (Date.now() - entry.updatedAt > ADD_PRODUCT_TTL_MS) {
-    addProductStateCache.delete(normalized);
-    return undefined;
+
+  const local = addProductStateStore.get(normalized);
+  if (local?.state) {
+    return local.state;
   }
-  return entry.state;
+
+  const parsed = await getAddProductDraftStateCache(normalized);
+  if (parsed) {
+    addProductStateStore.set(normalized, { state: parsed });
+    return parsed;
+  }
+
+  return undefined;
 }
 
-export function updateAddProductState(
+export async function updateAddProductState(
   token: string,
   partial: Partial<AddProductState>,
-): AddProductState {
+): Promise<AddProductState> {
   const normalized = normToken(token);
   if (!normalized) {
     return { ...partial };
   }
-  const existing = getAddProductState(normalized) || {};
+
+  const existing = (await getAddProductState(normalized)) || {};
   const merged: AddProductState = {
     ...existing,
     ...partial,
   };
-  addProductStateCache.set(normalized, {
+
+  addProductStateStore.set(normalized, {
     state: merged,
-    updatedAt: Date.now(),
   });
+
+  await writeAddProductDraftStateCache(normalized, merged);
+
   return merged;
 }
 
-export function clearAddProductState(token: string): void {
+export async function clearAddProductState(token: string): Promise<void> {
   const normalized = normToken(token);
   if (!normalized) return;
-  addProductStateCache.delete(normalized);
+
+  addProductStateStore.delete(normalized);
+  await clearAddProductDraftStateCache(normalized);
 }
 

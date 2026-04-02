@@ -24,7 +24,7 @@ import { buildCarousel, toCarouselBase64FromBase64 } from "@/utils/image_process
 import { SubCategory } from "@/models/category_model";
 import { decryptWhatsAppMedia } from "@/utils/flow_crypto";
 import { sendMenu } from "@/services/menu_service";
-import { extractPhoneFromFlowToken } from "@/utils/data_parser";
+import { invalidateProductsListByTokenCache } from "@/services/cache/products_cache_service";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -137,7 +137,7 @@ async function resolveSubcategories(
     // fall through to cache / defaults
   }
 
-  const state = getAddProductState(token);
+  const state = await getAddProductState(token);
   const cached = state?.subcategories?.[categoryId];
   if (Array.isArray(cached) && cached.length > 0) return cached;
 
@@ -191,7 +191,7 @@ async function handlePhoto(parsed: FlowRequest): Promise<FlowResponse> {
     )
   ).filter((b64): b64 is string => typeof b64 === "string" && b64.length > 0);
 
-  updateAddProductState(token, { images });
+  await updateAddProductState(token, { images });
 
   return { screen: "SCREEN_NAME", data: {} };
 }
@@ -204,10 +204,10 @@ async function handleSaveName(parsed: FlowRequest): Promise<FlowResponse> {
   const data = parsed.data || {};
 
   const productName = String(data.product_name ?? "").trim();
-  updateAddProductState(token, { product_name: productName });
+  await updateAddProductState(token, { product_name: productName });
 
   // Prefer categories cached during INIT; re-fetch only as a last resort
-  const state = getAddProductState(token);
+  const state = await getAddProductState(token);
   let categories =
     Array.isArray(state?.categories) && state.categories.length > 0
       ? state.categories
@@ -218,7 +218,7 @@ async function handleSaveName(parsed: FlowRequest): Promise<FlowResponse> {
       const fromService = await getProductCategoriesCached();
       if (Array.isArray(fromService) && fromService.length > 0) {
         categories = fromService;
-        updateAddProductState(token, { categories });
+        await updateAddProductState(token, { categories });
       }
     } catch { /* keep defaults */ }
   }
@@ -240,7 +240,7 @@ async function handleSaveCategory(parsed: FlowRequest): Promise<FlowResponse> {
   const data = parsed.data || {};
 
   const categoryId    = String(data.product_category ?? "").trim();
-  const state         = getAddProductState(token);
+  const state         = await getAddProductState(token);
 
   // Resolve the human-readable label for the selected category
   const allCategories: Array<{ id: string; title: string }> =
@@ -251,7 +251,7 @@ async function handleSaveCategory(parsed: FlowRequest): Promise<FlowResponse> {
   const categoryLabel =
     allCategories.find((c) => c.id === categoryId)?.title ?? categoryId;
 
-  updateAddProductState(token, {
+  await updateAddProductState(token, {
     product_category: categoryId,
     product_category_label: categoryLabel,
     product_subcategory: "",
@@ -260,8 +260,8 @@ async function handleSaveCategory(parsed: FlowRequest): Promise<FlowResponse> {
 
   const subcategories = await resolveSubcategories(token, categoryId);
   const flowSubcategories = toFlowSubcategories(subcategories);
-  const refreshedState = getAddProductState(token);
-  updateAddProductState(token, {
+  const refreshedState = await getAddProductState(token);
+  await updateAddProductState(token, {
     subcategories: {
       ...(refreshedState?.subcategories ?? {}),
       [categoryId]: subcategories,
@@ -292,7 +292,7 @@ async function handleSaveSubcategory(parsed: FlowRequest): Promise<FlowResponse>
   const data = parsed.data || {};
 
   const subcategoryId = String(data.product_subcategory ?? "").trim();
-  const state         = getAddProductState(token);
+  const state         = await getAddProductState(token);
 
   // Build the human-readable breadcrumb label from the cached subcategories map
   const categoryId    = state?.product_category ?? "";
@@ -305,7 +305,7 @@ async function handleSaveSubcategory(parsed: FlowRequest): Promise<FlowResponse>
     cachedSubs.find((s) => s.id === subcategoryId)?.description ??
     subcategoryId;
 
-  updateAddProductState(token, {
+  await updateAddProductState(token, {
     product_subcategory: subcategoryId,
     product_subcategory_label: subcategoryLabel,
   });
@@ -342,7 +342,7 @@ async function handleSavePriceTnd(parsed: FlowRequest): Promise<FlowResponse> {
     return { screen: "SCREEN_PRICE_TND", data: { gain_tnd: "" } };
   }
 
-  updateAddProductState(token, {
+  await updateAddProductState(token, {
     prix_regulier_tnd: prixRegulierTnd,
     prix_promo_tnd: prixPromoTnd,
   });
@@ -369,7 +369,7 @@ async function handleSavePriceTnd(parsed: FlowRequest): Promise<FlowResponse> {
 async function handleCalculateGainEur(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
   const data  = parsed.data || {};
-  const state = getAddProductState(token) || undefined;
+  const state = (await getAddProductState(token)) || undefined;
 
   let prixRegulierEur = parsePrice(data.prix_regulier_eur);
   let prixPromoEur    = parsePrice(data.prix_promo_eur);
@@ -383,7 +383,7 @@ async function handleCalculateGainEur(parsed: FlowRequest): Promise<FlowResponse
     if (prixPromoEur <= 0 && (state?.prix_promo_tnd ?? 0) > 0) prixPromoEur = eurPrices.promoEur;
   }
 
-  updateAddProductState(token, {
+  await updateAddProductState(token, {
     prix_regulier_eur: prixRegulierEur,
     prix_promo_eur:    prixPromoEur,
   });
@@ -409,7 +409,7 @@ async function handleCalculateGainEur(parsed: FlowRequest): Promise<FlowResponse
 async function handleSavePriceEur(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
   const data  = parsed.data || {};
-  const state = getAddProductState(token) || undefined;
+  const state = (await getAddProductState(token)) || undefined;
 
   let prixRegulierEur = parsePrice(data.prix_regulier_eur);
   let prixPromoEur    = parsePrice(data.prix_promo_eur);
@@ -436,7 +436,7 @@ async function handleSavePriceEur(parsed: FlowRequest): Promise<FlowResponse> {
     };
   }
 
-  updateAddProductState(token, {
+  await updateAddProductState(token, {
     prix_regulier_eur: prixRegulierEur,
     prix_promo_eur:    prixPromoEur,
   });
@@ -451,7 +451,7 @@ async function handleSaveDetails(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
   const data  = parsed.data || {};
 
-  updateAddProductState(token, {
+  await updateAddProductState(token, {
     longueur:        toNumber(data.longueur, 0),
     largeur:         toNumber(data.largeur, 0),
     profondeur:      toNumber(data.profondeur, 0),
@@ -481,7 +481,7 @@ async function handleSaveQuantity(parsed: FlowRequest): Promise<FlowResponse> {
     quantity = manual > 0 ? manual : 1;
   }
 
-  const current = updateAddProductState(token, { quantite: String(quantity) });
+  const current = await updateAddProductState(token, { quantite: String(quantity) });
 
   const rawImages: string[] = current.images ?? [];
   const carousel1   = buildCarousel(rawImages, 0);
@@ -525,7 +525,7 @@ async function handleSaveQuantity(parsed: FlowRequest): Promise<FlowResponse> {
  */
 async function handleSubmitSummary(parsed: FlowRequest): Promise<FlowResponse> {
   const token   = getFlowToken(parsed);
-  const current = getAddProductState(token) ?? {};
+  const current = (await getAddProductState(token)) ?? {};
 
   const quantity = parseInt(String(current.quantite ?? "1"), 10);
 
@@ -543,7 +543,7 @@ async function handleSubmitSummary(parsed: FlowRequest): Promise<FlowResponse> {
       createResult.errorCode,
       createResult.errorMessage
     );
-    updateAddProductState(token, {
+    await updateAddProductState(token, {
       submit_status:      "error",
       submit_message:     createResult.errorMessage ?? "Impossible d'ajouter le produit.",
       submit_error_code:  createResult.errorCode    ?? "create_failed",
@@ -560,49 +560,15 @@ async function handleSubmitSummary(parsed: FlowRequest): Promise<FlowResponse> {
     };
   }
 
-  updateAddProductState(token, {
+  await updateAddProductState(token, {
     submitted_at:      Date.now(),
-    created_at:        new Date().toLocaleDateString("fr-FR"),
     submit_status:     "submitted",
     submit_message:    "Produit ajouté avec succès.",
     submit_error_code: "",
     product_id:        createResult.productId,
   });
 
-  // ─── Trigger AI Optimization ─────────────────────────────────────────────
-  // After product is created, send only the product ID to AI for optimization (async)
-  // The request is non-blocking and AI will fetch full product details from your backend
-  try {
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000";
-    const sellerPhone = extractPhoneFromFlowToken(token);
-    
-    const aiResponse = await fetch(
-      `${baseUrl}/api/seller/optimizedProductFlow/genAI_endpoint`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          productId: createResult.productId,
-          sellerPhone: sellerPhone
-        }),
-      }
-    );
-
-    if (aiResponse.ok) {
-      console.info(
-        `[addProductFlow] AI optimization triggered for product ${createResult.productId} (seller: ${sellerPhone})`
-      );
-    } else {
-      console.warn(
-        `[addProductFlow] AI optimization request failed: ${aiResponse.status}`
-      );
-    }
-  } catch (err) {
-    // Don't fail the product creation if AI optimization fails
-    console.warn("[addProductFlow] Error triggering AI optimization:", err);
-  }
-  // ──────────────────────────────────────────────────────────────────────
-
+  await invalidateProductsListByTokenCache(token);
   await sendMenu(token);
   return { screen: "SUCCESS", data: {} };
 }
@@ -629,7 +595,7 @@ export async function handleAddProductFlow(
     if (token) {
 
       // Keep INIT fast and deterministic; categories/subcategories are loaded on-demand.
-      updateAddProductState(token, {
+      await updateAddProductState(token, {
         categories: DEFAULT_CATEGORIES,
         subcategories: {},
       });
@@ -648,7 +614,7 @@ export async function handleAddProductFlow(
     if (!screen) {
       // Recover gracefully from client transition glitches.
       const token = getFlowToken(parsed);
-      const state = getAddProductState(token);
+      const state = await getAddProductState(token);
       const categories =
         Array.isArray(state?.categories) && state.categories.length > 0
           ? state.categories

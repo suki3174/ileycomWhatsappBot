@@ -13,6 +13,16 @@ import {
   type OrderStatusCounters,
 } from "@/repositories/orders/order_repo";
 import { normToken } from "@/utils/core_utils";
+import {
+  getOrderArticlesPageCache,
+  getOrderDetailCache,
+  getOrderStatusCountersCache,
+  getOrderSummariesPageCache,
+  writeOrderArticlesPageCache,
+  writeOrderDetailCache,
+  writeOrderStatusCountersCache,
+  writeOrderSummariesPageCache,
+} from "@/services/cache/orders_cache_service";
 
 export async function getSellerOrdersByFlowToken(
   token: string,
@@ -39,13 +49,44 @@ export async function getSellerOrderSummariesPage(
     };
   }
 
-  return findOrderSummariesPageByFlowToken(normalized, statusFilter, page, limit);
+  const cached = await getOrderSummariesPageCache(
+    normalized,
+    statusFilter,
+    page,
+    limit,
+  );
+  if (cached) return cached;
+
+  const fresh = await findOrderSummariesPageByFlowToken(
+    normalized,
+    statusFilter,
+    page,
+    limit,
+  );
+  await writeOrderSummariesPageCache(
+    normalized,
+    statusFilter,
+    page,
+    limit,
+    fresh,
+  );
+
+  return fresh;
 }
 
 export async function getOrderById(
   orderId: string,
+  token?: string,
 ): Promise<Order | undefined> {
-  return findOrderById(orderId);
+  const cached = await getOrderDetailCache(orderId, token);
+  if (cached) return cached;
+
+  const fresh = await findOrderById(orderId);
+  if (fresh) {
+    await writeOrderDetailCache(orderId, fresh, token);
+  }
+
+  return fresh;
 }
 
 export async function getOrderArticles(
@@ -58,8 +99,14 @@ export async function getOrderArticlesPage(
   orderId: string,
   page = 1,
   limit = 3,
+  token?: string,
 ): Promise<OrderArticlesPage> {
-  return findOrderArticlesPageByOrderId(orderId, page, limit);
+  const cached = await getOrderArticlesPageCache(orderId, page, limit, token);
+  if (cached) return cached;
+
+  const fresh = await findOrderArticlesPageByOrderId(orderId, page, limit);
+  await writeOrderArticlesPageCache(orderId, page, limit, fresh, token);
+  return fresh;
 }
 
 export async function getOrderStatusCounters(
@@ -70,8 +117,13 @@ export async function getOrderStatusCounters(
     return { total: 0, completed: 0, in_delivery: 0, to_deliver: 0 };
   }
 
+  const cached = await getOrderStatusCountersCache(normalized);
+  if (cached) return cached;
+
   try {
-    return await findOrderStatusCountersByFlowToken(normalized);
+    const fresh = await findOrderStatusCountersByFlowToken(normalized);
+    await writeOrderStatusCountersCache(normalized, fresh);
+    return fresh;
   } catch {
     return { total: 0, completed: 0, in_delivery: 0, to_deliver: 0 };
   }
@@ -91,10 +143,16 @@ export function filterOrdersForStatus(
 }
 
 export function primeOrdersAsync(token: string): void {
-  void token;
+  const normalized = normToken(token);
+  if (!normalized) return;
+
+  void getSellerOrderSummariesPage(normalized, "all", 1, 10);
 }
 
 export function primeOrderCountersAsync(token: string): void {
-  void token;
+  const normalized = normToken(token);
+  if (!normalized) return;
+
+  void getOrderStatusCounters(normalized);
 }
 

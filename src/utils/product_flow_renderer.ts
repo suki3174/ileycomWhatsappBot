@@ -247,7 +247,23 @@ export function formatVariationAttributes(
 export function formatProductNavItem(product: any, imageBase64?: string) {
   const isVariable = product.is_variable || product.type === ProductType.VARIABLE;
   const typeLabel = isVariable ? "Variable" : "Simple";
-  const status = String(product.status === "publish" ? "Publié" : product.status ?? "");
+  const rawStatus = String(product.status ?? product.state ?? product.post_status ?? "").trim().toLowerCase();
+  const status =
+    rawStatus === "publish" || rawStatus === "published"
+      ? "Publié"
+      : rawStatus === "draft"
+        ? "Brouillon"
+        : rawStatus === "pending"
+          ? "En attente"
+          : rawStatus === "private"
+            ? "Privé"
+            : rawStatus === "future"
+              ? "Planifié"
+              : rawStatus === "archived" || rawStatus === "archiv"
+                ? "Archivé"
+              : rawStatus === "trash"
+                ? "Corbeille"
+                : String(product.status ?? product.state ?? product.post_status ?? "").trim();
   const sku = String(product.sku ?? "").trim();
   const stock = formatStock(product);
   const price = isVariable ? "Prix variable" : formatSimplePrices(product);

@@ -1,24 +1,32 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
-import { generateFlowtoken } from "@/utils/seller_auth_helpers";
+import { generateFlowtoken, normalizeSellerPhone } from "@/utils/seller_auth_helpers";
 import { Seller } from "@/models/seller_model";
 import { getSellerByPhone, isSessionActive } from "@/services/auth_service";
+import { extractPhoneFromFlowToken } from "@/utils/data_parser";
 
 export async function POST(req: NextRequest) {
  
   const body = await req.json();
     const seller: Seller = body.seller;
+    const incomingPhone = normalizeSellerPhone(String(body?.phone || ""));
 
     if (!seller) {
         return NextResponse.json({ error: "seller is required in request body" }, { status: 400 });
     }
 
     try {
-      const recipient = seller.phone
+      const sellerPhone = normalizeSellerPhone(String(seller?.phone || ""));
+      const recipient = incomingPhone || sellerPhone;
+      if (!recipient) {
+        return NextResponse.json({ error: "seller.phone is required in request body" }, { status: 400 });
+      }
 
-      const sellerFromState = await getSellerByPhone(seller.phone);
+      const sellerFromState = await getSellerByPhone(recipient);
       const persistedToken = String(sellerFromState?.flow_token || "").trim();
-      const token = persistedToken || generateFlowtoken(seller.phone);
-      if (!persistedToken) {
+      const persistedPhone = extractPhoneFromFlowToken(persistedToken || "") || "";
+      const tokenMatchesPhone = !!persistedToken && persistedPhone === recipient;
+      const token = tokenMatchesPhone ? persistedToken : generateFlowtoken(recipient);
+      if (!tokenMatchesPhone) {
         return NextResponse.json(
           { error: "Session inactive. Please sign in first." },
           { status: 401 },
@@ -72,7 +80,7 @@ export async function POST(req: NextRequest) {
       );
 
       const data = await response.json();
-      return NextResponse.json({ seller: seller.name, recipient: seller.phone, status: response.status, data });
+      return NextResponse.json({ seller: seller.name, recipient, status: response.status, data });
   
     } catch (error) {
       console.error(`Error sending to ${seller.name}:`, error);

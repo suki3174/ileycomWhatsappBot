@@ -75,6 +75,7 @@ function mapProduct(rawProduct: unknown): Product | undefined {
     id,
     name: normText(row.name),
     type,
+    status: normText(row.status || row.state || row.post_status).toLowerCase(),
     sku: normText(row.sku),
     image_src: normText(row.image_src),
     image_gallery: toStringArray(row.image_gallery),

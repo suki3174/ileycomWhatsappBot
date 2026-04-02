@@ -1,7 +1,14 @@
 /**
  * Optimized Product Flow State Cache
- * Stores state for the optimized product flow
+ * In-memory L1 + Redis L2 cache for optimized product flow state.
+ * TTL is managed by Redis (1 h); in-memory map is request-scope fast path.
  */
+
+import {
+  readOptimizedFlowState,
+  writeOptimizedFlowState,
+  deleteOptimizedFlowState,
+} from "@/services/cache/ai_optimization_cache_service";
 
 export interface OptimizedProductFlowState {
   product_id?: string;
@@ -17,39 +24,40 @@ export interface OptimizedProductFlowState {
 
 const optimizedProductFlowCache = new Map<string, OptimizedProductFlowState>();
 
-/**
- * Get optimized product flow state from cache
- */
-export function getOptimizedProductFlowState(
+export async function getOptimizedProductFlowState(
   token: string
-): OptimizedProductFlowState | null {
-  return optimizedProductFlowCache.get(token) || null;
+): Promise<OptimizedProductFlowState | null> {
+  const local = optimizedProductFlowCache.get(token);
+  if (local) return local;
+
+  const remote = await readOptimizedFlowState(token);
+  if (remote) {
+    optimizedProductFlowCache.set(token, remote);
+    return remote;
+  }
+
+  return null;
 }
 
-/**
- * Update optimized product flow state in cache
- */
-export function updateOptimizedProductFlowState(
+export async function updateOptimizedProductFlowState(
   token: string,
   state: Partial<OptimizedProductFlowState>
-): void {
-  const current = getOptimizedProductFlowState(token) || {};
-  optimizedProductFlowCache.set(token, { ...current, ...state });
+): Promise<void> {
+  const current = (await getOptimizedProductFlowState(token)) || {};
+  const merged: OptimizedProductFlowState = { ...current, ...state };
+  optimizedProductFlowCache.set(token, merged);
+  await writeOptimizedFlowState(token, merged);
 }
 
-/**
- * Set optimized product flow state
- */
-export function setOptimizedProductFlowState(
+export async function setOptimizedProductFlowState(
   token: string,
   state: OptimizedProductFlowState
-): void {
+): Promise<void> {
   optimizedProductFlowCache.set(token, state);
+  await writeOptimizedFlowState(token, state);
 }
 
-/**
- * Clear optimized product flow state
- */
-export function clearOptimizedProductFlowState(token: string): void {
+export async function clearOptimizedProductFlowState(token: string): Promise<void> {
   optimizedProductFlowCache.delete(token);
+  await deleteOptimizedFlowState(token);
 }

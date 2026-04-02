@@ -1,7 +1,21 @@
 import type { Seller } from "@/models/seller_model";
 
+export function normalizeSellerPhone(phone: string): string {
+  const digits = String(phone || "").replace(/\D+/g, "");
+  if (!digits) return "";
+
+  // Canonical format in this project: Tunisian country code prefix without +
+  // e.g. 21650354773. If only local 8 digits are provided, prefix with 216.
+  if (digits.length === 8) return `216${digits}`;
+  if (digits.startsWith("216") && digits.length === 11) return digits;
+
+  // Keep as-is for unexpected lengths to avoid destructive rewrites.
+  return digits;
+}
+
 export function generateFlowtoken(phone: string): string {
-  const token = `flowtoken-${phone}-${Date.now()}`;
+  const normalizedPhone = normalizeSellerPhone(phone);
+  const token = `flowtoken-${normalizedPhone || String(phone || "").replace(/\D+/g, "")}-${Date.now()}`;
   return token;
 }
 
