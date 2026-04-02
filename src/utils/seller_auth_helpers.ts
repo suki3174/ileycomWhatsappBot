@@ -51,3 +51,10 @@ export function isPinStrong(pin: string): boolean {
 
   return true;
 }
+
+export function isTunisianPhone(phone: string): boolean {
+  const digits = String(phone || "").replace(/\D+/g, "");
+  // Tunisian format: country code 216 + 8 local digits = 11 digits total
+  // e.g., 21650354773 or 216<8digits>
+  return digits.startsWith("216") && digits.length === 11;
+}

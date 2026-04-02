@@ -10,7 +10,7 @@ import {
   verifySellerEmail,
   startSellerSession,
 } from "@/services/auth_service";
-import { isPinStrong } from "@/utils/seller_auth_helpers";
+import { isPinStrong, isTunisianPhone } from "@/utils/seller_auth_helpers";
 import { sendResetEmail } from "@/services/reset_code_service";
 import { FlowRequest } from "@/models/flowRequest";
 import { FlowResponse } from "@/models/flowResponse";
@@ -44,6 +44,14 @@ async function handleWelcome(parsed: FlowRequest): Promise<FlowResponse> {
       return {
         screen: "SIGN_UP",
         data: { error_msg: "" },
+      };
+    }
+
+    // Validate phone is Tunisian only (country code 216 + 8 local digits)
+    if (!isTunisianPhone(phone)) {
+      return {
+        screen: "SIGN_UP",
+        data: { error_msg: "Numéro non valide. Seuls les numéros tunisiens sont acceptés." },
       };
     }
 
@@ -98,6 +106,15 @@ async function handleSignIn(parsed: FlowRequest): Promise<FlowResponse> {
     }
 
     const token = getFlowToken(parsed);
+    
+    // Validate phone is Tunisian only before signin process
+    const phoneFromToken = extractPhoneFromFlowToken(token);
+    if (!phoneFromToken || !isTunisianPhone(phoneFromToken)) {
+      return {
+        screen: "SIGN_IN",
+        data: { error_msg: "Numéro non valide. Seuls les numéros tunisiens sont acceptés." },
+      };
+    }
     
     // Verify PIN against seller_state
     const isValid = await verifyCode(token, pin);
@@ -169,6 +186,15 @@ async function handleSignUp(parsed: FlowRequest): Promise<FlowResponse> {
       data: {
         error_msg: "Les codes ne correspondent pas."
       },
+    };
+  }
+
+  // Validate phone is Tunisian only before signup process
+  const phoneFromToken = extractPhoneFromFlowToken(token);
+  if (!phoneFromToken || !isTunisianPhone(phoneFromToken)) {
+    return {
+      screen: "SIGN_UP",
+      data: { error_msg: "Numéro non valide. Seuls les numéros tunisiens sont acceptés." },
     };
   }
 
