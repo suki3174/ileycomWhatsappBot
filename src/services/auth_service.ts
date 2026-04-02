@@ -1,21 +1,21 @@
- import {
+﻿ import {
   activateSellerSessionViaPlugin,
   findAllSellers,
   findSellerByFlowToken,
   findSellerByPhone,
   upsertSellerState,
   updateSellerCode,
-} from "@/repositories/seller_repo";
+} from "@/repositories/auth/seller_repo";
 import type { Seller } from "@/models/seller_model";
-import { consumePendingCode, updateAuthWarmupCache } from "@/repositories/auth_cache";
+import { consumePendingCode, updateAuthWarmupCache } from "@/repositories/auth/auth_cache";
 import {
   generateFlowtoken,
   hasSellerCodeValue,
   sellerEmailMatches,
-} from "@/utils/auth_utils";
-import { hashPin, verifyStoredPin } from "@/utils/pinHash";
-import { extractPhoneFromFlowToken } from "@/utils/repository_utils";
-import { normToken } from "@/utils/utilities";
+} from "@/utils/seller_auth_helpers";
+import { hashPin, verifyStoredPin } from "@/utils/pin_hash";
+import { extractPhoneFromFlowToken } from "@/utils/data_parser";
+import { normToken } from "@/utils/core_utils";
 
 const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
 
@@ -164,23 +164,18 @@ export async function verifyCode(token: string, code: string): Promise<boolean> 
 export async function startSellerSession(token: string): Promise<boolean> {
   const normalized = normToken(token);
   if (!normalized) return false;
+  const sessionActiveUntil = Date.now() + SESSION_DURATION_MS;
 
-  void (async () => {
-    const sessionActiveUntil = Date.now() + SESSION_DURATION_MS;
-    // OPTIMIZATION: Direct flow-token session activation (fastest path).
-    // Changed from: state/insert first, session/activate fallback.
-    // Now: session/activate first (faster), state upsert only if session endpoint fails.
-    // This avoids unnecessary heavy state join queries on normal SIGN_IN success path.
-    const ok = await activateSellerSessionViaPlugin(normalized);
-    if (!ok) {
-      // Fallback: upsert by phone to recover if session endpoint is temporarily unavailable.
-      await upsertSellerState(normalized, null, {
-        session_active_until: sessionActiveUntil,
-      });
-    }
-  })();
+  // Make session activation blocking so subsequent menu/flow actions
+  // observe a committed session_active_until value.
+  const ok = await activateSellerSessionViaPlugin(normalized);
+  if (ok) return true;
 
-  return true;
+  // Fallback: upsert by phone to recover if session endpoint is temporarily unavailable.
+  const recovered = await upsertSellerState(normalized, null, {
+    session_active_until: sessionActiveUntil,
+  });
+  return !!recovered;
 }
 
 // Returns whether seller session is still valid and deactivates expired sessions.

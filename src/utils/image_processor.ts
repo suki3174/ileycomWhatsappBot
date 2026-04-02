@@ -11,8 +11,12 @@
 import sharp from "sharp";
 import fs from "fs/promises";
 import path from "path";
+import { env } from "process";
 
+
+ const CAROUSEL_SIZE = 3;
 const MAX_BYTES = 90_000; // 90KB — leave headroom under 100KB limit
+const IMAGE_FETCH_TIMEOUT_MS = 1200;
 // 1x1 transparent PNG fallback to avoid empty image fields on transient failures.
 const FALLBACK_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Z2ioAAAAASUVORK5CYII=";
@@ -79,8 +83,51 @@ async function readPlaceholderImage(): Promise<Buffer | null> {
   return placeholderBufferPromise;
 }
 
-async function buildImageBase64(imageUrl: string, targetSize: number): Promise<string> {
-  const cacheKey = `${imageUrl || "__placeholder__"}::${targetSize}`;
+/**
+ * Core sharp pipeline: resize to given dimensions, compress to JPEG under MAX_BYTES.
+ * Retries with lower quality, then smaller dimensions if needed.
+ */
+async function processBufferToCarousel(
+  inputBuffer: Buffer,
+  width: number,
+  height: number,
+): Promise<Buffer> {
+  let quality = 80;
+  let outputBuffer: Buffer;
+
+  do {
+    outputBuffer = await sharp(inputBuffer)
+      .resize(width, height, {
+        fit: "cover",
+        position: "centre",
+      })
+      .jpeg({ quality, progressive: false })
+      .toBuffer();
+
+    if (outputBuffer.byteLength > MAX_BYTES) {
+      quality -= 10;
+    }
+  } while (outputBuffer.byteLength > MAX_BYTES && quality > 20);
+
+  if (outputBuffer.byteLength > MAX_BYTES) {
+    // Last resort: shrink dimensions
+    const fallbackWidth = Math.max(160, Math.floor(width * 0.6));
+    const fallbackHeight = Math.max(120, Math.floor(height * 0.6));
+    outputBuffer = await sharp(inputBuffer)
+      .resize(fallbackWidth, fallbackHeight, { fit: "cover", position: "centre" })
+      .jpeg({ quality: 60 })
+      .toBuffer();
+  }
+
+  return outputBuffer;
+}
+
+async function buildImageBase64(
+  imageUrl: string,
+  width: number,
+  height: number,
+): Promise<string> {
+  const cacheKey = `${imageUrl || "__placeholder__"}::${width}x${height}`;
 
   const cached = imageCache.get(cacheKey);
   if (cached !== undefined) return cached;
@@ -90,7 +137,7 @@ async function buildImageBase64(imageUrl: string, targetSize: number): Promise<s
 
     if (!inputBuffer && imageUrl) {
       const response = await fetch(imageUrl, {
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS),
       });
 
       if (!response.ok) {
@@ -110,34 +157,7 @@ async function buildImageBase64(imageUrl: string, targetSize: number): Promise<s
       return FALLBACK_BASE64;
     }
 
-    let quality = 80;
-    let outputBuffer: Buffer;
-
-    do {
-      outputBuffer = await sharp(inputBuffer)
-        .resize(targetSize, targetSize, {
-          fit: "contain",
-          background: { r: 255, g: 255, b: 255, alpha: 1 },
-        })
-        .jpeg({ quality, progressive: false })
-        .toBuffer();
-
-      if (outputBuffer.byteLength > MAX_BYTES) {
-        quality -= 10;
-      }
-    } while (outputBuffer.byteLength > MAX_BYTES && quality > 20);
-
-    if (outputBuffer.byteLength > MAX_BYTES) {
-      const fallbackSize = Math.max(72, Math.floor(targetSize * 0.6));
-      outputBuffer = await sharp(inputBuffer)
-        .resize(fallbackSize, fallbackSize, {
-          fit: "contain",
-          background: { r: 255, g: 255, b: 255, alpha: 1 },
-        })
-        .jpeg({ quality: 60 })
-        .toBuffer();
-    }
-
+    const outputBuffer = await processBufferToCarousel(inputBuffer, width, height);
     const base64 = outputBuffer.toString("base64");
     imageCache.set(cacheKey, base64);
     return base64;
@@ -154,11 +174,49 @@ async function buildImageBase64(imageUrl: string, targetSize: number): Promise<s
  * Returns empty string on any failure so the item still renders without image.
  */
 export async function toNavListBase64(imageUrl: string): Promise<string> {
-  return await buildImageBase64(imageUrl, 200);
+  return await buildImageBase64(imageUrl, 200, 200);
 }
 
 export async function toSizedBase64(imageUrl: string, size: number): Promise<string> {
-  return await buildImageBase64(imageUrl, normalizeTargetSize(size));
+  const s = normalizeTargetSize(size);
+  return await buildImageBase64(imageUrl, s, s);
+}
+
+export async function toCarouselBase64(imageUrl: string): Promise<string> {
+  return await buildImageBase64(imageUrl, 320, 240);
+}
+
+/**
+ * Processes a raw base64 string OR a Buffer (as returned by decryptWhatsAppMedia)
+ * through sharp and returns a carousel-ready base64 string (320×240, JPEG, <100KB).
+ *
+ * The PhotoPicker payload shape is: { file_name, media_id, cdn_url, encryption_metadata }
+ * After decryption we have a plain Buffer which is passed here directly.
+ *
+ * Returns empty string on any failure.
+ */
+export async function toCarouselBase64FromBase64(input: string | Buffer): Promise<string> {
+  if (!input || (typeof input === "string" && input.length === 0)) return FALLBACK_BASE64;
+
+  try {
+    let inputBuffer: Buffer;
+
+    if (Buffer.isBuffer(input)) {
+      inputBuffer = input;
+    } else {
+      // Strip optional data URI prefix (e.g. "data:image/jpeg;base64,")
+      const stripped = input.includes(",") ? input.split(",")[1] : input;
+      inputBuffer = Buffer.from(stripped, "base64");
+    }
+
+    if (inputBuffer.byteLength === 0) return FALLBACK_BASE64;
+
+    const outputBuffer = await processBufferToCarousel(inputBuffer, 320, 240);
+    return outputBuffer.toString("base64");
+  } catch (err) {
+    console.warn("toCarouselBase64FromBase64 error:", err);
+    return FALLBACK_BASE64;
+  }
 }
 
 /**
@@ -166,22 +224,44 @@ export async function toSizedBase64(imageUrl: string, size: number): Promise<str
  * Returns a map of product id → base64 string.
  */
 export async function prefetchNavListImages(
-  products: Array<{ id: string | number; image_src?: string }>,
+  products: Array<{ id: string | number; image_src?: string | string[] }>,
   size = 200,
 ): Promise<Map<string, string>> {
   const results = new Map<string, string>();
   const targetSize = normalizeTargetSize(size);
+
+  const resolveImageUrl = (value: string | string[] | undefined): string => {
+    if (Array.isArray(value)) {
+      const first = value.find((item) => typeof item === "string" && item.trim().length > 0);
+      return first ? first.trim() : "";
+    }
+    if (typeof value === "string") {
+      return value.trim();
+    }
+    return "";
+  };
 
   const concurrency = 2;
   for (let index = 0; index < products.length; index += concurrency) {
     const batch = products.slice(index, index + concurrency);
     await Promise.all(
       batch.map(async (p) => {
-      const base64 = await buildImageBase64(p.image_src || "", targetSize);
+      const imageUrl = resolveImageUrl(p.image_src);
+      const base64 = await buildImageBase64(imageUrl, targetSize, targetSize);
       results.set(String(p.id), base64);
       }),
     );
   }
 
   return results;
+}
+
+export function buildCarousel(
+  images: string[],
+  offset: number
+): Array<{ src: string; "alt-text": string }> {
+  return images.slice(offset, offset + CAROUSEL_SIZE).map((src, i) => ({
+    src,
+    "alt-text": `Photo ${offset + i + 1}`,
+  }));
 }

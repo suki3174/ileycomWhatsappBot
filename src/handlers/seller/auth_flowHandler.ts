@@ -1,7 +1,7 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-import { getFlowToken, isValidEmail } from "@/utils/utilities"
-import { extractPhoneFromFlowToken } from "@/utils/repository_utils";
-import { findSellerStateByPhone } from "@/repositories/seller_repo";
+﻿/* eslint-disable @typescript-eslint/no-unused-vars */
+import { getFlowToken, isValidEmail } from "@/utils/core_utils"
+import { extractPhoneFromFlowToken } from "@/utils/data_parser";
+import { findSellerByFlowToken, findSellerStateByPhone } from "@/repositories/auth/seller_repo";
 import {
   prepareSellerState,
   sellerHasCodeByFlowToken,
@@ -9,11 +9,14 @@ import {
   verifyCode,
   verifySellerEmail,
   startSellerSession,
+  findSeller,
 } from "@/services/auth_service";
-import { isPinStrong } from "@/utils/auth_utils";
+import { isPinStrong } from "@/utils/seller_auth_helpers";
 import { sendResetEmail } from "@/services/reset_code_service";
 import { FlowRequest } from "@/models/flowRequest";
 import { FlowResponse } from "@/models/flowResponse";
+import { Seller } from "@/models/seller_model";
+import { sendMenu } from "@/services/menu_service";
 
 
 
@@ -83,7 +86,7 @@ async function handleWelcome(parsed: FlowRequest): Promise<FlowResponse> {
 /* SIGN IN */
 /* -------------------------------- */
 
-async function handleSignIn(parsed: FlowRequest): Promise<FlowResponse> {
+async function handleSignIn(parsed: FlowRequest,seller: Seller): Promise<FlowResponse> {
   const data = parsed.data || {};
   const pin = String(data.pin_code ?? "").trim();
 
@@ -109,7 +112,7 @@ async function handleSignIn(parsed: FlowRequest): Promise<FlowResponse> {
 
     // Update session_active_until timestamp (runs in background)
     await startSellerSession(token);
-    
+    await sendMenu(token);
     return {
       screen: "SUCCESS",
       data: { message: "Connexion réussie." },
@@ -282,10 +285,23 @@ export async function handleAuthFlow(
 ): Promise<FlowResponse> {
   const rawAction = parsed.action || "";
   const action = rawAction.toUpperCase();
+  let  seller : Seller|undefined =undefined 
+  const token = getFlowToken(parsed);
+  seller = await findSeller(token)
+
+
+  if (!seller) {
+    return {
+      screen: "WELCOME",
+      data: { error_msg: "Seller not found" },
+    };
+  }
+  
 
   // INIT / NAVIGATE: warm up seller state without blocking.
   if (action === "INIT" || action === "NAVIGATE") {
-    const token = getFlowToken(parsed);
+    
+    
     if (token) {
       void prepareSellerState(token);
     }
@@ -305,7 +321,7 @@ export async function handleAuthFlow(
 
       case "SIGN_IN":
 
-        return handleSignIn(parsed);
+        return handleSignIn(parsed,seller);
 
       case "SIGN_UP":
 

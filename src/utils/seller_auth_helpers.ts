@@ -1,8 +1,7 @@
 import type { Seller } from "@/models/seller_model";
 
-export function generateFlowtoken(seller: Seller): string {
-  const token = `flowtoken-${seller.phone}-${Date.now()}`;
-  seller.flow_token = token;
+export function generateFlowtoken(phone: string): string {
+  const token = `flowtoken-${phone}-${Date.now()}`;
   return token;
 }
 

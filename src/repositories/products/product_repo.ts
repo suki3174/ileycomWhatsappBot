@@ -1,3 +1,4 @@
+﻿/* eslint-disable @typescript-eslint/no-unused-vars */
 import {
   type Product,
   type ProductVariation,
@@ -12,7 +13,7 @@ import {
   toBool,
   toNum,
   toStringArray,
-} from "@/utils/repository_utils";
+} from "@/utils/data_parser";
 
 const PRODUCTS_BY_FLOW_TIMEOUT_MS = Math.max(PLUGIN_TIMEOUT_MS, 20000);
 
@@ -61,6 +62,14 @@ function mapProduct(rawProduct: unknown): Product | undefined {
   const rawType = normText(row.type).toLowerCase();
   const isVariable = toBool(row.is_variable) || rawType === ProductType.VARIABLE;
   const type = isVariable ? ProductType.VARIABLE : ProductType.SIMPLE;
+
+  let imageUrls: string[] = [];
+  if (Array.isArray(row.image_src)) {
+    imageUrls = row.image_src.map((v) => normText(v)).filter((v) => v);
+  } else {
+    const single = normText(row.image_src);
+    if (single) imageUrls = [single];
+  }
 
   const mapped: Product = {
     id,

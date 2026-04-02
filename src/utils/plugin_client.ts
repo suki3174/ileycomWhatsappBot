@@ -1,3 +1,5 @@
+﻿import { extractPhoneFromFlowToken } from "@/utils/data_parser";
+
 interface PluginPostOptions {
   timeoutMs?: number;
 }
@@ -16,6 +18,16 @@ export const PLUGIN_TIMEOUT_MS = Number.isFinite(timeoutFromEnv)
   ? Math.max(timeoutFromEnv, 1000)
   : 5000;
 
+function summarizeFlowToken(payload: Record<string, unknown>): { token: string; phone: string } {
+  const raw = payload.flow_token;
+  const token = typeof raw === "string" ? raw.trim() : String(raw ?? "").trim();
+  if (!token) return { token: "", phone: "" };
+  return {
+    token,
+    phone: extractPhoneFromFlowToken(token) ?? "",
+  };
+}
+
 export async function pluginPost(
   path: string,
   payload: Record<string, unknown>,
@@ -23,7 +35,19 @@ export async function pluginPost(
 ): Promise<Response> {
   const timeoutMs = Math.max(options.timeoutMs ?? PLUGIN_TIMEOUT_MS, 1000);
  const url = `${PLUGIN_BASE_URL}${path}`;
-  console.log("pluginPost calling:", url); 
+  const flow = summarizeFlowToken(payload);
+  if (
+    path === "/seller/product/create/by-flow-token" ||
+    path === "/seller/products/by-flow-token"
+  ) {
+    console.log("pluginPost calling:", url, {
+      path,
+      flow_token: flow.token || "<missing>",
+      flow_phone: flow.phone || "<unparsed>",
+    });
+  } else {
+    console.log("pluginPost calling:", url);
+  }
   return fetch(`${PLUGIN_BASE_URL}${path}`, {
     method: "POST",
     signal: AbortSignal.timeout(timeoutMs),

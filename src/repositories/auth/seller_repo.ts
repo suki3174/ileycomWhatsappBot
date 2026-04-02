@@ -1,11 +1,11 @@
-import type { Seller } from "@/models/seller_model";
+﻿import type { Seller } from "@/models/seller_model";
 import { PLUGIN_TIMEOUT_MS, pluginPost, pluginPostWithRetry } from "@/utils/plugin_client";
 import {
   extractPhoneFromFlowToken,
   normText,
   parsePluginJsonSafe,
   readResponseBodySafe,
-} from "@/utils/repository_utils";
+} from "@/utils/data_parser";
 
 const FLOW_LOOKUP_TIMEOUT_MS = Math.max(PLUGIN_TIMEOUT_MS, 10000);
 const UPDATE_CODE_TIMEOUT_MS = Math.max(PLUGIN_TIMEOUT_MS, 12000);
@@ -36,13 +36,15 @@ declare global {
   var sellers: Seller[] | undefined;
 }
 
+const seededSellerPhone = String(process.env.TEST_PHONE_NUMBER || "21650354773").trim();
+
 // In-memory fallback seed seller used outside plugin-backed flows.
 globalThis.sellers = globalThis.sellers || [ 
   {
     name: "Maison & Argile",
     email: "Ktouhemi76@gmail.com",
     code: "1234",
-    phone: "21650354773",
+    phone: seededSellerPhone,
     flow_token: null,
   },
   
@@ -170,7 +172,7 @@ export async function upsertSellerState(
   const phone = extractPhoneFromFlowToken(token);
   if (!phone) {
     console.error("plugin state-insert skipped: could not extract phone from flow token", {
-      token,
+      token
     });
     return undefined;
   }
@@ -182,6 +184,7 @@ export async function upsertSellerState(
       ...extraState,
       phone,
       flow_token: token,
+
     };
 
     // Include code only when explicitly provided to avoid overwriting existing code with null/empty.

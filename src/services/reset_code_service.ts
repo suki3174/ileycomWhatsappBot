@@ -1,8 +1,8 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+﻿/* eslint-disable @typescript-eslint/no-explicit-any */
 // @/services/reset_code_service.ts
-import { generateResetToken } from "@/utils/utilities";
-import { setResetToken } from "@/repositories/seller_repo";
-import { sendEmail } from "@/utils/mail";
+import { generateResetToken } from "@/utils/core_utils";
+import { setResetToken } from "@/repositories/auth/seller_repo";
+import { sendEmail } from "@/utils/mailer";
 
 export async function sendResetEmail(email: string): Promise<boolean> {
   const token = generateResetToken();

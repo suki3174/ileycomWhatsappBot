@@ -1,13 +1,16 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { FlowResponse } from "@/models/flowResponse";
 import { ProductType, ProductVariation } from "@/models/product_model";
-import { prefetchNavListImages, toSizedBase64 } from "./navlist_image_utils";
-import { paginateArray } from "./utilities";
+import { prefetchNavListImages, toSizedBase64 } from "./image_processor";
+import { paginateArray } from "./core_utils";
 
 
 const PAGE_SIZE = 5;
 const MAX_CAROUSEL_IMAGES = 3;
+
+// ─── Price & Stock Formatting ─────────────────────────────────────────────────
 
 export function formatSimplePrices(product: any): string {
   const euro = String(
@@ -27,6 +30,8 @@ export function formatStock(product: any): string {
   if (!product.manage_stock) return "Stock non géré";
   return `${product.stock_quantity ?? 0} en stock`;
 }
+
+// ─── Image Building ─────────────────────────────────────────────────────────
 
 export async function buildProductCarouselImages(
   imageUrls: string[] | undefined,
@@ -57,6 +62,8 @@ export async function buildProductCarouselImages(
     "alt-text": normalizeFlowLabel(index === 0 ? altText : `${altText} ${index + 1}`),
   }));
 }
+
+// ─── Product Detail Building ──────────────────────────────────────────────────
 
 export async function buildVariableDetailData(product: {
   id: string;
@@ -101,6 +108,9 @@ export async function buildVariableDetailData(product: {
     })) ?? [],
   };
 }
+
+// ─── Text & Label Normalisation ──────────────────────────────────────────────
+
 export function normalizeFlowLabel(value: string): string {
   // Replace typographic apostrophes/quotes with plain ASCII equivalents to
   // avoid rendering artifacts in some WhatsApp clients.
@@ -132,6 +142,8 @@ export function sanitizeRichText(value: string): string {
     .replace(/\s+/g, " ")
     .trim();
 }
+
+// ─── Pagination Helpers ─────────────────────────────────────────────────────────
 
 export function toPositivePage(value: unknown): number | undefined {
   const n = Number(value);
@@ -179,6 +191,9 @@ export async function resolveFlowImageUrl(
 ): Promise<string> {
   return toSizedBase64(rawUrl, 280);
 }
+
+// ─── Variation Formatting ─────────────────────────────────────────────────────
+
 export function formatVariationStock(variation: ProductVariation): string {
   const stockStatus = String(variation.stock_status || "").toLowerCase();
   const managesStock = variation.manage_stock === true;
@@ -213,6 +228,8 @@ export function formatVariationAttributes(
 
   return parts.join(" | ") || "Attributs non precises";
 }
+
+// ─── Navigation List Items ───────────────────────────────────────────────────
 
 export function formatProductNavItem(product: any, imageBase64?: string) {
   const isVariable = product.is_variable || product.type === ProductType.VARIABLE;
@@ -307,6 +324,8 @@ export function buildNavItems(
   return items;
 }
 
+// ─── Screen Response Builders ────────────────────────────────────────────────
+
 export async function buildProductListResponse(products: any[], page: number): Promise<FlowResponse> {
   if (products.length === 0) {
     return {
@@ -345,6 +364,7 @@ export async function buildProductListPagedResponse(
   currentPage: number,
   hasMore: boolean,
   nextPage?: number,
+  options?: { includeImages?: boolean },
 ): Promise<FlowResponse> {
   if (pageItems.length === 0) {
     return {
@@ -356,9 +376,14 @@ export async function buildProductListPagedResponse(
     };
   }
 
-  const imageMap = await prefetchNavListImages(pageItems, 200);
+  const includeImages = options?.includeImages !== false;
+  let imageMap: Map<string, string> | undefined;
+  if (includeImages) {
+    imageMap = await prefetchNavListImages(pageItems, 200);
+  }
+
   const navItems = pageItems.map((p: any) =>
-    formatProductNavItem(p, imageMap.get(String(p.id)) || ""),
+    formatProductNavItem(p, includeImages ? (imageMap?.get(String(p.id)) || "") : ""),
   );
 
   const paginationItems: any[] = [];

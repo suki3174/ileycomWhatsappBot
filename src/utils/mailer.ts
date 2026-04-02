@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+ 
 import { MailtrapTransport } from "mailtrap";
 
 const TOKEN = process.env.MAILTRAP_API_TOKEN;

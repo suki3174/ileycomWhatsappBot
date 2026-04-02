@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import crypto from "crypto";
 import fs from "fs";
 
@@ -91,4 +92,50 @@ export function encryptFlowResponse(
   const out = Buffer.concat([encrypted, tag]);
 
   return out.toString("base64");
+}
+
+
+export async function decryptWhatsAppMedia(img: {
+  cdn_url: string;
+  encryption_metadata: {
+    encryption_key: string;
+    hmac_key: string;
+    iv: string;
+    plaintext_hash: string;
+    encrypted_hash: string;
+  };
+}): Promise<Buffer | null> {
+  try {
+    const encryptionKey = Buffer.from(img.encryption_metadata.encryption_key, "base64");
+    const hmacKey       = Buffer.from(img.encryption_metadata.hmac_key, "base64");
+    const iv            = Buffer.from(img.encryption_metadata.iv, "base64");
+
+    const response = await fetch(img.cdn_url, {
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) {
+      console.warn("WhatsApp CDN fetch failed:", img.cdn_url, response.status);
+      return null;
+    }
+    const encryptedBytes = Buffer.from(await response.arrayBuffer());
+
+    const mac        = encryptedBytes.subarray(encryptedBytes.length - 10);
+    const ciphertext = encryptedBytes.subarray(0, encryptedBytes.length - 10);
+
+    const hmac = crypto.createHmac("sha256", hmacKey);
+    hmac.update(iv);
+    hmac.update(ciphertext);
+    const expectedMac = hmac.digest().subarray(0, 10);
+
+    if (!crypto.timingSafeEqual(expectedMac, mac)) {
+      console.warn("WhatsApp media HMAC verification failed:", img.cdn_url);
+      return null;
+    }
+
+    const decipher = crypto.createDecipheriv("aes-256-cbc", encryptionKey, iv);
+    return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+  } catch (err) {
+    console.warn("decryptWhatsAppMedia error:", err);
+    return null;
+  }
 }

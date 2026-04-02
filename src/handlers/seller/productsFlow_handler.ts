@@ -1,10 +1,11 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+﻿/* eslint-disable @typescript-eslint/no-explicit-any */
 import { FlowRequest } from "@/models/flowRequest";
 import { FlowResponse } from "@/models/flowResponse";
 import { ProductType } from "@/models/product_model";
 import {
   getLastVariableProductId,
-} from "@/repositories/poducts_cache";
+} from "@/repositories/products/poducts_cache";
+import { findSeller } from "@/services/auth_service";
 import {
   getProductById,
   getSellerProductsPageByFlowToken,
@@ -16,6 +17,7 @@ import {
   buildProductCarouselImages,
   buildProductListPagedResponse,
   buildVariableDetailData,
+  formatPromoPrices,
   formatSimplePrices,
   formatStock,
   formatVariationAttributes,
@@ -24,8 +26,9 @@ import {
   resolveFlowImageUrl,
   sanitizeRichText,
   toPositivePage,
-} from "@/utils/products_flow_utils";
-import { getFlowToken } from "@/utils/utilities";
+} from "@/utils/product_flow_renderer";
+import { getFlowToken } from "@/utils/core_utils";
+import { isSessionActive } from "@/services/auth_service";
 
 
 
@@ -92,7 +95,7 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
       (await getProductById(selectedId)) ||
       pageProducts.find((p: any) => String(p.id) === selectedId);
 
-      console.log("produit:",product)
+    console.log("produit:", product)
 
     if (!product) {
       console.log("product not found:", selectedId);
@@ -116,7 +119,8 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
         product.image_gallery,
         product.image_src,
         `Image principale de ${product.name || "produit"}`,
-        mapImageUrl,
+        mapImageUrl
+
       );
 
       return {
@@ -126,9 +130,20 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
           img: image,
           carousel_images: carouselImages,
           id_sku: `ID: ${product.id} | SKU: ${product.sku || "non renseigne"}`,
-          short_desc: normalizeFlowLabel(sanitizeRichText(product.short_description || "Description courte non renseignee")),
-          full_desc: normalizeFlowLabel(sanitizeRichText(product.full_description || "Description complete non renseignee")),
+          short_desc: normalizeFlowLabel(
+            sanitizeRichText(
+              product.short_description ||
+              "Description courte non renseignee",
+            ),
+          ),
+          full_desc: normalizeFlowLabel(
+            sanitizeRichText(
+              product.full_description ||
+              "Description complete non renseignee",
+            ),
+          ),
           prices: formatSimplePrices(product),
+          promo_prices:formatPromoPrices(product),
           stock_info: formatStock(product),
           categories: normalizeFlowLabel(categories),
           tags,
@@ -168,7 +183,7 @@ async function handleVariationDetail(parsed: FlowRequest): Promise<FlowResponse>
 
     if (productId) {
       const product = await getProductById(productId);
-            console.log("produit:",product)
+      console.log("produit:", product)
 
       if (product) {
         rememberVariableProduct(token, String(product.id));
@@ -228,16 +243,7 @@ async function handleVariationDetail(parsed: FlowRequest): Promise<FlowResponse>
   };
 }
 
-async function handleSimpleDetail(parsed: FlowRequest): Promise<FlowResponse> {
-  const data = parsed.data || {};
-  const page = toPositivePage(data.current_page ?? data.page) ?? 1;
 
-  return handleProductList({
-    ...parsed,
-    screen: "PRODUCT_LIST",
-    data: { ...data, cmd: "paginate", page },
-  });
-}
 
 // ---------------------------------------------------------------------------
 // Main entry point
@@ -248,9 +254,24 @@ export async function handleProductsFlow(
 ): Promise<FlowResponse | null> {
   const action = (parsed.action || "").toUpperCase();
   const screen = parsed.screen || "";
+  const token = getFlowToken(parsed);
+  const seller = await findSeller(token)
+  if (!seller) {
+    return {
+      screen: "WELCOME",
+      data: { error_msg: "Seller not found" },
+    };
+  }
+
+  const active = await isSessionActive(token);
+  if (!active) {
+    return {
+      screen: "WELCOME_SCREEN",
+      data: { error_msg: "Session expiree. Reconnectez-vous." },
+    };
+  }
 
   if (action === "INIT" || action === "NAVIGATE") {
-    const token = getFlowToken(parsed);
     if (token) primeProductsAsync(token);
     console.log("PLUGIN_BASE_URL env:", process.env.WP_PLUGIN_BASE_URL);
     return { screen: "WELCOME_SCREEN", data: {} };
@@ -264,10 +285,12 @@ export async function handleProductsFlow(
       case "PRODUCT_LIST":
         return handleProductList(parsed);
       case "PRODUCT_DETAIL_SIMPLE":
-        return handleSimpleDetail(parsed);
+        return { screen: "SUCCESS", data: {} };
       case "PRODUCT_DETAIL_VARIABLE":
-      case "VARIATION_DETAIL":
         return handleVariationDetail(parsed);
+      case "VARIATION_DETAIL":
+        return { screen: "SUCCESS", data: {} };
+
       default:
         return { screen: "WELCOME_SCREEN", data: {} };
     }

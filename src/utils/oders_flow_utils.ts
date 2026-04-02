@@ -1,12 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Order, OrderArticle } from "@/models/oder_model";
-import { paginateArray } from "./utilities";
-import { toSizedBase64 } from "./navlist_image_utils";
+import { paginateArray } from "./core_utils";
+import { toSizedBase64 } from "./image_processor";
 import { FlowResponse } from "@/models/flowResponse";
 
 
 
 
+// ─── Status Counters ────────────────────────────────────────────────────────
 
 export function formatOrderStatusCounters(orders: Order[]): {
   id: string;
@@ -36,6 +37,8 @@ export function formatOrderStatusCounters(orders: Order[]): {
     },
   ];
 }
+
+// ─── Order List Items ───────────────────────────────────────────────────────
 
 export function formatOrderListItem(order: Order) {
   const articlesCount =
@@ -89,6 +92,8 @@ export function formatEmptyOrderListItem() {
   };
 }
 
+// ─── Order Detail ───────────────────────────────────────────────────────────
+
 export function formatOrderDetail(order: Order) {
   const articlesCount =
     typeof order.articles_count === "number"
@@ -114,6 +119,8 @@ export function formatOrderDetail(order: Order) {
   };
 }
 
+// ─── Articles Pagination ────────────────────────────────────────────────────
+
 export async function formatOrderArticlesPage(
   orderId: string,
   orderRef: string,
@@ -135,8 +142,9 @@ export async function formatOrderArticlesPage(
     order_id: orderId,
     order_ref: orderRef,
     current_page: safePage,
-    next_page: safePage + 1,      // ← add this
-    prev_page: safePage - 1,      // ← add this
+    next_page: hasNext ? safePage + 1 : null,
+    prev_page: hasPrev ? safePage - 1 : null,
+    total_pages: totalPages,
     has_next: hasNext,
     has_prev: hasPrev,
     page_label: `Page ${safePage} / ${totalPages}`,
@@ -144,6 +152,7 @@ export async function formatOrderArticlesPage(
     p1_name: a1?.name ?? "",
     p1_sku: a1?.sku ?? "",
     p1_qty_price: a1 ? `${a1.quantity} × ${a1.price} ${a1.currency}` : "",
+    p1_visible: !!a1,
     p2_img: a2 ? await toSizedBase64(a2.image ?? "", 120) : "",
     p2_name: a2?.name ?? "",
     p2_sku: a2?.sku ?? "",
@@ -156,6 +165,9 @@ export async function formatOrderArticlesPage(
     p3_visible: !!a3,
   };
 }
+
+// ─── Pagination Nav Items ───────────────────────────────────────────────────
+
 export function buildPaginationItems(
   currentPage: number,
   hasMore: boolean,
@@ -205,6 +217,8 @@ export function buildPaginationItems(
 
   return items;
 }
+
+// ─── Screen Response Builders ───────────────────────────────────────────────
 
 export function buildOrderListResponse(
   orders: any[],

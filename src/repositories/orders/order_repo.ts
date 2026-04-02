@@ -1,4 +1,4 @@
-import { type Order, type OrderArticle, OrderStatus } from "@/models/oder_model";
+﻿import { type Order, type OrderArticle, OrderStatus } from "@/models/oder_model";
 import { pluginPostWithRetry, PLUGIN_TIMEOUT_MS } from "@/utils/plugin_client";
 import {
   asRecord,
@@ -6,8 +6,8 @@ import {
   parsePluginJsonSafe,
   readResponseBodySafe,
   toNum,
-} from "@/utils/repository_utils";
-import { normToken } from "@/utils/utilities";
+} from "@/utils/data_parser";
+import { normToken } from "@/utils/core_utils";
 
 const ORDER_LIST_TIMEOUT_MS = Math.max(PLUGIN_TIMEOUT_MS, 15000);
 const ORDER_COUNTERS_TIMEOUT_MS = Math.max(PLUGIN_TIMEOUT_MS, 15000);
@@ -27,6 +27,15 @@ export interface OrderSummariesPage {
   hasMore: boolean;
   nextPage?: number;
   statusFilter: string;
+}
+
+export interface OrderArticlesPage {
+  articles: OrderArticle[];
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  nextPage?: number;
+  total: number;
 }
 
 function mapStatus(value: unknown): OrderStatus {
@@ -348,6 +357,65 @@ export async function findOrderArticlesByOrderId(
   } catch (err) {
     console.error("plugin order/articles/by-id exception", err);
     return [];
+  }
+}
+
+export async function findOrderArticlesPageByOrderId(
+  orderId: string,
+  page = 1,
+  limit = 3,
+): Promise<OrderArticlesPage> {
+  const oid = normText(orderId);
+  if (!oid) {
+    return { articles: [], page: 1, limit: Math.max(1, limit), hasMore: false, total: 0 };
+  }
+
+  const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+  const safeLimit = Number.isFinite(limit)
+    ? Math.min(25, Math.max(1, Math.floor(limit)))
+    : 3;
+
+  try {
+    const res = await pluginPostWithRetry(
+      "/seller/order/articles/by-id",
+      { order_id: oid, page: safePage, limit: safeLimit },
+      { timeoutMs: Math.max(PLUGIN_TIMEOUT_MS, 10000), retries: 0, retryDelayMs: 250 },
+    );
+
+    if (!res.ok) {
+      const body = await readResponseBodySafe(res);
+      console.error("plugin order/articles/by-id paged failed", {
+        status: res.status,
+        statusText: res.statusText,
+        body,
+      });
+      return { articles: [], page: safePage, limit: safeLimit, hasMore: false, total: 0 };
+    }
+
+    const payload = await parsePluginJsonSafe(res, "plugin order/articles/by-id paged");
+    const data = extractDataObject(payload);
+    const rawArticles = Array.isArray(data?.articles) ? data.articles : [];
+    const mapped = rawArticles
+      .map((item) => mapOrderArticle(item))
+      .filter((item): item is OrderArticle => !!item);
+
+    const parsedPage = toNum(data?.page, safePage) || safePage;
+    const parsedLimit = toNum(data?.limit, safeLimit) || safeLimit;
+    const hasMore = Boolean(data?.has_more);
+    const nextPageNum = toNum(data?.next_page, 0);
+    const total = toNum(data?.total, mapped.length);
+
+    return {
+      articles: mapped,
+      page: parsedPage,
+      limit: parsedLimit,
+      hasMore,
+      nextPage: nextPageNum > 0 ? nextPageNum : undefined,
+      total,
+    };
+  } catch (err) {
+    console.error("plugin order/articles/by-id paged exception", err);
+    return { articles: [], page: safePage, limit: safeLimit, hasMore: false, total: 0 };
   }
 }
 

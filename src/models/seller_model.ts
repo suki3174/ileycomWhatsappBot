@@ -5,6 +5,6 @@ export interface Seller {
   phone: string;
   flow_token: string | null;
   reset_token?: string | null;
-  reset_token_expiry?: number | null;
+  // reset_token_expiry?: number | null;
   session_active_until?: number | null
 }
