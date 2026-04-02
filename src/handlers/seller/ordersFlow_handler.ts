@@ -26,7 +26,7 @@ import { findSeller, isSessionActive } from "@/services/auth_service";
 import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
 
 const ORDER_LIST_PAGE_SIZE = 5;
-const ORDER_ARTICLES_PAGE_SIZE = 3;
+const ORDER_ARTICLES_PAGE_SIZE = 5;
 
 
 

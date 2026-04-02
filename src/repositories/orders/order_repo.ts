@@ -240,7 +240,7 @@ export async function findOrderSummariesPageByFlowToken(
   flowToken: string,
   statusFilter: string,
   page = 1,
-  limit = 10,
+  limit = 5,
 ): Promise<OrderSummariesPage> {
   const token = normToken(flowToken);
   if (!token) {
@@ -255,8 +255,8 @@ export async function findOrderSummariesPageByFlowToken(
 
   const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
   const safeLimit = Number.isFinite(limit)
-    ? Math.min(25, Math.max(1, Math.floor(limit)))
-    : 10;
+    ? Math.min(5, Math.max(1, Math.floor(limit)))
+    : 5;
   const safeFilter = normText(statusFilter).toLowerCase() || "all";
 
   try {
@@ -372,7 +372,7 @@ export async function findOrderArticlesPageByOrderId(
 
   const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
   const safeLimit = Number.isFinite(limit)
-    ? Math.min(25, Math.max(1, Math.floor(limit)))
+    ? Math.min(3, Math.max(1, Math.floor(limit)))
     : 3;
 
   try {
