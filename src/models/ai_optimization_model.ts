@@ -23,6 +23,7 @@ export interface AIOptimizationRequest {
  */
 export interface AIOptimizationResponse {
   productId: string;
+  images: string[]; 
   optimizedName?: string;
   optimizedShortDescription?: string;
   optimizedFullDescription?: string;

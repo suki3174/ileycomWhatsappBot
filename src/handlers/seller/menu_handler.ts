@@ -30,6 +30,11 @@ export async function handleIncomingMessage(
     console.log("[handleIncomingMessage] No phone provided");
     return;
   }
+  if(!phone.startsWith("216")){
+    console.log("[handleIncomingMessage] Not a tunisian number");
+    return;
+
+  }
 
   const seller: Seller | undefined = await getSellerByPhone(phone);
 
