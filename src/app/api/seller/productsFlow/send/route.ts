@@ -3,6 +3,7 @@ import { generateFlowtoken, normalizeSellerPhone } from "@/utils/seller_auth_hel
 import { Seller } from "@/models/seller_model";
 import { getSellerByPhone, isSessionActive } from "@/services/auth_service";
 import { extractPhoneFromFlowToken } from "@/utils/data_parser";
+import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
 
 function normalizePhoneCandidates(phone: string): string[] {
   const normalized = normalizeSellerPhone(phone);
@@ -51,6 +52,11 @@ export async function POST(req: NextRequest) {
     const tokenMatchesPhone = !!persistedToken && persistedPhone === sellerPhone;
     const token = tokenMatchesPhone ? persistedToken : generateFlowtoken(sellerPhone);
     if (!tokenMatchesPhone) {
+      await sendAuthFlowOnce({
+        phone: sellerPhone,
+        seller,
+        source: "send-route:products:token-mismatch",
+      });
       return NextResponse.json(
         { error: "Session inactive. Please sign in first." },
         { status: 401 },
@@ -59,6 +65,11 @@ export async function POST(req: NextRequest) {
 
     const active = await isSessionActive(token);
     if (!active) {
+      await sendAuthFlowOnce({
+        phone: sellerPhone,
+        seller,
+        source: "send-route:products:session-expired",
+      });
       return NextResponse.json(
         { error: "Session expired. Please sign in again." },
         { status: 401 },

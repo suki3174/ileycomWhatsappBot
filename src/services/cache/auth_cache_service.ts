@@ -8,6 +8,17 @@ const AUTH_CACHE_MAX_TTL_SEC = 300;
 const AUTH_CACHE_MIN_TTL_SEC = 30;
 const MESSAGE_DEDUPE_TTL_SEC = 10 * 60;
 const TRIGGER_DEDUPE_TTL_SEC = 8;
+const AUTH_PROMPT_DEDUPE_TTL_SEC = 90;
+
+function isAuthCacheDebugEnabled(): boolean {
+  const raw = String(process.env.AUTH_CACHE_DEBUG || "true").trim().toLowerCase();
+  return raw !== "false" && raw !== "0";
+}
+
+function cacheLog(event: string, details: Record<string, unknown>): void {
+  if (!isAuthCacheDebugEnabled()) return;
+  console.log("[auth-cache]", event, details);
+}
 
 function isRedisEnabled(): boolean {
   return String(process.env.REDIS_ENABLED || "false").toLowerCase() === "true";
@@ -38,6 +49,10 @@ function keyTriggerDedupe(phone: string, trigger: string): string {
   return `${getRedisPrefix()}:auth:dedupe:trigger:${phone}:${trigger}`;
 }
 
+function keyAuthPromptDedupe(phone: string): string {
+  return `${getRedisPrefix()}:auth:dedupe:prompt:${phone}`;
+}
+
 function sanitizeSellerSnapshot(seller: Seller): Seller {
   return {
     ...seller,
@@ -65,14 +80,23 @@ export async function getSellerSessionByPhone(phone: string): Promise<Seller | u
   if (!normalized) return undefined;
 
   const redis = await getRedisOrNull();
-  if (!redis) return undefined;
+  if (!redis) {
+    cacheLog("skip-read-redis-unavailable", { key: keySessionByPhone(normalized) });
+    return undefined;
+  }
 
-  const raw = await redis.get(keySessionByPhone(normalized));
-  if (!raw) return undefined;
+  const key = keySessionByPhone(normalized);
+  const raw = await redis.get(key);
+  if (!raw) {
+    cacheLog("miss", { key });
+    return undefined;
+  }
 
   try {
+    cacheLog("hit", { key });
     return sanitizeSellerSnapshot(JSON.parse(raw) as Seller);
   } catch {
+    cacheLog("invalid-json", { key });
     return undefined;
   }
 }
@@ -82,21 +106,33 @@ export async function getSellerSessionByToken(token: string): Promise<Seller | u
   if (!normalizedToken) return undefined;
 
   const redis = await getRedisOrNull();
-  if (!redis) return undefined;
+  if (!redis) {
+    cacheLog("skip-read-redis-unavailable", { key: keySessionByToken(normalizedToken) });
+    return undefined;
+  }
 
-  const raw = await redis.get(keySessionByToken(normalizedToken));
-  if (!raw) return undefined;
+  const key = keySessionByToken(normalizedToken);
+  const raw = await redis.get(key);
+  if (!raw) {
+    cacheLog("miss", { key });
+    return undefined;
+  }
 
   try {
+    cacheLog("hit", { key });
     return sanitizeSellerSnapshot(JSON.parse(raw) as Seller);
   } catch {
+    cacheLog("invalid-json", { key });
     return undefined;
   }
 }
 
 export async function writeSellerSessionCache(seller: Seller): Promise<void> {
   const redis = await getRedisOrNull();
-  if (!redis) return;
+  if (!redis) {
+    cacheLog("skip-write-redis-unavailable", { sellerPhone: seller.phone || "" });
+    return;
+  }
 
   const snapshot = sanitizeSellerSnapshot(seller);
   const ttlSec = resolveAuthTtlSeconds(snapshot);
@@ -114,6 +150,11 @@ export async function writeSellerSessionCache(seller: Seller): Promise<void> {
   }
   if (writes.length) {
     await Promise.all(writes);
+    cacheLog("write", {
+      phoneKey: phone ? keySessionByPhone(phone) : "",
+      tokenKey: token ? keySessionByToken(token) : "",
+      ttlSec,
+    });
   }
 }
 
@@ -123,7 +164,10 @@ export async function invalidateSellerSessionCache(params: {
   seller?: Seller;
 }): Promise<void> {
   const redis = await getRedisOrNull();
-  if (!redis) return;
+  if (!redis) {
+    cacheLog("skip-invalidate-redis-unavailable", {});
+    return;
+  }
 
   const phone = normalizeSellerPhone(
     params.phone || String(params.seller?.phone || ""),
@@ -138,6 +182,7 @@ export async function invalidateSellerSessionCache(params: {
   if (!keys.length) return;
 
   await redis.del(keys);
+  cacheLog("invalidate", { keys });
 }
 
 export async function markInboundMessageSeen(messageId: string): Promise<boolean> {
@@ -145,14 +190,22 @@ export async function markInboundMessageSeen(messageId: string): Promise<boolean
   if (!id) return false;
 
   const redis = await getRedisOrNull();
-  if (!redis) return false;
+  if (!redis) {
+    cacheLog("skip-dedupe-message-redis-unavailable", { messageId: id });
+    return false;
+  }
 
   const created = await redis.set(keyMessageDedupe(id), "1", {
     EX: MESSAGE_DEDUPE_TTL_SEC,
     NX: true,
   });
 
-  return created !== "OK";
+  const duplicate = created !== "OK";
+  cacheLog(duplicate ? "dedupe-message-hit" : "dedupe-message-set", {
+    key: keyMessageDedupe(id),
+    ttlSec: MESSAGE_DEDUPE_TTL_SEC,
+  });
+  return duplicate;
 }
 
 export async function markInboundTriggerSeen(
@@ -164,7 +217,13 @@ export async function markInboundTriggerSeen(
   if (!normalizedPhone || !normalizedTrigger) return false;
 
   const redis = await getRedisOrNull();
-  if (!redis) return false;
+  if (!redis) {
+    cacheLog("skip-dedupe-trigger-redis-unavailable", {
+      phone: normalizedPhone,
+      trigger: normalizedTrigger,
+    });
+    return false;
+  }
 
   const created = await redis.set(
     keyTriggerDedupe(normalizedPhone, normalizedTrigger),
@@ -175,5 +234,37 @@ export async function markInboundTriggerSeen(
     },
   );
 
-  return created !== "OK";
+  const duplicate = created !== "OK";
+  cacheLog(duplicate ? "dedupe-trigger-hit" : "dedupe-trigger-set", {
+    key: keyTriggerDedupe(normalizedPhone, normalizedTrigger),
+    ttlSec: TRIGGER_DEDUPE_TTL_SEC,
+  });
+  return duplicate;
+}
+
+export async function markAuthPromptSeen(phone: string): Promise<boolean> {
+  const normalizedPhone = normalizeSellerPhone(phone);
+  if (!normalizedPhone) return false;
+
+  const redis = await getRedisOrNull();
+  if (!redis) {
+    cacheLog("skip-dedupe-auth-prompt-redis-unavailable", { phone: normalizedPhone });
+    return false;
+  }
+
+  const created = await redis.set(
+    keyAuthPromptDedupe(normalizedPhone),
+    "1",
+    {
+      EX: AUTH_PROMPT_DEDUPE_TTL_SEC,
+      NX: true,
+    },
+  );
+
+  const duplicate = created !== "OK";
+  cacheLog(duplicate ? "dedupe-auth-prompt-hit" : "dedupe-auth-prompt-set", {
+    key: keyAuthPromptDedupe(normalizedPhone),
+    ttlSec: AUTH_PROMPT_DEDUPE_TTL_SEC,
+  });
+  return duplicate;
 }

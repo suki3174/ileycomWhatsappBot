@@ -5,20 +5,23 @@ import {
 } from "@/services/cache/auth_cache_service";
 import { getSellerByPhone, isSessionActive } from "@/services/auth_service";
 import { normalizeSellerPhone } from "@/utils/seller_auth_helpers";
+import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
 
 const MENU_TRIGGERS = new Set([
   "Voir mes commandes",
   "Voir mes produits",
   "Modifier un produit",
+  "Créer un produit",
+  "Creer un produit",
 ]);
 
 const TRIGGER_TO_ENDPOINT: Record<string, string> = {
   "Voir mes commandes": "/api/seller/ordersFlow/send",
   "Voir mes produits": "/api/seller/productsFlow/send",
   "Modifier un produit": "/api/seller/updateProductFlow/send",
+  "Créer un produit": "/api/seller/addProductFlow/send",
+  "Creer un produit": "/api/seller/addProductFlow/send",
 };
-
-const AUTH_FLOW_SEND_ENDPOINT = "/api/seller/authFlow/send";
 
 function normalizePhoneCandidates(phone: string): string[] {
   const normalized = normalizeSellerPhone(phone);
@@ -82,20 +85,12 @@ export async function handleIncomingMessage(
 
   if (!active) {
     console.log(`[handleIncomingMessage] Session expired for ${senderPhone}, sending auth flow.`);
-
-    try {
-      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000";
-      const authResponse = await fetch(`${baseUrl}${AUTH_FLOW_SEND_ENDPOINT}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ seller, phone: senderPhone }),
-      });
-
-      const authData = await authResponse.json();
-      console.log(`[handleIncomingMessage] Session inactive -> auth flow sent`, authData);
-    } catch (error) {
-      console.error(`[handleIncomingMessage] Failed to send auth flow for ${senderPhone}:`, error);
-    }
+    const authResult = await sendAuthFlowOnce({
+      phone: senderPhone,
+      seller,
+      source: `menu-trigger:${trigger}`,
+    });
+    console.log(`[handleIncomingMessage] Session inactive auth dispatch result`, authResult);
 
     return;
   }
