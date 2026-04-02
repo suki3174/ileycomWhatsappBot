@@ -23,6 +23,7 @@ import {
 } from "@/services/cache/orders_cache_service";
 import { buildOrderListResponse, formatOrderDetail, formatOrderArticlesServerPage } from "@/utils/order_flow_renderer";
 import { findSeller, isSessionActive } from "@/services/auth_service";
+import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
 
 const ORDER_LIST_PAGE_SIZE = 5;
 const ORDER_ARTICLES_PAGE_SIZE = 3;
@@ -403,6 +404,7 @@ export async function handleOrdersFlow(
   const token = getFlowToken(parsed);
   const seller = await findSeller(token)
   if (!seller) {
+    void sendAuthFlowOnce({ phone: token, source: "meta-flow:orders:seller-not-found" });
     return {
       screen: "WELCOME",
       data: { error_msg: "Seller not found" },
@@ -411,6 +413,11 @@ export async function handleOrdersFlow(
 
   const active = await isSessionActive(token);
   if (!active) {
+    void sendAuthFlowOnce({
+      phone: seller.phone || token,
+      seller,
+      source: "meta-flow:orders:session-expired",
+    });
     return {
       screen: "WELCOME_SCREEN",
       data: { error_msg: "Session expiree. Reconnectez-vous." },

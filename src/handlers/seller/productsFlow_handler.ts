@@ -34,6 +34,8 @@ import {
   sanitizeRichText,
   toPositivePage,
 } from "@/utils/product_flow_renderer";
+import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
+import { isSessionActive } from "@/services/auth_service";
 import { getFlowToken } from "@/utils/core_utils";
 
 
@@ -282,15 +284,20 @@ export async function handleProductsFlow(
   const token = getFlowToken(parsed);
   const seller = await findSeller(token)
   if (!seller) {
+    void sendAuthFlowOnce({ phone: token, source: "meta-flow:products:seller-not-found" });
     return {
       screen: "WELCOME",
       data: { error_msg: "Seller not found" },
     };
   }
 
-  const sessionUntil = Number(seller.session_active_until || 0);
-  const active = sessionUntil > Date.now();
+  const active = await isSessionActive(token);
   if (!active) {
+    void sendAuthFlowOnce({
+      phone: seller.phone || token,
+      seller,
+      source: "meta-flow:products:session-expired",
+    });
     return {
       screen: "WELCOME_SCREEN",
       data: { error_msg: "Session expiree. Reconnectez-vous." },

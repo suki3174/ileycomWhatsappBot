@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { generateFlowtoken } from "@/utils/seller_auth_helpers";
 import { Seller } from "@/models/seller_model";
 import { getSellerByPhone, isSessionActive, prepareSellerState } from "@/services/auth_service";
+import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
+import { extractPhoneFromFlowToken } from "@/utils/data_parser";
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
@@ -19,7 +21,21 @@ export async function POST(req: NextRequest) {
 
     const sellerFromState = await getSellerByPhone(seller.phone);
     const persistedToken = String(sellerFromState?.flow_token || "").trim();
-    const token = persistedToken || generateFlowtoken(seller.phone);
+    const persistedPhone = extractPhoneFromFlowToken(persistedToken || "") || "";
+    const tokenMatchesPhone = !!persistedToken && persistedPhone === seller.phone;
+    const token = tokenMatchesPhone ? persistedToken : generateFlowtoken(seller.phone);
+
+    if (!tokenMatchesPhone) {
+      await sendAuthFlowOnce({
+        phone: seller.phone,
+        seller,
+        source: "send-route:optimized-product:token-mismatch",
+      });
+      return NextResponse.json(
+        { error: "Session inactive. Please sign in first." },
+        { status: 401 },
+      );
+    }
     
     // Prepare seller state if no persisted token
     if (!persistedToken) {
@@ -28,6 +44,11 @@ export async function POST(req: NextRequest) {
 
     const active = await isSessionActive(token);
     if (!active) {
+      await sendAuthFlowOnce({
+        phone: seller.phone,
+        seller,
+        source: "send-route:optimized-product:session-expired",
+      });
       return NextResponse.json(
         { error: "Session expired. Please sign in again." },
         { status: 401 }
