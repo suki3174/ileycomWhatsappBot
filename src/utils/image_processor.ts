@@ -22,10 +22,6 @@ const FALLBACK_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Z2ioAAAAASUVORK5CYII=";
 const PLACEHOLDER_PATH = path.resolve(process.cwd(), "public", "placeholder.png");
 
-// In-memory cache: image URL → base64 string
-// Keyed by URL, value is the processed base64 or empty string on failure
-const imageCache = new Map<string, string>();
-
 let placeholderBufferPromise: Promise<Buffer | null> | null = null;
 
 function getCandidateDocRoots(): string[] {
@@ -127,13 +123,22 @@ async function buildImageBase64(
   width: number,
   height: number,
 ): Promise<string> {
-  const cacheKey = `${imageUrl || "__placeholder__"}::${width}x${height}`;
-
-  const cached = imageCache.get(cacheKey);
-  if (cached !== undefined) return cached;
-
   try {
     let inputBuffer = imageUrl ? await readLocalImage(imageUrl) : null;
+
+    let isLocalhostUrl = false;
+    if (imageUrl) {
+      try {
+        const parsed = new URL(imageUrl);
+        isLocalhostUrl = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+      } catch {
+        isLocalhostUrl = false;
+      }
+    }
+
+    if (!inputBuffer && imageUrl && isLocalhostUrl) {
+      inputBuffer = await readPlaceholderImage();
+    }
 
     if (!inputBuffer && imageUrl) {
       const response = await fetch(imageUrl, {
@@ -153,17 +158,13 @@ async function buildImageBase64(
     }
 
     if (!inputBuffer) {
-      // Do not cache fallback here; local assets can appear later.
       return FALLBACK_BASE64;
     }
 
     const outputBuffer = await processBufferToCarousel(inputBuffer, width, height);
-    const base64 = outputBuffer.toString("base64");
-    imageCache.set(cacheKey, base64);
-    return base64;
+    return outputBuffer.toString("base64");
   } catch (err) {
     console.warn("navlist image processing error:", imageUrl, err);
-    // Avoid pinning transient errors in cache; allow future retries.
     return FALLBACK_BASE64;
   }
 }

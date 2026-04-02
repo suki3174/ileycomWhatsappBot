@@ -2,9 +2,6 @@
 import { FlowRequest } from "@/models/flowRequest";
 import { FlowResponse } from "@/models/flowResponse";
 import { ProductType } from "@/models/product_model";
-import {
-  getLastVariableProductId,
-} from "@/repositories/products/poducts_cache";
 import { findSeller } from "@/services/auth_service";
 import {
   getProductById,
@@ -13,6 +10,16 @@ import {
   primeProductsAsync,
   rememberVariableProduct,
 } from "@/services/products_service";
+import {
+  getProductSimpleScreenCache,
+  getProductsPageScreenCache,
+  getProductVariableScreenCache,
+  getVariationScreenCache,
+  writeProductSimpleScreenCache,
+  writeProductsPageScreenCache,
+  writeProductVariableScreenCache,
+  writeVariationScreenCache,
+} from "@/services/cache/products_cache_service";
 import {
   buildProductCarouselImages,
   buildProductListPagedResponse,
@@ -27,8 +34,10 @@ import {
   sanitizeRichText,
   toPositivePage,
 } from "@/utils/product_flow_renderer";
-import { getFlowToken } from "@/utils/core_utils";
+import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
 import { isSessionActive } from "@/services/auth_service";
+import { getFlowToken } from "@/utils/core_utils";
+
 
 
 
@@ -48,27 +57,40 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
   const requestedPage = Number(rawData.page ?? 1);
   const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
 
-  const pageResult = await getSellerProductsPageByFlowToken(token, page, 5);
-  const pageProducts = pageResult.products;
+  let pageResultPromise:
+    | Promise<Awaited<ReturnType<typeof getSellerProductsPageByFlowToken>>>
+    | undefined;
 
-  // Noop — empty list item tapped
-  if (mode === "noop") {
-    return await buildProductListPagedResponse(
-      pageProducts,
+  const getPageResult = async () => {
+    if (!pageResultPromise) {
+      pageResultPromise = getSellerProductsPageByFlowToken(token, page, 5);
+    }
+    return await pageResultPromise;
+  };
+
+  const renderPage = async (): Promise<FlowResponse> => {
+    const cached = await getProductsPageScreenCache(token, page, 5);
+    if (cached) return cached;
+
+    const pageResult = await getPageResult();
+    const built = await buildProductListPagedResponse(
+      pageResult.products,
       pageResult.page,
       pageResult.hasMore,
       pageResult.nextPage,
     );
+    await writeProductsPageScreenCache(token, pageResult.page, 5, built);
+    return built;
+  };
+
+  // Noop — empty list item tapped
+  if (mode === "noop") {
+    return await renderPage();
   }
 
   // Paginate — re-render at new page
   if (mode === "paginate") {
-    return await buildProductListPagedResponse(
-      pageProducts,
-      pageResult.page,
-      pageResult.hasMore,
-      pageResult.nextPage,
-    );
+    return await renderPage();
   }
 
   // Product tapped — navigate to detail
@@ -78,12 +100,7 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
     console.log("details — product_id:", selectedId);
 
     if (!selectedId || selectedId === "empty" || selectedId.startsWith("nav_")) {
-      return await buildProductListPagedResponse(
-        pageProducts,
-        pageResult.page,
-        pageResult.hasMore,
-        pageResult.nextPage,
-      );
+      return await renderPage();
     }
 
     const requestHost = String(rawData.__request_host || "").trim();
@@ -93,18 +110,13 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
 
     const product =
       (await getProductById(selectedId)) ||
-      pageProducts.find((p: any) => String(p.id) === selectedId);
+      (await getPageResult()).products.find((p: any) => String(p.id) === selectedId);
 
     console.log("produit:", product)
 
     if (!product) {
       console.log("product not found:", selectedId);
-      return await buildProductListPagedResponse(
-        pageProducts,
-        pageResult.page,
-        pageResult.hasMore,
-        pageResult.nextPage,
-      );
+      return await renderPage();
     }
 
     const categories = (product.categories || []).join(", ") || "Sans categorie";
@@ -114,6 +126,9 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
     const tags = (product.tags ?? []).join(" · ") || "";
 
     if (product.type === ProductType.SIMPLE && !product.is_variable) {
+      const cachedSimple = await getProductSimpleScreenCache(token, selectedId);
+      if (cachedSimple) return cachedSimple;
+
       const image = await mapImageUrl(product.image_src || "");
       const carouselImages = await buildProductCarouselImages(
         product.image_gallery,
@@ -123,7 +138,7 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
 
       );
 
-      return {
+      const response: FlowResponse = {
         screen: "PRODUCT_DETAIL_SIMPLE",
         data: {
           name: normalizeFlowLabel(product.name),
@@ -150,22 +165,24 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
           date_creation: normalizeFlowLabel(dateCreation),
         },
       };
+      await writeProductSimpleScreenCache(token, selectedId, response);
+      return response;
     }
 
+    const cachedVariable = await getProductVariableScreenCache(token, String(product.id));
+    if (cachedVariable) return cachedVariable;
+
     rememberVariableProduct(token, String(product.id));
-    return {
+    const response: FlowResponse = {
       screen: "PRODUCT_DETAIL_VARIABLE",
       data: await buildVariableDetailData(product, mapImageUrl),
     };
+    await writeProductVariableScreenCache(token, String(product.id), response);
+    return response;
   }
 
   // Default — initial load or unknown cmd
-  return await buildProductListPagedResponse(
-    pageProducts,
-    pageResult.page,
-    pageResult.hasMore,
-    pageResult.nextPage,
-  );
+  return await renderPage();
 }
 
 async function handleVariationDetail(parsed: FlowRequest): Promise<FlowResponse> {
@@ -178,7 +195,7 @@ async function handleVariationDetail(parsed: FlowRequest): Promise<FlowResponse>
 
   if (data.confirm_action || data.error === "invalid-screen-transition") {
     const productId = String(
-      data.product_id ?? data.parent_product_id ?? getLastVariableProductId(token) ?? "",
+      data.product_id ?? data.parent_product_id ?? "",
     ).trim();
 
     if (productId) {
@@ -186,11 +203,16 @@ async function handleVariationDetail(parsed: FlowRequest): Promise<FlowResponse>
       console.log("produit:", product)
 
       if (product) {
+        const cachedVariable = await getProductVariableScreenCache(token, String(product.id));
+        if (cachedVariable) return cachedVariable;
+
         rememberVariableProduct(token, String(product.id));
-        return {
+        const response: FlowResponse = {
           screen: "PRODUCT_DETAIL_VARIABLE",
           data: await buildVariableDetailData(product, mapImageUrl),
         };
+        await writeProductVariableScreenCache(token, String(product.id), response);
+        return response;
       }
     }
 
@@ -201,7 +223,7 @@ async function handleVariationDetail(parsed: FlowRequest): Promise<FlowResponse>
   }
 
   const productId = String(
-    data.product_id ?? data.parent_product_id ?? getLastVariableProductId(token) ?? "",
+    data.product_id ?? data.parent_product_id ?? "",
   ).trim();
   const variationId = String(
     data.variation_id ?? data.selected_variation_id ?? data.id ?? "",
@@ -224,13 +246,16 @@ async function handleVariationDetail(parsed: FlowRequest): Promise<FlowResponse>
     return { screen: "PRODUCT_DETAIL_VARIABLE", data: { error_msg: "Variation introuvable." } };
   }
 
+  const cachedVariation = await getVariationScreenCache(token, productId, variationId);
+  if (cachedVariation) return cachedVariation;
+
   let displaySku = String(variation.sku || "").trim();
   if (!displaySku && productId) {
     const parent = await getProductById(productId);
     displaySku = String(parent?.sku || "").trim();
   }
 
-  return {
+  const response: FlowResponse = {
     screen: "VARIATION_DETAIL",
     data: {
       var_img: await mapImageUrl(variation.image_src || ""),
@@ -241,6 +266,8 @@ async function handleVariationDetail(parsed: FlowRequest): Promise<FlowResponse>
       price_tnd: variation.price_tnd || "",
     },
   };
+  await writeVariationScreenCache(token, productId, variationId, response);
+  return response;
 }
 
 
@@ -257,6 +284,7 @@ export async function handleProductsFlow(
   const token = getFlowToken(parsed);
   const seller = await findSeller(token)
   if (!seller) {
+    void sendAuthFlowOnce({ phone: token, source: "meta-flow:products:seller-not-found" });
     return {
       screen: "WELCOME",
       data: { error_msg: "Seller not found" },
@@ -265,29 +293,45 @@ export async function handleProductsFlow(
 
   const active = await isSessionActive(token);
   if (!active) {
+    void sendAuthFlowOnce({
+      phone: seller.phone || token,
+      seller,
+      source: "meta-flow:products:session-expired",
+    });
     return {
       screen: "WELCOME_SCREEN",
       data: { error_msg: "Session expiree. Reconnectez-vous." },
     };
   }
 
+  const sellerToken = String(seller.flow_token || "").trim();
+  const effectiveToken = sellerToken || token;
+  const effectiveParsed: FlowRequest = {
+    ...parsed,
+    flow_token: effectiveToken,
+    data: {
+      ...(parsed.data || {}),
+      flow_token: effectiveToken,
+    },
+  };
+
   if (action === "INIT" || action === "NAVIGATE") {
-    if (token) primeProductsAsync(token);
+    if (effectiveToken) primeProductsAsync(effectiveToken);
     console.log("PLUGIN_BASE_URL env:", process.env.WP_PLUGIN_BASE_URL);
     return { screen: "WELCOME_SCREEN", data: {} };
   }
 
   if (action === "DATA_EXCHANGE") {
-    if (!screen) return handleProductList(parsed);
+    if (!screen) return handleProductList(effectiveParsed);
 
     switch (screen) {
       case "WELCOME_SCREEN":
       case "PRODUCT_LIST":
-        return handleProductList(parsed);
+        return handleProductList(effectiveParsed);
       case "PRODUCT_DETAIL_SIMPLE":
         return { screen: "SUCCESS", data: {} };
       case "PRODUCT_DETAIL_VARIABLE":
-        return handleVariationDetail(parsed);
+        return handleVariationDetail(effectiveParsed);
       case "VARIATION_DETAIL":
         return { screen: "SUCCESS", data: {} };
 

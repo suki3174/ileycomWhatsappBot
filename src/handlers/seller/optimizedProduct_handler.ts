@@ -42,7 +42,7 @@ export async function handleOptimizedProductDetail(
  */
 async function handleInitialization(token: string): Promise<FlowResponse> {
   // Get the product ID from the previous add product state
-  const addProductState = getAddProductState(token);
+  const addProductState = await getAddProductState(token);
   const productId = addProductState?.product_id;
 
   if (!productId) {
@@ -55,7 +55,7 @@ async function handleInitialization(token: string): Promise<FlowResponse> {
   }
 
   // Initialize flow state with product ID
-  updateOptimizedProductFlowState(token, {
+  await updateOptimizedProductFlowState(token, {
     product_id: productId,
   });
 
@@ -68,8 +68,8 @@ async function handleInitialization(token: string): Promise<FlowResponse> {
  * Returns the AI_PRODUCT screen as per WhatsApp Flow template
  */
 async function handleShowOptimizedProduct(token: string): Promise<FlowResponse> {
-  const flowState = getOptimizedProductFlowState(token);
-  const addProductState = getAddProductState(token) || {};
+  const flowState = await getOptimizedProductFlowState(token);
+  const addProductState = (await getAddProductState(token)) || {};
   const productId = flowState?.product_id;
 
   if (!productId) {
@@ -81,7 +81,7 @@ async function handleShowOptimizedProduct(token: string): Promise<FlowResponse> 
     };
   }
 
-  const optimizationStatus = getOptimizationStatus(productId);
+  const optimizationStatus = await getOptimizationStatus(productId);
 
   // ── Still processing ──────────────────────────────────────────────────
   if (!optimizationStatus || optimizationStatus.status !== "completed") {
@@ -95,7 +95,7 @@ async function handleShowOptimizedProduct(token: string): Promise<FlowResponse> 
   }
 
   // ── Show optimized product ────────────────────────────────────────────
-  const optimizationResult = getOptimizationResult(productId);
+  const optimizationResult = await getOptimizationResult(productId);
 
   // Build carousel images
 

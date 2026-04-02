@@ -155,23 +155,29 @@ export async function fetchProductEditInfoByFlowToken(
     const d = asRecord(payload.data);
     if (!d) return null;
 
+    const regularEur = normText(d.regular_eur || d.regular_price_eur || d.price_eur || d._regular_price);
+    const saleEur = normText(d.sale_eur || d.sale_price_eur || d._sale_price);
+    const regularTnd = normText(d.regular_tnd || d.regular_price_tnd || d.price_tnd || d._regular_price_tnd);
+    const saleTnd = normText(d.sale_tnd || d.sale_price_tnd || d._sale_price_tnd);
+    const stockRaw = d.stock ?? d.stock_quantity ?? d.quantity ?? d._stock;
+
     return {
       product_id: toNum(d.product_id, 0),
       product_name: normText(d.product_name),
-      regular_eur: normText(d.regular_eur),
-      sale_eur: normText(d.sale_eur),
-      regular_tnd: normText(d.regular_tnd),
-      sale_tnd: normText(d.sale_tnd),
-      stock: toNum(d.stock, 0),
+      regular_eur: regularEur,
+      sale_eur: saleEur,
+      regular_tnd: regularTnd,
+      sale_tnd: saleTnd,
+      stock: toNum(stockRaw, 0),
       manage_stock: toBool(d.manage_stock),
-      length: normText(d.length),
-      width: normText(d.width),
-      height: normText(d.height),
-      dim_unit: normText(d.dim_unit) || "cm",
-      weight: normText(d.weight),
-      weight_unit: normText(d.weight_unit) || "kg",
-      color: normText(d.color),
-      size: normText(d.size),
+      length: normText(d.length || d.longueur),
+      width: normText(d.width || d.largeur),
+      height: normText(d.height || d.profondeur || d.depth),
+      dim_unit: normText(d.dim_unit || d.dimension_unit) || "cm",
+      weight: normText(d.weight || d.poids),
+      weight_unit: normText(d.weight_unit || d.poids_unit || d.weight_measure) || "kg",
+      color: normText(d.color || d.couleur),
+      size: normText(d.size || d.taille),
     };
   } catch (err) {
     console.error("fetchProductEditInfoByFlowToken error:", err);

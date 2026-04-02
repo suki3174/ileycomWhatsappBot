@@ -87,11 +87,19 @@ export function toStringArray(value: unknown): string[] {
 
 // ─── Token Parsing ─────────────────────────────────────────────────────────────
 
+function normalizeSellerPhone(phone: string): string {
+  const digits = String(phone || "").replace(/\D+/g, "");
+  if (!digits) return "";
+  if (digits.length === 8) return `216${digits}`;
+  if (digits.startsWith("216") && digits.length === 11) return digits;
+  return digits;
+}
+
 export function extractPhoneFromFlowToken(token: string): string | null {
   const tok = normText(token);
   const match = tok.match(/^flowtoken-(.+)-\d+$/);
   if (!match || !match[1]) return null;
-  const normalized = String(match[1]).replace(/\D+/g, "");
+  const normalized = normalizeSellerPhone(String(match[1]));
   return normalized || null;
 }
 

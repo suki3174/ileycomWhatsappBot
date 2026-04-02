@@ -4,7 +4,7 @@
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import styles from "./resetCode.module.css"; 
-import { isPinStrong } from "@/utils/auth_utils";
+import { isPinStrong } from "@/utils/seller_auth_helpers";
 
 export default function ResetPasswordPage() {
   const params = useSearchParams();

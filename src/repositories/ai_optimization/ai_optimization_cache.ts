@@ -1,88 +1,59 @@
 /**
  * AI Optimization Cache
- * In-memory cache for storing optimization requests and results
- * TODO: In production, consider using Redis for distributed caching
+ * In-memory L1 + Redis L2 cache for optimization state.
+ * TTL is managed by Redis (24 h); in-memory map is request-scope fast path.
  */
 
 import { OptimizationState } from "@/models/ai_optimization_model";
+import {
+  readAIOptimizationState,
+  writeAIOptimizationState,
+  deleteAIOptimizationState,
+} from "@/services/cache/ai_optimization_cache_service";
 
 const optimizationCache = new Map<string, OptimizationState>();
 
-// Cache expiration: 24 hours
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-
-/**
- * Store an optimization state in cache
- */
-export function setOptimizationState(
+export async function setOptimizationState(
   productId: string,
   state: OptimizationState
-): void {
-  // Set expiration time
-  state.expiresAt = Date.now() + CACHE_TTL_MS;
+): Promise<void> {
   optimizationCache.set(productId, state);
-  console.info(`[AI Cache] Optimization state set for product ${productId}:`, state.status);
+  await writeAIOptimizationState(productId, state);
 }
 
-/**
- * Retrieve optimization state from cache
- */
-export function getOptimizationState(productId: string): OptimizationState | null {
-  const state = optimizationCache.get(productId);
+export async function getOptimizationState(
+  productId: string
+): Promise<OptimizationState | null> {
+  const local = optimizationCache.get(productId);
+  if (local) return local;
 
-  if (!state) {
-    return null;
+  const remote = await readAIOptimizationState(productId);
+  if (remote) {
+    optimizationCache.set(productId, remote);
+    return remote;
   }
 
-  // Check if cache has expired
-  if (state.expiresAt && Date.now() > state.expiresAt) {
-    console.info(`[AI Cache] Optimization state expired for product ${productId}`);
-    optimizationCache.delete(productId);
-    return null;
-  }
-
-  return state;
+  return null;
 }
 
-/**
- * Update optimization state in cache
- */
-export function updateOptimizationState(
+export async function updateOptimizationState(
   productId: string,
   updates: Partial<OptimizationState>
-): OptimizationState | null {
-  const current = getOptimizationState(productId);
+): Promise<OptimizationState | null> {
+  const current = await getOptimizationState(productId);
 
   if (!current) {
     console.warn(`[AI Cache] No optimization state found for product ${productId}`);
     return null;
   }
 
-  const updated: OptimizationState = {
-    ...current,
-    ...updates,
-    expiresAt: Date.now() + CACHE_TTL_MS,
-  };
-
+  const updated: OptimizationState = { ...current, ...updates };
   optimizationCache.set(productId, updated);
-  console.info(`[AI Cache] Optimization state updated for product ${productId}:`, updated.status);
+  await writeAIOptimizationState(productId, updated);
   return updated;
 }
 
-/**
- * Clear optimization state from cache
- */
-export function clearOptimizationState(productId: string): void {
+export async function clearOptimizationState(productId: string): Promise<void> {
   optimizationCache.delete(productId);
-  console.info(`[AI Cache] Optimization state cleared for product ${productId}`);
-}
-
-/**
- * Get cache statistics (for debugging)
- */
-export function getOptimizationCacheStats() {
-  return {
-    totalEntries: optimizationCache.size,
-    maxTTLMs: CACHE_TTL_MS,
-  };
+  await deleteAIOptimizationState(productId);
 }

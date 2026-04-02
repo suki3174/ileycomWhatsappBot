@@ -92,7 +92,7 @@ export async function GET(req: NextRequest) {
 
     console.info(`[genAI_endpoint] Checking status for product ${productId}`);
 
-    const status = getOptimizationStatus(productId);
+    const status = await getOptimizationStatus(productId);
 
     if (!status) {
       return NextResponse.json(
@@ -110,7 +110,7 @@ export async function GET(req: NextRequest) {
 
     // Include result if completed
     if (status.status === "completed") {
-      response.result = getOptimizationResult(productId) || undefined;
+      response.result = (await getOptimizationResult(productId)) || undefined;
     }
 
     // Include error if failed

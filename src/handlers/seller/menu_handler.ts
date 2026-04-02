@@ -1,32 +1,70 @@
 import { Seller } from "@/models/seller_model";
+import {
+  markInboundMessageSeen,
+  markInboundTriggerSeen,
+} from "@/services/cache/auth_cache_service";
 import { getSellerByPhone, isSessionActive } from "@/services/auth_service";
+import { normalizeSellerPhone } from "@/utils/seller_auth_helpers";
+import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
 
 const MENU_TRIGGERS = new Set([
   "Voir mes commandes",
   "Voir mes produits",
   "Modifier un produit",
+  "Créer un produit",
+  "Creer un produit",
 ]);
 
 const TRIGGER_TO_ENDPOINT: Record<string, string> = {
   "Voir mes commandes": "/api/seller/ordersFlow/send",
   "Voir mes produits": "/api/seller/productsFlow/send",
   "Modifier un produit": "/api/seller/updateProductFlow/send",
+  "Créer un produit": "/api/seller/addProductFlow/send",
+  "Creer un produit": "/api/seller/addProductFlow/send",
 };
 
-const AUTH_FLOW_SEND_ENDPOINT = "/api/seller/authFlow/send";
+function normalizePhoneCandidates(phone: string): string[] {
+  const normalized = normalizeSellerPhone(phone);
+  if (!normalized) return [];
+
+  const candidates = new Set<string>([normalized]);
+  // Temporary compatibility fallback for legacy rows stored without country code.
+  if (normalized.startsWith("216") && normalized.length === 11) {
+    candidates.add(normalized.slice(-8));
+  }
+
+  return Array.from(candidates);
+}
 
 export async function handleIncomingMessage(
   phone: string,
-  messageBody: string
+  messageBody: string,
+  options?: { messageId?: string; messageTimestamp?: string },
 ): Promise<void> {
   const trigger = messageBody.trim();
+  const senderPhone = normalizeSellerPhone(phone);
+  const messageId = String(options?.messageId || "").trim();
+
+  if (messageId) {
+    const alreadySeen = await markInboundMessageSeen(messageId);
+    if (alreadySeen) {
+      console.log(`[handleIncomingMessage] Duplicate message id ignored: ${messageId}`);
+      return;
+    }
+  }
+
+  const triggerAlreadySeen = await markInboundTriggerSeen(senderPhone, trigger);
+  if (triggerAlreadySeen) {
+    console.log(`[handleIncomingMessage] Trigger cooldown ignored: ${senderPhone}::${trigger}`);
+    return;
+  }
 
   if (!MENU_TRIGGERS.has(trigger)) {
     console.log(`[handleIncomingMessage] Ignored unknown trigger: "${trigger}"`);
     return;
   }
 
-  if (!phone) {
+  if (!senderPhone) {
     console.log("[handleIncomingMessage] No phone provided");
     return;
   }
@@ -36,31 +74,28 @@ export async function handleIncomingMessage(
 
   }
 
-  const seller: Seller | undefined = await getSellerByPhone(phone);
+  const phoneCandidates = normalizePhoneCandidates(senderPhone);
+  let seller: Seller | undefined;
+  for (const candidate of phoneCandidates) {
+    seller = await getSellerByPhone(candidate);
+    if (seller) break;
+  }
 
   if (!seller) {
-    console.log(`[handleIncomingMessage] Seller not found for phone ${phone}`);
+    console.log(`[handleIncomingMessage] Seller not found for phone ${senderPhone} (candidates=${phoneCandidates.join(",")})`);
     return;
   }
 
   const active = await isSessionActive(seller.flow_token ?? "");
 
   if (!active) {
-    console.log(`[handleIncomingMessage] Session expired for ${phone}, sending auth flow.`);
-
-    try {
-      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000";
-      const authResponse = await fetch(`${baseUrl}${AUTH_FLOW_SEND_ENDPOINT}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ seller }),
-      });
-
-      const authData = await authResponse.json();
-      console.log(`[handleIncomingMessage] Session inactive -> auth flow sent`, authData);
-    } catch (error) {
-      console.error(`[handleIncomingMessage] Failed to send auth flow for ${phone}:`, error);
-    }
+    console.log(`[handleIncomingMessage] Session expired for ${senderPhone}, sending auth flow.`);
+    const authResult = await sendAuthFlowOnce({
+      phone: senderPhone,
+      seller,
+      source: `menu-trigger:${trigger}`,
+    });
+    console.log(`[handleIncomingMessage] Session inactive auth dispatch result`, authResult);
 
     return;
   }
@@ -73,7 +108,7 @@ export async function handleIncomingMessage(
     const response = await fetch(`${baseUrl}${endpoint}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ seller }),
+      body: JSON.stringify({ seller, phone: senderPhone }),
     });
 
     const data = await response.json();

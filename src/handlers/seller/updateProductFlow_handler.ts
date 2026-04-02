@@ -1,14 +1,19 @@
 ﻿/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { FlowRequest } from "@/models/flowRequest";
 import type { FlowResponse } from "@/models/flowResponse";
-import { getFlowToken, safeInitLabel } from "@/utils/core_utils";
+import {
+  getFlowToken,
+  hasInvalidPromoPrice,
+  parsePrice,
+  resolveEurPrices,
+  safeInitLabel,
+} from "@/utils/core_utils";
 import { buildCarousel, toCarouselBase64, toCarouselBase64FromBase64 } from "@/utils/image_processor";
 import {
   buildProductListPagedResponse,
   resolveFlowImageUrl,
 } from "@/utils/product_flow_renderer";
 import {
-  clearUpdateProductState,
   getUpdateProductState,
   updateUpdateProductState,
 } from "@/repositories/products/update_product_cache";
@@ -22,8 +27,20 @@ import {
 import { decryptWhatsAppMedia } from "@/utils/flow_crypto";
 import { sendMenu } from "@/services/menu_service";
 import { findSeller, isSessionActive } from "@/services/auth_service";
+import { invalidateProductsListByTokenCache } from "@/services/cache/products_cache_service";
+import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
 
 const CAROUSEL_SIZE = 3;
+
+function asTrimmed(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function keepOldIfBlank(nextValue: unknown, previousValue: unknown): string {
+  const next = asTrimmed(nextValue);
+  if (next !== "") return next;
+  return asTrimmed(previousValue);
+}
 // function splitCarousels(images: Array<{ src: string; "alt-text": string }>) {
 //   const first = images.slice(0, 2);
 //   let second = images.slice(2);
@@ -97,32 +114,37 @@ async function handleLoadProductForEdit(parsed: FlowRequest): Promise<FlowRespon
   }
 
   // Reset per-product edit state
-  updateUpdateProductState(token, {
+  await updateUpdateProductState(token, {
     product_id: productId,
     photos_modifiees: false,
     images: undefined,
-    product_name: product.name,
-    prix_regulier_tnd: safeInitLabel(product.general_price_tnd ?? "", { fallback: "N/A" }),
-    prix_promo_tnd: safeInitLabel(product.promo_price_tnd ?? "", { fallback: "" }),
-    prix_regulier_eur: safeInitLabel(product.general_price_euro ?? "", { fallback: "N/A" }),
-    prix_promo_eur: safeInitLabel(product.promo_price_euro ?? "", { fallback: "" }),
-    longueur: "",
-    largeur: "",
-    profondeur: "",
-    unite_dimension: "cm",
-    valeur_poids: "",
-    unite_poids: "kg",
-    couleur: "",
-    taille: "",
-    quantite: safeInitLabel(product.stock_quantity ?? "", { fallback: "0" }),
-    product_category: safeInitLabel(product.category_id ?? product.categories?.[0] ?? "", { fallback: "autre" }),
-    product_category_label: safeInitLabel(product.category_label ?? product.category_id ?? "", { fallback: "Autre" }),
-    product_subcategory: safeInitLabel(product.subcategory_id ?? "", { fallback: "" }),
-    product_subcategory_label: safeInitLabel(product.subcategory_label ?? product.subcategory_id ?? "", { fallback: "Autre" }),
+    submit_status: "",
+    product_name: asTrimmed(product.name),
+    prix_regulier_tnd: asTrimmed(product.general_price_tnd ?? ""),
+    prix_promo_tnd: asTrimmed(product.promo_price_tnd ?? ""),
+    prix_regulier_eur: asTrimmed(product.general_price_euro ?? ""),
+    prix_promo_eur: asTrimmed(product.promo_price_euro ?? ""),
+    longueur: asTrimmed(product.length ?? ""),
+    largeur: asTrimmed(product.width ?? ""),
+    profondeur: asTrimmed(product.height ?? ""),
+    unite_dimension: asTrimmed(product.dim_unit ?? "") || "cm",
+    valeur_poids: asTrimmed(product.weight ?? ""),
+    unite_poids: asTrimmed(product.weight_unit ?? "") || "kg",
+    couleur: asTrimmed(product.color ?? ""),
+    taille: asTrimmed(product.size ?? ""),
+    quantite: asTrimmed(product.stock_quantity ?? "") || "0",
+    product_category: asTrimmed(product.category_id ?? product.categories?.[0] ?? "") || "autre",
+    product_category_label: asTrimmed(product.category_label ?? product.category_id ?? "") || "Autre",
+    product_subcategory: asTrimmed(product.subcategory_id ?? ""),
+    product_subcategory_label: asTrimmed(product.subcategory_label ?? product.subcategory_id ?? ""),
   });
-  const rawImages: string[] = Array.isArray(product.image_gallery)
+  const sourceImages: string[] = Array.isArray(product.image_gallery)
     ? product.image_gallery.filter((img) => typeof img === "string" && img.trim().length > 0)
     : [];
+
+  const rawImages: string[] = await Promise.all(
+    sourceImages.map((img) => toCarouselBase64(String(img || ""))),
+  );
 
   // Some products have no gallery in plugin payload; provide a safe fallback
   // so SCREEN_PHOTOS always receives at least one image slot.
@@ -182,7 +204,7 @@ async function handleSavePhotos(parsed: FlowRequest): Promise<FlowResponse> {
     )
   ).filter((b64): b64 is string => typeof b64 === "string" && b64.length > 0);
 
-  updateUpdateProductState(token, {
+  await updateUpdateProductState(token, {
     product_id: productId,
     images: images,
     photos_modifiees: true,
@@ -198,31 +220,32 @@ async function handleSkipPhotos(parsed: FlowRequest): Promise<FlowResponse> {
   return buildEditInfoScreen(token, productId);
 }
 
-function buildEditInfoPayload(state: any, productId: string) {
+function buildEditInfoPayload(state: any, productId: string, errorMessage = "") {
   return {
     product_id: productId,
     product_name_init: safeInitLabel(state.product_name, { fallback: "Produit" }),
-    prix_regulier_tnd_init: safeInitLabel(state.prix_regulier_tnd, { fallback: "N/A" }),
-    prix_promo_tnd_init: safeInitLabel(state.prix_promo_tnd, { fallback: "N/A" }),
-    prix_regulier_eur_init: safeInitLabel(state.prix_regulier_eur, { fallback: "N/A" }),
-    prix_promo_eur_init: safeInitLabel(state.prix_promo_eur, { fallback: "N/A" }),
-    longueur_init: safeInitLabel(state.longueur, { fallback: "N/A" }),
-    largeur_init: safeInitLabel(state.largeur, { fallback: "N/A" }),
-    profondeur_init: safeInitLabel(state.profondeur, { fallback: "N/A" }),
+    prix_regulier_tnd_init: safeInitLabel(state.prix_regulier_tnd, { fallback: "" }),
+    prix_promo_tnd_init: safeInitLabel(state.prix_promo_tnd, { fallback: "" }),
+    prix_regulier_eur_init: safeInitLabel(state.prix_regulier_eur, { fallback: "" }),
+    prix_promo_eur_init: safeInitLabel(state.prix_promo_eur, { fallback: "" }),
+    longueur_init: safeInitLabel(state.longueur, { fallback: "" }),
+    largeur_init: safeInitLabel(state.largeur, { fallback: "" }),
+    profondeur_init: safeInitLabel(state.profondeur, { fallback: "" }),
     unite_dimension_init: safeInitLabel(state.unite_dimension, { fallback: "cm" }),
-    valeur_poids_init: safeInitLabel(state.valeur_poids, { fallback: "N/A" }),
+    valeur_poids_init: safeInitLabel(state.valeur_poids, { fallback: "" }),
     unite_poids_init: safeInitLabel(state.unite_poids, { fallback: "kg" }),
-    couleur_init: safeInitLabel(state.couleur, { fallback: "N/A" }),
-    taille_init: safeInitLabel(state.taille, { fallback: "N/A" }),
+    couleur_init: safeInitLabel(state.couleur, { fallback: "" }),
+    taille_init: safeInitLabel(state.taille, { fallback: "" }),
     quantite_init: safeInitLabel(state.quantite, { fallback: "0" }),
+    error_message: errorMessage,
   };
 }
 
-async function buildEditInfoScreen(token: string, productId: string): Promise<FlowResponse> {
-  const state = getUpdateProductState(token) || {};
+async function buildEditInfoScreen(token: string, productId: string, errorMessage = ""): Promise<FlowResponse> {
+  const state = (await getUpdateProductState(token)) || {};
   return {
     screen: "SCREEN_EDIT_INFO",
-    data: buildEditInfoPayload(state, productId),
+    data: buildEditInfoPayload(state, productId, errorMessage),
   };
 }
 
@@ -230,32 +253,78 @@ async function handleSaveInfoAndContinue(parsed: FlowRequest): Promise<FlowRespo
   const token = getFlowToken(parsed);
   const data = parsed.data || {};
   const productId = String(data.product_id ?? "").trim();
+  const previous = (await getUpdateProductState(token)) || {};
 
-  updateUpdateProductState(token, {
+  const mergedName = keepOldIfBlank(data.product_name, previous.product_name);
+  const mergedRegularTnd = keepOldIfBlank(data.prix_regulier_tnd, previous.prix_regulier_tnd);
+  const mergedPromoTnd = keepOldIfBlank(data.prix_promo_tnd, previous.prix_promo_tnd);
+  let mergedRegularEur = keepOldIfBlank(data.prix_regulier_eur, previous.prix_regulier_eur);
+  let mergedPromoEur = keepOldIfBlank(data.prix_promo_eur, previous.prix_promo_eur);
+
+  const regularTndValue = parsePrice(mergedRegularTnd, 0);
+  const promoTndValue = parsePrice(mergedPromoTnd, 0);
+  let regularEurValue = parsePrice(mergedRegularEur, 0);
+  let promoEurValue = parsePrice(mergedPromoEur, 0);
+
+  if (regularTndValue <= 0) {
+    await updateUpdateProductState(token, {
+      product_id: productId,
+      product_name: mergedName,
+      prix_regulier_tnd: mergedRegularTnd,
+      prix_promo_tnd: mergedPromoTnd,
+      prix_regulier_eur: mergedRegularEur,
+      prix_promo_eur: mergedPromoEur,
+      longueur: keepOldIfBlank(data.longueur, previous.longueur),
+      largeur: keepOldIfBlank(data.largeur, previous.largeur),
+      profondeur: keepOldIfBlank(data.profondeur, previous.profondeur),
+      unite_dimension: keepOldIfBlank(data.unite_dimension, previous.unite_dimension) || "cm",
+      valeur_poids: keepOldIfBlank(data.valeur_poids, previous.valeur_poids),
+      unite_poids: keepOldIfBlank(data.unite_poids, previous.unite_poids) || "kg",
+      couleur: keepOldIfBlank(data.couleur, previous.couleur),
+      taille: keepOldIfBlank(data.taille, previous.taille),
+      quantite: keepOldIfBlank(data.quantite, previous.quantite),
+    });
+    return buildEditInfoScreen(token, productId, "Le prix regulier en TND est obligatoire et doit etre > 0.");
+  }
+
+  if (regularEurValue <= 0 || (promoTndValue > 0 && promoEurValue <= 0)) {
+    const converted = await resolveEurPrices(regularTndValue, promoTndValue);
+    if (regularEurValue <= 0) regularEurValue = converted.regularEur;
+    if (promoTndValue > 0 && promoEurValue <= 0) promoEurValue = converted.promoEur;
+  }
+
+  if (hasInvalidPromoPrice(regularTndValue, promoTndValue) || hasInvalidPromoPrice(regularEurValue, promoEurValue)) {
+    return buildEditInfoScreen(token, productId, "Le prix promo doit etre inferieur au prix regulier.");
+  }
+
+  mergedRegularEur = regularEurValue > 0 ? String(regularEurValue) : "";
+  mergedPromoEur = promoEurValue > 0 ? String(promoEurValue) : "";
+
+  await updateUpdateProductState(token, {
     product_id: productId,
-    product_name: String(data.product_name ?? "").trim(),
-    prix_regulier_tnd: safeInitLabel(data.prix_regulier_tnd, { fallback: "" }),
-    prix_promo_tnd: safeInitLabel(data.prix_promo_tnd, { fallback: "" }),
-    prix_regulier_eur: safeInitLabel(data.prix_regulier_eur, { fallback: "" }),
-    prix_promo_eur: safeInitLabel(data.prix_promo_eur, { fallback: "" }),
-    longueur: safeInitLabel(data.longueur, { fallback: "" }),
-    largeur: safeInitLabel(data.largeur, { fallback: "" }),
-    profondeur: safeInitLabel(data.profondeur, { fallback: "" }),
-    unite_dimension: safeInitLabel(data.unite_dimension, { fallback: "cm" }),
-    valeur_poids: safeInitLabel(data.valeur_poids, { fallback: "" }),
-    unite_poids: safeInitLabel(data.unite_poids, { fallback: "kg" }),
-    couleur: safeInitLabel(data.couleur, { fallback: "" }),
-    taille: safeInitLabel(data.taille, { fallback: "" }),
-    quantite: safeInitLabel(data.quantite, { fallback: "" }),
+    product_name: mergedName,
+    prix_regulier_tnd: String(regularTndValue),
+    prix_promo_tnd: promoTndValue > 0 ? String(promoTndValue) : "",
+    prix_regulier_eur: mergedRegularEur,
+    prix_promo_eur: mergedPromoEur,
+    longueur: keepOldIfBlank(data.longueur, previous.longueur),
+    largeur: keepOldIfBlank(data.largeur, previous.largeur),
+    profondeur: keepOldIfBlank(data.profondeur, previous.profondeur),
+    unite_dimension: keepOldIfBlank(data.unite_dimension, previous.unite_dimension) || "cm",
+    valeur_poids: keepOldIfBlank(data.valeur_poids, previous.valeur_poids),
+    unite_poids: keepOldIfBlank(data.unite_poids, previous.unite_poids) || "kg",
+    couleur: keepOldIfBlank(data.couleur, previous.couleur),
+    taille: keepOldIfBlank(data.taille, previous.taille),
+    quantite: keepOldIfBlank(data.quantite, previous.quantite),
   });
 
-  const st = getUpdateProductState(token) || {};
+  const st = (await getUpdateProductState(token)) || {};
   return {
     screen: "SCREEN_CATEGORY_INFO",
     data: {
       product_id: productId,
       current_category_label: safeInitLabel(st.product_category_label || st.product_category, { fallback: "Autre", maxLen: 40 }),
-      current_subcategory_label: safeInitLabel(st.product_subcategory_label || st.product_subcategory, { fallback: "Autre", maxLen: 60 }),
+      current_subcategory_label: safeInitLabel(st.product_subcategory_label || st.product_subcategory, { fallback: "", maxLen: 120 }),
     },
   };
 }
@@ -264,7 +333,7 @@ async function handleGoEditCategory(parsed: FlowRequest): Promise<FlowResponse> 
   const token = getFlowToken(parsed);
   const data = parsed.data || {};
   const productId = String(data.product_id ?? "").trim();
-  const state = getUpdateProductState(token) || {};
+  const state = (await getUpdateProductState(token)) || {};
 
   let categories = (state.categories && state.categories.length > 0)
     ? state.categories
@@ -276,7 +345,7 @@ async function handleGoEditCategory(parsed: FlowRequest): Promise<FlowResponse> 
       ? warm.categories as Array<{ id: string; title: string }>
       : [];
     categories = fetched;
-    updateUpdateProductState(token, { categories: fetched });
+    await updateUpdateProductState(token, { categories: fetched });
   }
 
   let selectedCategory = String(state.product_category || "").trim();
@@ -299,12 +368,12 @@ async function handleLoadSubcategories(parsed: FlowRequest): Promise<FlowRespons
   const data = parsed.data || {};
   const productId = String(data.product_id ?? "").trim();
   const categoryId = String(data.product_category ?? "").trim();
-  const state = getUpdateProductState(token) || {};
+  const state = (await getUpdateProductState(token)) || {};
   let subcats = state.subcategoriesByCategory?.[categoryId] ?? [];
 
   if (subcats.length === 0 && categoryId) {
     subcats = await loadSubcategoriesForCategory(categoryId);
-    updateUpdateProductState(token, {
+    await updateUpdateProductState(token, {
       subcategoriesByCategory: {
         ...(state.subcategoriesByCategory || {}),
         [categoryId]: subcats,
@@ -330,11 +399,11 @@ async function handleSaveCategoryAndContinue(parsed: FlowRequest): Promise<FlowR
   const data = parsed.data || {};
   const productId = String(data.product_id ?? "").trim();
   const categoryId = String(data.product_category ?? "").trim();
-  const state = getUpdateProductState(token) || {};
+  const state = (await getUpdateProductState(token)) || {};
   const label =
     (state.categories as Array<{ id: string; title: string }> || []).find((c) => c.id === categoryId)?.title || categoryId;
 
-  updateUpdateProductState(token, {
+  await updateUpdateProductState(token, {
     product_category: categoryId,
     product_category_label: label,
     product_subcategory: "",
@@ -353,7 +422,7 @@ async function handleSaveSubcategoryAndContinue(parsed: FlowRequest): Promise<Fl
   const data = parsed.data || {};
   const productId = String(data.product_id ?? "").trim();
   const subcatId = String(data.product_subcategory ?? "").trim();
-  const state = getUpdateProductState(token) || {};
+  const state = (await getUpdateProductState(token)) || {};
 
   let label = subcatId;
   for (const list of Object.values(state.subcategoriesByCategory || {}) as Array<Array<{ id: string; description: string }>>) {
@@ -364,9 +433,9 @@ async function handleSaveSubcategoryAndContinue(parsed: FlowRequest): Promise<Fl
     }
   }
 
-  updateUpdateProductState(token, {
+  await updateUpdateProductState(token, {
     product_subcategory: subcatId,
-    product_subcategory_label: label,
+    product_subcategory_label: asTrimmed(label),
   });
   return buildSummaryScreen(token, productId);
 }
@@ -379,7 +448,7 @@ async function handleSkipCategory(parsed: FlowRequest): Promise<FlowResponse> {
 }
 
 async function buildSummaryScreen(token: string, productId: string): Promise<FlowResponse> {
-  const state = getUpdateProductState(token) || {};
+  const state = (await getUpdateProductState(token)) || {};
 
   let rawImages: string[] = [];
   if (Array.isArray(state.images) && state.images.length > 0) {
@@ -434,7 +503,7 @@ async function handleSubmitUpdate(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
   const data = parsed.data || {};
   const productId = String(data.product_id ?? "").trim();
-  const state = getUpdateProductState(token) || {};
+  const state = (await getUpdateProductState(token)) || {};
 
   if (!productId) {
     return {
@@ -442,6 +511,36 @@ async function handleSubmitUpdate(parsed: FlowRequest): Promise<FlowResponse> {
       data: { ...(await buildSummaryScreen(token, productId)).data, error_message: "Produit manquant." },
     };
   }
+
+  if (state.submit_status === "submitted") {
+    return { screen: "SUCCESS", data: {} };
+  }
+
+  if (state.submit_status === "submitting") {
+    return {
+      screen: "SCREEN_SUMMARY",
+      data: {
+        ...(await buildSummaryScreen(token, productId)).data,
+        error_message: "Mise a jour en cours. Veuillez patienter...",
+      },
+    };
+  }
+
+  const regularTndValue = parsePrice(state.prix_regulier_tnd, 0);
+  if (regularTndValue <= 0) {
+    return {
+      screen: "SCREEN_SUMMARY",
+      data: {
+        ...(await buildSummaryScreen(token, productId)).data,
+        error_message: "Le prix regulier en TND est obligatoire et doit etre > 0.",
+      },
+    };
+  }
+
+  await updateUpdateProductState(token, {
+    submit_status: "submitting",
+    submittedAt: Date.now(),
+  });
 
   const ok = await updateProductNow(productId, token, {
     product_id: productId,
@@ -469,14 +568,16 @@ async function handleSubmitUpdate(parsed: FlowRequest): Promise<FlowResponse> {
   });
 
   if (!ok) {
+    await updateUpdateProductState(token, { submit_status: "error" });
     return {
       screen: "SCREEN_SUMMARY",
       data: { ...(await buildSummaryScreen(token, productId)).data, error_message: "Mise à jour impossible. Réessayez." },
     };
   }
 
-  await sendMenu(token);
-  clearUpdateProductState(token);
+  await updateUpdateProductState(token, { submit_status: "submitted" });
+  void invalidateProductsListByTokenCache(token);
+  void sendMenu(token);
   return { screen: "SUCCESS", data: {} };
 }
 
@@ -488,6 +589,10 @@ export async function handleUpdateProductFlow(parsed: FlowRequest): Promise<Flow
 
   const seller = await findSeller(token);
   if (!seller) {
+    void sendAuthFlowOnce({
+      phone: token,
+      source: "meta-flow:update-product:seller-not-found",
+    });
     return {
       screen: "WELCOME",
       data: { error_message: "Seller not found", error_msg: "Seller not found" },
@@ -496,6 +601,11 @@ export async function handleUpdateProductFlow(parsed: FlowRequest): Promise<Flow
 
   const active = await isSessionActive(token);
   if (!active) {
+    void sendAuthFlowOnce({
+      phone: seller.phone || token,
+      seller,
+      source: "meta-flow:update-product:session-expired",
+    });
     return {
       screen: "WELCOME",
       data: {

@@ -2,6 +2,18 @@
 import { Seller } from "@/models/seller_model";
 import { NextRequest, NextResponse } from "next/server";
 import { getSellerByPhone, isSessionActive } from "@/services/auth_service";
+import { normalizeSellerPhone } from "@/utils/seller_auth_helpers";
+import { extractPhoneFromFlowToken } from "@/utils/data_parser";
+import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
+
+function normalizePhoneCandidates(phone: string): string[] {
+  const normalized = normalizeSellerPhone(phone);
+  if (!normalized) return [];
+
+  const out = new Set<string>([normalized]);
+  if (normalized.startsWith("216") && normalized.length === 11) out.add(normalized.slice(-8));
+  return Array.from(out);
+}
 
 export async function POST(req:NextRequest) { 
   let body: Record<string, unknown> = {};
@@ -17,18 +29,33 @@ export async function POST(req:NextRequest) {
   const seller = candidate && typeof candidate === "object"
     ? candidate as Seller
     : undefined;
+  const rawSenderPhone = normalizeSellerPhone(String(body.phone || ""));
 
   if (!seller) {
     return NextResponse.json({ error: "seller is required in request body" }, { status: 400 });
   }
-  if (!seller.phone) {
+  const sellerPhone = normalizeSellerPhone(String(seller.phone || "")) || rawSenderPhone;
+  if (!sellerPhone) {
     return NextResponse.json({ error: "seller.phone is required in request body" }, { status: 400 });
   }
     try {
-      const sellerFromState = await getSellerByPhone(seller.phone);
+      const phoneCandidates = normalizePhoneCandidates(sellerPhone);
+      let sellerFromState: Seller | undefined;
+      for (const phone of phoneCandidates) {
+        sellerFromState = await getSellerByPhone(phone);
+        if (sellerFromState) break;
+      }
+
       const persistedToken = String(sellerFromState?.flow_token || "").trim();
-      const token = persistedToken || generateFlowtoken(seller.phone);
-      if (!persistedToken) {
+      const persistedPhone = extractPhoneFromFlowToken(persistedToken || "") || "";
+      const tokenMatchesPhone = !!persistedToken && persistedPhone === sellerPhone;
+      const token = tokenMatchesPhone ? persistedToken : generateFlowtoken(sellerPhone);
+      if (!tokenMatchesPhone) {
+        await sendAuthFlowOnce({
+          phone: sellerPhone,
+          seller,
+          source: "send-route:update-product:token-mismatch",
+        });
         return NextResponse.json(
           { error: "Session inactive. Please sign in first." },
           { status: 401 },
@@ -37,12 +64,17 @@ export async function POST(req:NextRequest) {
 
       const active = await isSessionActive(token);
       if (!active) {
+        await sendAuthFlowOnce({
+          phone: sellerPhone,
+          seller,
+          source: "send-route:update-product:session-expired",
+        });
         return NextResponse.json(
           { error: "Session expired. Please sign in again." },
           { status: 401 },
         );
       }
-      const recipient = seller.phone
+      const recipient = rawSenderPhone || sellerPhone;
       const response = await fetch(
         `https://graph.facebook.com/v19.0/${process.env.PHONE_NUMBER_ID}/messages`,
         {
@@ -81,7 +113,7 @@ export async function POST(req:NextRequest) {
       const data = await response.json();
       return NextResponse.json({
         seller: seller.name,
-        recipient: seller.phone,
+        recipient,
         status: response.status,
         flow_token_used: token,
         data,

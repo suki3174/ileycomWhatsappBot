@@ -6,6 +6,14 @@
   persistProductUpdate,
 } from "@/repositories/products/update_product_repo";
 import {
+  getCachedUpdateProductForEdit,
+  getCachedUpdateProductsPage,
+  invalidateUpdateProductForEdit,
+  invalidateUpdateProductsByToken,
+  setCachedUpdateProductForEdit,
+  setCachedUpdateProductsPage,
+} from "@/services/cache/update_product_cache_service";
+import {
   fetchAllProductCategories,
   fetchSubCategoriesByCategory,
 } from "@/repositories/addProduct/product_category_repo";
@@ -59,6 +67,16 @@ export async function getSellerProductsPageByFlowToken(
   page: number,
   pageSize: number,
 ): Promise<ProductsPage> {
+  const cached = await getCachedUpdateProductsPage(flowToken, page, pageSize);
+  if (cached && Array.isArray(cached.products)) {
+    return {
+      products: cached.products,
+      page: cached.page,
+      hasMore: cached.hasMore,
+      nextPage: cached.nextPage,
+    };
+  }
+
   const result = await fetchProductsPagedByFlowToken(flowToken, page, pageSize);
   if (!result) return { products: [], page: 1, hasMore: false, nextPage: 1 };
 
@@ -80,7 +98,9 @@ export async function getSellerProductsPageByFlowToken(
     image_src: p.image_url,
   }));
 
-  return { products, page, hasMore, nextPage };
+  const response = { products, page, hasMore, nextPage };
+  await setCachedUpdateProductsPage(flowToken, page, pageSize, response);
+  return response;
 }
 
 // ---------------------------------------------------------------------------
@@ -102,6 +122,11 @@ export async function loadProductForEdit(
   const tok = normText(flowToken);
   if (!pid || !tok) return null;
 
+  const cached = await getCachedUpdateProductForEdit(tok, pid);
+  if (cached) {
+    return cached as ProductForEdit;
+  }
+
   const [photos, editInfo, catInfo] = await Promise.all([
     fetchProductPhotosByFlowToken(tok, pid),
     fetchProductEditInfoByFlowToken(tok, pid),
@@ -112,7 +137,7 @@ export async function loadProductForEdit(
 
   const imageGallery = photos?.image_urls ?? [];
 
-  return {
+  const merged = {
     name: editInfo.product_name,
     general_price_tnd: editInfo.regular_tnd,
     promo_price_tnd: editInfo.sale_tnd,
@@ -135,6 +160,9 @@ export async function loadProductForEdit(
     image_gallery: imageGallery,
     image_src: imageGallery[0] ?? "",
   };
+
+  await setCachedUpdateProductForEdit(tok, pid, merged);
+  return merged;
 }
 
 // ---------------------------------------------------------------------------
@@ -205,5 +233,11 @@ export async function updateProductNow(
     payload.images = data.images_base64;
   }
 
-  return persistProductUpdate(tok, pid, payload);
+  const updated = await persistProductUpdate(tok, pid, payload);
+  if (updated) {
+    await invalidateUpdateProductsByToken(tok);
+    await invalidateUpdateProductForEdit(tok, pid);
+  }
+
+  return updated;
 }

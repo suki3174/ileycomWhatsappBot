@@ -7,7 +7,12 @@
   updateSellerCode,
 } from "@/repositories/auth/seller_repo";
 import type { Seller } from "@/models/seller_model";
-import { consumePendingCode, updateAuthWarmupCache } from "@/repositories/auth/auth_cache";
+import {
+  getSellerSessionByPhone,
+  getSellerSessionByToken,
+  invalidateSellerSessionCache,
+  writeSellerSessionCache,
+} from "@/services/cache/auth_cache_service";
 import {
   generateFlowtoken,
   hasSellerCodeValue,
@@ -19,26 +24,16 @@ import { normToken } from "@/utils/core_utils";
 
 const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
 
-export function primeAuthWarmupAsync(token: string): void {
-  const normalized = token ? String(token).trim() : "";
-  if (!normalized) return;
-
-  void (async () => {
-    try {
-      const hasCode = await sellerHasCode(normalized);
-      updateAuthWarmupCache(normalized, {
-        hasCode,
-        preparedAt: Date.now(),
-      });
-    } catch (err) {
-      console.error("auth warmup failed", err);
-    }
-  })();
-}
-
 // Returns seller resolved by phone from plugin-backed repository.
 export async function getSellerByPhone(phone: string ): Promise<Seller | undefined> {
-  return await findSellerByPhone(phone);
+  const cached = await getSellerSessionByPhone(phone);
+  if (cached) return cached;
+
+  const seller = await findSellerByPhone(phone);
+  if (seller) {
+    await writeSellerSessionCache(seller);
+  }
+  return seller;
 }
 
 // Returns all sellers from the in-memory fallback list.
@@ -50,18 +45,27 @@ export async function findSellerByTokenOrPhone(token: string): Promise<Seller | 
   const normalized = normToken(token);
   if (!normalized) return undefined;
 
+  const cachedByToken = await getSellerSessionByToken(normalized);
+  if (cachedByToken) return cachedByToken;
+
   // OPTIMIZATION: Token-first lookup order.
   // Flow token is authoritative for current session (no ~7-8s by-phone call needed).
   // Changed from: phone-first, token-fallback.
   // This eliminates the slow /seller/by-phone lookup from SIGN_IN critical path.
   const byToken = await findSellerByFlowToken(normalized);
-  if (byToken) return byToken;
+  if (byToken) {
+    await writeSellerSessionCache(byToken);
+    return byToken;
+  }
 
   const phone = extractPhoneFromFlowToken(normalized);
 
   if (phone) {
     const byPhone = await findSellerByPhone(phone);
-    if (byPhone) return byPhone;
+    if (byPhone) {
+      await writeSellerSessionCache(byPhone);
+      return byPhone;
+    }
   }
 
   return undefined;
@@ -108,7 +112,10 @@ export async function setSellerCode(token: string, code: string): Promise<Seller
   // First attempt: update code directly for this flow token (fast path).
   const updated = await updateSellerCode(normalized, hashedCode);
   // If direct update succeeds, return immediately.
-  if (updated) return updated;
+  if (updated) {
+    await writeSellerSessionCache(updated);
+    return updated;
+  }
 
   // Consistency fallback: read latest seller state by phone (token changes, phone is stable).
   const current = await findSeller(normalized);
@@ -118,6 +125,7 @@ export async function setSellerCode(token: string, code: string): Promise<Seller
     const stored = current.code == null ? "" : String(current.code).trim();
     // If values match, treat operation as successful even if update response was flaky.
     if (await verifyStoredPin(code, stored)) {
+      await writeSellerSessionCache(current);
       return current;
     }
   }
@@ -136,6 +144,9 @@ export async function prepareSellerState(token: string): Promise<boolean> {
   // Do a blocking insert/read so signup decisions are based on persisted state.
   try {
     const seller = await upsertSellerState(normalized, null);
+    if (seller) {
+      await writeSellerSessionCache(seller);
+    }
     return !!seller;
   } catch (err) {
     console.error("prepareSellerState failed", err);
@@ -145,12 +156,7 @@ export async function prepareSellerState(token: string): Promise<boolean> {
 
 // Verifies provided code against the seller code stored in plugin state.
 export async function verifyCode(token: string, code: string): Promise<boolean> {
-  // Fast path: if we have a recent cached code for this token, use it.
-  const pending = consumePendingCode(token) ?? "";
   const provided = String(code).trim();
-  if (pending && pending === provided) {
-    return true;
-  }
 
   const seller = await findSeller(token);
   if (!seller) return false;
@@ -169,12 +175,21 @@ export async function startSellerSession(token: string): Promise<boolean> {
   // Make session activation blocking so subsequent menu/flow actions
   // observe a committed session_active_until value.
   const ok = await activateSellerSessionViaPlugin(normalized);
-  if (ok) return true;
+  if (ok) {
+    const refreshed = await findSellerByFlowToken(normalized);
+    if (refreshed) {
+      await writeSellerSessionCache(refreshed);
+    }
+    return true;
+  }
 
   // Fallback: upsert by phone to recover if session endpoint is temporarily unavailable.
   const recovered = await upsertSellerState(normalized, null, {
     session_active_until: sessionActiveUntil,
   });
+  if (recovered) {
+    await writeSellerSessionCache(recovered);
+  }
   return !!recovered;
 }
 
@@ -187,7 +202,8 @@ export async function isSessionActive(token: string): Promise<boolean> {
   if (!seller.session_active_until) return false;
 
   if (seller.session_active_until < Date.now()) {
-    await upsertSellerState(normalized, null, { session_active_until: null });
+    const deactivated = await upsertSellerState(normalized, null, { session_active_until: null });
+    await invalidateSellerSessionCache({ token: normalized, seller: deactivated || seller });
     return false;
   }
 
