@@ -9,10 +9,9 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@getbrevo/brevo": "^5.0.3",
     "bcrypt": "^6.0.0",
-    "mailtrap": "^4.4.0",
     "next": "16.1.6",
-    "nodemailer": "^8.0.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "redis": "^5.11.0",

@@ -1,21 +1,19 @@
-import nodemailer from "nodemailer";
-import { MailtrapTransport } from "mailtrap";
+import { BrevoClient } from "@getbrevo/brevo";
 
-const TOKEN = process.env.MAILTRAP_API_TOKEN;
+const BREVO_API_KEY = process.env.BREVO_API_KEY;
 
-if (!TOKEN) {
-    throw new Error("MAILTRAP_API_TOKEN is not defined");
+if (!BREVO_API_KEY) {
+    throw new Error("BREVO_API_KEY is not defined");
 }
 
-export const transporter = nodemailer.createTransport(
-    MailtrapTransport({
-        token: TOKEN,
-    })
-);
+// Initialize Brevo client
+const brevoClient = new BrevoClient({
+    apiKey: BREVO_API_KEY,
+});
 
 export const sender = {
-    address: process.env.MAIL_SENDER_EMAIL || "hello@demomailtrap.com",
-    name: process.env.MAIL_SENDER_NAME || "Support",
+    address: process.env.MAIL_SENDER_EMAIL || "noreply@ileycom.tn",
+    name: process.env.MAIL_SENDER_NAME || "Ileycom Support",
 };
 
 export async function sendEmail({
@@ -23,20 +21,26 @@ export async function sendEmail({
     subject,
     text,
     html,
-    category,
 }: {
     to: string;
     subject: string;
     text?: string;
     html?: string;
-    category?: string;
-}) {
-    return transporter.sendMail({
-        from: sender,
-        to: to.toLowerCase().trim(),
-        subject,
-        text,
-        html,
-        category,
-    });
+}): Promise<any> {
+    try {
+        const result = await brevoClient.transactionalEmails.sendTransacEmail({
+            to: [{ email: to.toLowerCase().trim() }],
+            subject,
+            sender: {
+                email: sender.address,
+                name: sender.name,
+            },
+            ...(html && { htmlContent: html }),
+            ...(text && { textContent: text }),
+        });
+        return result;
+    } catch (error) {
+        console.error("Brevo email send failed:", error);
+        throw error;
+    }
 }
