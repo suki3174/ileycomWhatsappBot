@@ -7,10 +7,16 @@
 } from "@/repositories/products/update_product_repo";
 import {
   getCachedUpdateProductForEdit,
+  getCachedUpdateProductCategoryInfo,
+  getCachedUpdateProductEditInfo,
+  getCachedUpdateProductPhotos,
   getCachedUpdateProductsPage,
   invalidateUpdateProductForEdit,
   invalidateUpdateProductsByToken,
   setCachedUpdateProductForEdit,
+  setCachedUpdateProductCategoryInfo,
+  setCachedUpdateProductEditInfo,
+  setCachedUpdateProductPhotos,
   setCachedUpdateProductsPage,
 } from "@/services/cache/update_product_cache_service";
 import {
@@ -20,8 +26,6 @@ import {
 import { normText } from "@/utils/data_parser";
 
 const inflightFetches = new Map<string, Promise<unknown>>();
-const photosCache = new Map<string, { expiresAt: number; value: ProductPhotosForEditScreen | null }>();
-const PHOTOS_CACHE_TTL_MS = 20_000;
 
 function withInFlightDedup<T>(key: string, task: () => Promise<T>): Promise<T> {
   const existing = inflightFetches.get(key) as Promise<T> | undefined;
@@ -218,18 +222,20 @@ export async function loadProductPhotosForEditScreen(
   const tok = normText(flowToken);
   if (!pid || !tok) return null;
 
-  const cacheKey = `photos:${tok}:${pid}`;
-  const cached = photosCache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) {
-    return cached.value;
+  const cached = await getCachedUpdateProductPhotos(tok, pid);
+  if (cached) {
+    return {
+      product_name: normText(cached.product_name),
+      image_gallery: Array.isArray(cached.image_gallery)
+        ? cached.image_gallery.map((value) => normText(value)).filter(Boolean)
+        : [],
+      image_src: normText(cached.image_src),
+    };
   }
 
-  return withInFlightDedup(cacheKey, async () => {
+  return withInFlightDedup(`photos:${tok}:${pid}`, async () => {
     const photos = await fetchProductPhotosByFlowToken(tok, pid);
-    if (!photos) {
-      photosCache.set(cacheKey, { expiresAt: Date.now() + 1500, value: null });
-      return null;
-    }
+    if (!photos) return null;
 
     const imageGallery = Array.isArray(photos.image_urls) ? photos.image_urls : [];
     const value: ProductPhotosForEditScreen = {
@@ -237,7 +243,7 @@ export async function loadProductPhotosForEditScreen(
       image_gallery: imageGallery,
       image_src: imageGallery[0] ?? "",
     };
-    photosCache.set(cacheKey, { expiresAt: Date.now() + PHOTOS_CACHE_TTL_MS, value });
+    await setCachedUpdateProductPhotos(tok, pid, value as unknown as Record<string, unknown>);
     return value;
   });
 }
@@ -250,11 +256,31 @@ export async function loadProductEditInfoForEditScreen(
   const tok = normText(flowToken);
   if (!pid || !tok) return null;
 
+  const cached = await getCachedUpdateProductEditInfo(tok, pid);
+  if (cached) {
+    return {
+      product_name: normText(cached.product_name),
+      regular_tnd: normText(cached.regular_tnd),
+      sale_tnd: normText(cached.sale_tnd),
+      regular_eur: normText(cached.regular_eur),
+      sale_eur: normText(cached.sale_eur),
+      stock: normText(cached.stock),
+      dim_unit: normText(cached.dim_unit),
+      weight_unit: normText(cached.weight_unit),
+      length: normText(cached.length),
+      width: normText(cached.width),
+      height: normText(cached.height),
+      weight: normText(cached.weight),
+      color: normText(cached.color),
+      size: normText(cached.size),
+    };
+  }
+
   return withInFlightDedup(`edit:${tok}:${pid}`, async () => {
     const editInfo = await fetchProductEditInfoByFlowToken(tok, pid);
     if (!editInfo) return null;
 
-    return {
+    const value: ProductEditInfoForEditScreen = {
       product_name: editInfo.product_name,
       regular_tnd: editInfo.regular_tnd,
       sale_tnd: editInfo.sale_tnd,
@@ -270,6 +296,8 @@ export async function loadProductEditInfoForEditScreen(
       color: editInfo.color,
       size: editInfo.size,
     };
+    await setCachedUpdateProductEditInfo(tok, pid, value as unknown as Record<string, unknown>);
+    return value;
   });
 }
 
@@ -281,16 +309,28 @@ export async function loadProductCategoryInfoForEditScreen(
   const tok = normText(flowToken);
   if (!pid || !tok) return null;
 
+  const cached = await getCachedUpdateProductCategoryInfo(tok, pid);
+  if (cached) {
+    return {
+      category_id: normText(cached.category_id),
+      subcategory_id: normText(cached.subcategory_id),
+      category_label: normText(cached.category_label),
+      subcategory_label: normText(cached.subcategory_label),
+    };
+  }
+
   return withInFlightDedup(`cat:${tok}:${pid}`, async () => {
     const cat = await fetchProductCategoryInfoByFlowToken(tok, pid);
     if (!cat) return null;
 
-    return {
+    const value: ProductCategoryInfoForEditScreen = {
       category_id: cat.category_slug,
       subcategory_id: cat.subcategory_slug,
       category_label: cat.category_label || cat.category_name,
       subcategory_label: cat.subcategory_label || cat.subcategory_name,
     };
+    await setCachedUpdateProductCategoryInfo(tok, pid, value as unknown as Record<string, unknown>);
+    return value;
   });
 }
 

@@ -18,7 +18,9 @@ import {
 } from "@/repositories/products/update_product_cache";
 import {
   getSellerProductsPageByFlowToken,
-  loadProductForEdit,
+  loadProductCategoryInfoForEditScreen,
+  loadProductEditInfoForEditScreen,
+  loadProductPhotosForEditScreen,
   loadSubcategoriesForCategory,
   prefetchUpdateProductData,
   updateProductNow,
@@ -39,6 +41,70 @@ function keepOldIfBlank(nextValue: unknown, previousValue: unknown): string {
   const next = asTrimmed(nextValue);
   if (next !== "") return next;
   return asTrimmed(previousValue);
+}
+
+function normalizeOptionalValue(value: unknown): string {
+  const normalized = asTrimmed(value);
+  if (!normalized) return "";
+
+  const lower = normalized.toLowerCase();
+  if (lower === "n/a" || lower === "na" || lower === "null" || lower === "undefined") {
+    return "";
+  }
+
+  return normalized;
+}
+
+async function ensureEditInfoInState(token: string, productId: string): Promise<void> {
+  if (!productId) return;
+
+  const state = (await getUpdateProductState(token)) || {};
+  if (asTrimmed(state.edit_info_loaded_for) === productId) {
+    return;
+  }
+
+  const editInfo = await loadProductEditInfoForEditScreen(productId, token);
+  if (!editInfo) return;
+
+  await updateUpdateProductState(token, {
+    product_id: productId,
+    product_name: asTrimmed(editInfo.product_name),
+    prix_regulier_tnd: asTrimmed(editInfo.regular_tnd),
+    prix_promo_tnd: asTrimmed(editInfo.sale_tnd),
+    prix_regulier_eur: asTrimmed(editInfo.regular_eur),
+    prix_promo_eur: asTrimmed(editInfo.sale_eur),
+    longueur: normalizeOptionalValue(editInfo.length),
+    largeur: normalizeOptionalValue(editInfo.width),
+    profondeur: normalizeOptionalValue(editInfo.height),
+    unite_dimension: asTrimmed(editInfo.dim_unit) || "cm",
+    valeur_poids: normalizeOptionalValue(editInfo.weight),
+    unite_poids: asTrimmed(editInfo.weight_unit) || "kg",
+    couleur: normalizeOptionalValue(editInfo.color),
+    taille: normalizeOptionalValue(editInfo.size),
+    quantite: asTrimmed(editInfo.stock) || "0",
+    edit_info_loaded_for: productId,
+  });
+}
+
+async function ensureCategoryInfoInState(token: string, productId: string): Promise<void> {
+  if (!productId) return;
+
+  const state = (await getUpdateProductState(token)) || {};
+  if (asTrimmed(state.category_info_loaded_for) === productId) {
+    return;
+  }
+
+  const categoryInfo = await loadProductCategoryInfoForEditScreen(productId, token);
+  if (!categoryInfo) return;
+
+  await updateUpdateProductState(token, {
+    product_id: productId,
+    product_category: asTrimmed(categoryInfo.category_id) || "autre",
+    product_category_label: asTrimmed(categoryInfo.category_label) || "Autre",
+    product_subcategory: asTrimmed(categoryInfo.subcategory_id),
+    product_subcategory_label: asTrimmed(categoryInfo.subcategory_label),
+    category_info_loaded_for: productId,
+  });
 }
 // function splitCarousels(images: Array<{ src: string; "alt-text": string }>) {
 //   const first = images.slice(0, 2);
@@ -103,8 +169,8 @@ async function handleLoadProductForEdit(parsed: FlowRequest): Promise<FlowRespon
     });
   }
 
-  const product = await loadProductForEdit(productId, token);
-  if (!product) {
+  const photosData = await loadProductPhotosForEditScreen(productId, token);
+  if (!photosData) {
     return handleLoadProducts({
       ...parsed,
       screen: "PRODUCT_LIST",
@@ -118,27 +184,29 @@ async function handleLoadProductForEdit(parsed: FlowRequest): Promise<FlowRespon
     photos_modifiees: false,
     images: undefined,
     submit_status: "",
-    product_name: asTrimmed(product.name),
-    prix_regulier_tnd: asTrimmed(product.general_price_tnd ?? ""),
-    prix_promo_tnd: asTrimmed(product.promo_price_tnd ?? ""),
-    prix_regulier_eur: asTrimmed(product.general_price_euro ?? ""),
-    prix_promo_eur: asTrimmed(product.promo_price_euro ?? ""),
-    longueur: asTrimmed(product.length ?? ""),
-    largeur: asTrimmed(product.width ?? ""),
-    profondeur: asTrimmed(product.height ?? ""),
-    unite_dimension: asTrimmed(product.dim_unit ?? "") || "cm",
-    valeur_poids: asTrimmed(product.weight ?? ""),
-    unite_poids: asTrimmed(product.weight_unit ?? "") || "kg",
-    couleur: asTrimmed(product.color ?? ""),
-    taille: asTrimmed(product.size ?? ""),
-    quantite: asTrimmed(product.stock_quantity ?? "") || "0",
-    product_category: asTrimmed(product.category_id ?? product.categories?.[0] ?? "") || "autre",
-    product_category_label: asTrimmed(product.category_label ?? product.category_id ?? "") || "Autre",
-    product_subcategory: asTrimmed(product.subcategory_id ?? ""),
-    product_subcategory_label: asTrimmed(product.subcategory_label ?? product.subcategory_id ?? ""),
+    product_name: asTrimmed(photosData.product_name),
+    prix_regulier_tnd: "",
+    prix_promo_tnd: "",
+    prix_regulier_eur: "",
+    prix_promo_eur: "",
+    longueur: "",
+    largeur: "",
+    profondeur: "",
+    unite_dimension: "cm",
+    valeur_poids: "",
+    unite_poids: "kg",
+    couleur: "",
+    taille: "",
+    quantite: "0",
+    product_category: "",
+    product_category_label: "",
+    product_subcategory: "",
+    product_subcategory_label: "",
+    edit_info_loaded_for: "",
+    category_info_loaded_for: "",
   });
-  const sourceImages: string[] = Array.isArray(product.image_gallery)
-    ? product.image_gallery.filter((img) => typeof img === "string" && img.trim().length > 0)
+  const sourceImages: string[] = Array.isArray(photosData.image_gallery)
+    ? photosData.image_gallery.filter((img) => typeof img === "string" && img.trim().length > 0)
     : [];
 
   const rawImages: string[] = await Promise.all(
@@ -148,7 +216,7 @@ async function handleLoadProductForEdit(parsed: FlowRequest): Promise<FlowRespon
   // Some products have no gallery in plugin payload; provide a safe fallback
   // so SCREEN_PHOTOS always receives at least one image slot.
   if (rawImages.length === 0) {
-    const fallback = await toCarouselBase64(String(product.image_src || ""));
+    const fallback = await toCarouselBase64(String(photosData.image_src || ""));
     if (fallback) {
       rawImages.push(fallback);
     }
@@ -162,7 +230,7 @@ async function handleLoadProductForEdit(parsed: FlowRequest): Promise<FlowRespon
     screen: "SCREEN_PHOTOS",
     data: {
       product_id: productId,
-      product_name_display: safeInitLabel(product.name, { fallback: "Produit", maxLen: 40 }),
+      product_name_display: safeInitLabel(photosData.product_name, { fallback: "Produit", maxLen: 40 }),
       images: carousel1,
       images_2: carousel2,
       show_carousel_2: showCarousel2,
@@ -241,6 +309,7 @@ function buildEditInfoPayload(state: any, productId: string, errorMessage = "") 
 }
 
 async function buildEditInfoScreen(token: string, productId: string, errorMessage = ""): Promise<FlowResponse> {
+  await ensureEditInfoInState(token, productId);
   const state = (await getUpdateProductState(token)) || {};
   return {
     screen: "SCREEN_EDIT_INFO",
@@ -317,6 +386,8 @@ async function handleSaveInfoAndContinue(parsed: FlowRequest): Promise<FlowRespo
     quantite: keepOldIfBlank(data.quantite, previous.quantite),
   });
 
+  await ensureCategoryInfoInState(token, productId);
+
   const st = (await getUpdateProductState(token)) || {};
   return {
     screen: "SCREEN_CATEGORY_INFO",
@@ -332,6 +403,7 @@ async function handleGoEditCategory(parsed: FlowRequest): Promise<FlowResponse> 
   const token = getFlowToken(parsed);
   const data = parsed.data || {};
   const productId = String(data.product_id ?? "").trim();
+  await ensureCategoryInfoInState(token, productId);
   const state = (await getUpdateProductState(token)) || {};
 
   let categories = (state.categories && state.categories.length > 0)
@@ -462,13 +534,13 @@ async function buildSummaryScreen(token: string, productId: string): Promise<Flo
   if (Array.isArray(state.images) && state.images.length > 0) {
     rawImages = state.images;
   } else {
-    const product = await loadProductForEdit(productId, token);
-    if (Array.isArray(product?.image_gallery) && product.image_gallery.length > 0) {
+    const photosData = await loadProductPhotosForEditScreen(productId, token);
+    if (Array.isArray(photosData?.image_gallery) && photosData.image_gallery.length > 0) {
       rawImages = await Promise.all(
-        product.image_gallery.slice(0, 10).map((url: unknown) => toCarouselBase64(String(url || ""))),
+        photosData.image_gallery.slice(0, 10).map((url: unknown) => toCarouselBase64(String(url || ""))),
       );
     } else {
-      const fallbackUrl = resolveFlowImageUrl(String(product?.image_src || ""), {});
+      const fallbackUrl = resolveFlowImageUrl(String(photosData?.image_src || ""), {});
       const mapped = await fallbackUrl;
       rawImages = mapped ? [mapped] : [];
     }
