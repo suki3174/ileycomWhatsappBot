@@ -1,5 +1,4 @@
-﻿﻿/* eslint-disable @typescript-eslint/no-explicit-any */
-import type { FlowRequest } from "@/models/flowRequest";
+﻿import type { FlowRequest } from "@/models/flowRequest";
 import type { FlowResponse } from "@/models/flowResponse";
 import {
   getFlowToken,
