@@ -1,4 +1,4 @@
-﻿/* eslint-disable @typescript-eslint/no-explicit-any */
+﻿﻿/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { FlowRequest } from "@/models/flowRequest";
 import type { FlowResponse } from "@/models/flowResponse";
 import {
@@ -224,18 +224,18 @@ function buildEditInfoPayload(state: any, productId: string, errorMessage = "") 
   return {
     product_id: productId,
     product_name_init: safeInitLabel(state.product_name, { fallback: "Produit" }),
-    prix_regulier_tnd_init: safeInitLabel(state.prix_regulier_tnd, { fallback: "" }),
-    prix_promo_tnd_init: safeInitLabel(state.prix_promo_tnd, { fallback: "" }),
-    prix_regulier_eur_init: safeInitLabel(state.prix_regulier_eur, { fallback: "" }),
-    prix_promo_eur_init: safeInitLabel(state.prix_promo_eur, { fallback: "" }),
-    longueur_init: safeInitLabel(state.longueur, { fallback: "" }),
-    largeur_init: safeInitLabel(state.largeur, { fallback: "" }),
-    profondeur_init: safeInitLabel(state.profondeur, { fallback: "" }),
+    prix_regulier_tnd_init: safeInitLabel(state.prix_regulier_tnd, { fallback: "0" }),
+    prix_promo_tnd_init: safeInitLabel(state.prix_promo_tnd, { fallback: "N/A" }),
+    prix_regulier_eur_init: safeInitLabel(state.prix_regulier_eur, { fallback: "0" }),
+    prix_promo_eur_init: safeInitLabel(state.prix_promo_eur, { fallback: "N/A" }),
+    longueur_init: safeInitLabel(state.longueur, { fallback: "N/A" }),
+    largeur_init: safeInitLabel(state.largeur, { fallback: "N/A" }),
+    profondeur_init: safeInitLabel(state.profondeur, { fallback: "N/A" }),
     unite_dimension_init: safeInitLabel(state.unite_dimension, { fallback: "cm" }),
-    valeur_poids_init: safeInitLabel(state.valeur_poids, { fallback: "" }),
+    valeur_poids_init: safeInitLabel(state.valeur_poids, { fallback: "N/A" }),
     unite_poids_init: safeInitLabel(state.unite_poids, { fallback: "kg" }),
-    couleur_init: safeInitLabel(state.couleur, { fallback: "" }),
-    taille_init: safeInitLabel(state.taille, { fallback: "" }),
+    couleur_init: safeInitLabel(state.couleur, { fallback: "N/A" }),
+    taille_init: safeInitLabel(state.taille, { fallback: "N/A" }),
     quantite_init: safeInitLabel(state.quantite, { fallback: "0" }),
     error_message: errorMessage,
   };
@@ -369,6 +369,18 @@ async function handleLoadSubcategories(parsed: FlowRequest): Promise<FlowRespons
   const productId = String(data.product_id ?? "").trim();
   const categoryId = String(data.product_category ?? "").trim();
   const state = (await getUpdateProductState(token)) || {};
+  const categoryLabel =
+    (state.categories as Array<{ id: string; title: string }> || []).find((c) => c.id === categoryId)?.title || categoryId;
+
+  if (categoryId) {
+    await updateUpdateProductState(token, {
+      product_category: categoryId,
+      product_category_label: categoryLabel,
+      product_subcategory: "",
+      product_subcategory_label: "",
+    });
+  }
+
   let subcats = state.subcategoriesByCategory?.[categoryId] ?? [];
 
   if (subcats.length === 0 && categoryId) {
@@ -381,14 +393,11 @@ async function handleLoadSubcategories(parsed: FlowRequest): Promise<FlowRespons
     });
   }
 
-  const parentLabel =
-    (state.categories as Array<{ id: string; title: string }> || []).find((c) => c.id === categoryId)?.title || categoryId;
-
   return {
     screen: "SCREEN_EDIT_SUBCATEGORY",
     data: {
       product_id: productId,
-      parent_category_label: safeInitLabel(parentLabel, { fallback: "Categorie", maxLen: 40 }),
+      parent_category_label: safeInitLabel(categoryLabel, { fallback: "Categorie", maxLen: 40 }),
       subcategories: subcats,
     },
   };
@@ -666,4 +675,3 @@ export async function handleUpdateProductFlow(parsed: FlowRequest): Promise<Flow
 }
 
 export default handleUpdateProductFlow;
-

@@ -19,6 +19,21 @@ import {
 } from "@/repositories/addProduct/product_category_repo";
 import { normText } from "@/utils/data_parser";
 
+const inflightFetches = new Map<string, Promise<unknown>>();
+const photosCache = new Map<string, { expiresAt: number; value: ProductPhotosForEditScreen | null }>();
+const PHOTOS_CACHE_TTL_MS = 20_000;
+
+function withInFlightDedup<T>(key: string, task: () => Promise<T>): Promise<T> {
+  const existing = inflightFetches.get(key) as Promise<T> | undefined;
+  if (existing) return existing;
+
+  const run = task().finally(() => {
+    inflightFetches.delete(key);
+  });
+  inflightFetches.set(key, run as Promise<unknown>);
+  return run;
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -45,6 +60,36 @@ export type ProductForEdit = {
   subcategory_label?: string;
   image_gallery?: string[];
   image_src?: string;
+};
+
+export type ProductPhotosForEditScreen = {
+  product_name: string;
+  image_gallery: string[];
+  image_src: string;
+};
+
+export type ProductEditInfoForEditScreen = {
+  product_name: string;
+  regular_tnd: string;
+  sale_tnd: string;
+  regular_eur: string;
+  sale_eur: string;
+  stock: string;
+  dim_unit: string;
+  weight_unit: string;
+  length: string;
+  width: string;
+  height: string;
+  weight: string;
+  color: string;
+  size: string;
+};
+
+export type ProductCategoryInfoForEditScreen = {
+  category_id: string;
+  subcategory_id: string;
+  category_label: string;
+  subcategory_label: string;
 };
 
 export type ProductsPage = {
@@ -163,6 +208,90 @@ export async function loadProductForEdit(
 
   await setCachedUpdateProductForEdit(tok, pid, merged);
   return merged;
+}
+
+export async function loadProductPhotosForEditScreen(
+  productId: string,
+  flowToken: string,
+): Promise<ProductPhotosForEditScreen | null> {
+  const pid = normText(productId);
+  const tok = normText(flowToken);
+  if (!pid || !tok) return null;
+
+  const cacheKey = `photos:${tok}:${pid}`;
+  const cached = photosCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value;
+  }
+
+  return withInFlightDedup(cacheKey, async () => {
+    const photos = await fetchProductPhotosByFlowToken(tok, pid);
+    if (!photos) {
+      photosCache.set(cacheKey, { expiresAt: Date.now() + 1500, value: null });
+      return null;
+    }
+
+    const imageGallery = Array.isArray(photos.image_urls) ? photos.image_urls : [];
+    const value: ProductPhotosForEditScreen = {
+      product_name: photos.product_name,
+      image_gallery: imageGallery,
+      image_src: imageGallery[0] ?? "",
+    };
+    photosCache.set(cacheKey, { expiresAt: Date.now() + PHOTOS_CACHE_TTL_MS, value });
+    return value;
+  });
+}
+
+export async function loadProductEditInfoForEditScreen(
+  productId: string,
+  flowToken: string,
+): Promise<ProductEditInfoForEditScreen | null> {
+  const pid = normText(productId);
+  const tok = normText(flowToken);
+  if (!pid || !tok) return null;
+
+  return withInFlightDedup(`edit:${tok}:${pid}`, async () => {
+    const editInfo = await fetchProductEditInfoByFlowToken(tok, pid);
+    if (!editInfo) return null;
+
+    return {
+      product_name: editInfo.product_name,
+      regular_tnd: editInfo.regular_tnd,
+      sale_tnd: editInfo.sale_tnd,
+      regular_eur: editInfo.regular_eur,
+      sale_eur: editInfo.sale_eur,
+      stock: String(editInfo.stock ?? ""),
+      dim_unit: editInfo.dim_unit,
+      weight_unit: editInfo.weight_unit,
+      length: editInfo.length,
+      width: editInfo.width,
+      height: editInfo.height,
+      weight: editInfo.weight,
+      color: editInfo.color,
+      size: editInfo.size,
+    };
+  });
+}
+
+export async function loadProductCategoryInfoForEditScreen(
+  productId: string,
+  flowToken: string,
+): Promise<ProductCategoryInfoForEditScreen | null> {
+  const pid = normText(productId);
+  const tok = normText(flowToken);
+  if (!pid || !tok) return null;
+
+  return withInFlightDedup(`cat:${tok}:${pid}`, async () => {
+    const cat = await fetchProductCategoryInfoByFlowToken(tok, pid);
+    if (!cat) return null;
+
+    return {
+      category_id: cat.category_slug,
+      subcategory_id: cat.subcategory_slug,
+      category_label: cat.category_label || cat.category_name,
+      subcategory_label: cat.subcategory_label || cat.subcategory_name,
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------
