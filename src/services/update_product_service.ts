@@ -26,6 +26,9 @@ import {
 import { normText } from "@/utils/data_parser";
 
 const inflightFetches = new Map<string, Promise<unknown>>();
+const submitInflight = new Map<string, Promise<boolean>>();
+const submitSuccessCache = new Map<string, number>();
+const SUBMIT_SUCCESS_TTL_MS = 2 * 60 * 1000;
 
 function withInFlightDedup<T>(key: string, task: () => Promise<T>): Promise<T> {
   const existing = inflightFetches.get(key) as Promise<T> | undefined;
@@ -36,6 +39,68 @@ function withInFlightDedup<T>(key: string, task: () => Promise<T>): Promise<T> {
   });
   inflightFetches.set(key, run as Promise<unknown>);
   return run;
+}
+
+function stableSerialize(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map((item) => stableSerialize(item)).join(",")}]`;
+
+  const entries = Object.entries(value as Record<string, unknown>)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, val]) => `${JSON.stringify(key)}:${stableSerialize(val)}`);
+  return `{${entries.join(",")}}`;
+}
+
+function normalizeForComparison(value: unknown): string {
+  return normText(value).toLowerCase();
+}
+
+function valuesMatch(actual: unknown, expected: unknown): boolean {
+  return normalizeForComparison(actual) === normalizeForComparison(expected);
+}
+
+async function verifyPersistedUpdate(
+  flowToken: string,
+  productId: string,
+  payload: Record<string, unknown>,
+): Promise<boolean> {
+  const [editInfo, categoryInfo] = await Promise.all([
+    fetchProductEditInfoByFlowToken(flowToken, productId),
+    fetchProductCategoryInfoByFlowToken(flowToken, productId),
+  ]);
+  if (!editInfo) return false;
+
+  const editChecks: Array<[unknown, unknown]> = [
+    [editInfo.product_name, payload.name],
+    [editInfo.regular_tnd, payload.regular_tnd],
+    [editInfo.sale_tnd, payload.sale_tnd],
+    [editInfo.regular_eur, payload.regular_eur],
+    [editInfo.sale_eur, payload.sale_eur],
+    [String(editInfo.stock ?? ""), payload.stock],
+    [editInfo.length, payload.length],
+    [editInfo.width, payload.width],
+    [editInfo.height, payload.height],
+    [editInfo.dim_unit, payload.dim_unit],
+    [editInfo.weight, payload.weight],
+    [editInfo.weight_unit, payload.weight_unit],
+    [editInfo.color, payload.color],
+    [editInfo.size, payload.size],
+  ];
+
+  for (const [actual, expected] of editChecks) {
+    if (!valuesMatch(actual, expected)) return false;
+  }
+
+  const requestedCategory = normText(payload.category_id);
+  const requestedSubcategory = normText(payload.subcategory_id);
+  if (categoryInfo && requestedCategory && !valuesMatch(categoryInfo.category_slug, requestedCategory)) {
+    return false;
+  }
+  if (categoryInfo && requestedSubcategory && !valuesMatch(categoryInfo.subcategory_slug, requestedSubcategory)) {
+    return false;
+  }
+
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -402,11 +467,37 @@ export async function updateProductNow(
     payload.images = data.images_base64;
   }
 
-  const updated = await persistProductUpdate(tok, pid, payload);
-  if (updated) {
-    await invalidateUpdateProductsByToken(tok);
-    await invalidateUpdateProductForEdit(tok, pid);
+  const submitKey = `submit:${tok}:${pid}:${stableSerialize(payload)}`;
+  const cachedSuccessUntil = submitSuccessCache.get(submitKey) ?? 0;
+  if (cachedSuccessUntil > Date.now()) {
+    return true;
   }
 
-  return updated;
+  const inflight = submitInflight.get(submitKey);
+  if (inflight) {
+    return inflight;
+  }
+
+  const run = (async (): Promise<boolean> => {
+    const updated = await persistProductUpdate(tok, pid, payload);
+    let ok = updated;
+
+    if (!ok) {
+      // If plugin update timed out but was committed, verify by reading latest values.
+      ok = await verifyPersistedUpdate(tok, pid, payload);
+    }
+
+    if (ok) {
+      submitSuccessCache.set(submitKey, Date.now() + SUBMIT_SUCCESS_TTL_MS);
+      await invalidateUpdateProductsByToken(tok);
+      await invalidateUpdateProductForEdit(tok, pid);
+    }
+
+    return ok;
+  })().finally(() => {
+    submitInflight.delete(submitKey);
+  });
+
+  submitInflight.set(submitKey, run);
+  return run;
 }

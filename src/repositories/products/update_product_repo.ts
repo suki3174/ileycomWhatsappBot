@@ -1,4 +1,4 @@
-﻿import { pluginPost } from "@/utils/plugin_client";
+﻿import { pluginPost, pluginPostWithRetry } from "@/utils/plugin_client";
 import {
   parsePluginJsonSafe,
   asRecord,
@@ -228,10 +228,10 @@ export async function persistProductUpdate(
   data: Record<string, unknown>,
 ): Promise<boolean> {
   try {
-    const res = await pluginPost(
+    const res = await pluginPostWithRetry(
       "/seller/product/update/by-flow-token",
       { flow_token: flowToken, product_id: Number(productId), data },
-      { timeoutMs: 30_000 },
+      { timeoutMs: 45_000, retries: 1, retryDelayMs: 600 },
     );
     const payload = await parsePluginJsonSafe(res, "persistProductUpdate");
     if (!payload) return false;
