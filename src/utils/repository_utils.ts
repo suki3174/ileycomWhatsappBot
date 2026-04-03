@@ -1,5 +1,7 @@
 // ─── Text Normalisation & Encoding Repair ─────────────────────────────────────
 
+import { normalizeSellerPhone } from "@/utils/seller_auth_helpers";
+
 function looksLikeMojibake(input: string): boolean {
   // Typical sequences from UTF-8 text decoded as latin1/cp1252.
   // Include common Arabic corruption artifacts (e.g. "Ù…Ø¹Ø²").
@@ -91,7 +93,7 @@ export function extractPhoneFromFlowToken(token: string): string | null {
   const tok = normText(token);
   const match = tok.match(/^flowtoken-(.+)-\d+$/);
   if (!match || !match[1]) return null;
-  const normalized = String(match[1]).replace(/\D+/g, "");
+  const normalized = normalizeSellerPhone(String(match[1]));
   return normalized || null;
 }
 

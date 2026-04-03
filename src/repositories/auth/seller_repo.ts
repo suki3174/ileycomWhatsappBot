@@ -6,6 +6,7 @@ import {
   parsePluginJsonSafe,
   readResponseBodySafe,
 } from "@/utils/data_parser";
+import { normalizeSellerPhone } from "@/utils/seller_auth_helpers";
 
 const FLOW_LOOKUP_TIMEOUT_MS = Math.max(PLUGIN_TIMEOUT_MS, 10000);
 const UPDATE_CODE_TIMEOUT_MS = Math.max(PLUGIN_TIMEOUT_MS, 12000);
@@ -345,7 +346,7 @@ export async function findExpiredSessionsForAuthPortal(
 
 // Marks auth portal as sent for the current pre-expiry keepalive window.
 export async function markAuthPortalSent(phone: string): Promise<boolean> {
-  const normalizedPhone = String(phone || "").trim();
+  const normalizedPhone = normalizeSellerPhone(String(phone || ""));
   if (!normalizedPhone) return false;
 
   try {

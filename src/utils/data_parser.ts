@@ -1,5 +1,7 @@
 // ─── Text Normalisation & Encoding Repair ─────────────────────────────────────
 
+import { normalizeSellerPhone } from "@/utils/seller_auth_helpers";
+
 function looksLikeMojibake(input: string): boolean {
   // Typical sequences from UTF-8 text decoded as latin1/cp1252.
   // Include common Arabic corruption artifacts (e.g. "Ù…Ø¹Ø²").
@@ -86,14 +88,6 @@ export function toStringArray(value: unknown): string[] {
 }
 
 // ─── Token Parsing ─────────────────────────────────────────────────────────────
-
-function normalizeSellerPhone(phone: string): string {
-  const digits = String(phone || "").replace(/\D+/g, "");
-  if (!digits) return "";
-  if (digits.length === 8) return `216${digits}`;
-  if (digits.startsWith("216") && digits.length === 11) return digits;
-  return digits;
-}
 
 export function extractPhoneFromFlowToken(token: string): string | null {
   const tok = normText(token);

@@ -1,5 +1,5 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
-import { generateFlowtoken, normalizeSellerPhone } from "@/utils/seller_auth_helpers";
+import { areEquivalentSellerPhones, generateFlowtoken, normalizeSellerPhone } from "@/utils/seller_auth_helpers";
 import { Seller } from "@/models/seller_model";
 import { getSellerByPhone, isSessionActive } from "@/services/auth_service";
 import { extractPhoneFromFlowToken } from "@/utils/data_parser";
@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
       const sellerFromState = await getSellerByPhone(recipient);
       const persistedToken = String(sellerFromState?.flow_token || "").trim();
       const persistedPhone = extractPhoneFromFlowToken(persistedToken || "") || "";
-      const tokenMatchesPhone = !!persistedToken && persistedPhone === recipient;
+      const tokenMatchesPhone = !!persistedToken && areEquivalentSellerPhones(persistedPhone, recipient);
       const token = tokenMatchesPhone ? persistedToken : generateFlowtoken(recipient);
       if (!tokenMatchesPhone) {
         await sendAuthFlowOnce({

@@ -1,11 +1,11 @@
-﻿import { generateFlowtoken } from "@/utils/seller_auth_helpers";
+﻿import { generateFlowtoken, normalizeSellerPhone } from "@/utils/seller_auth_helpers";
 import { getSellerByPhone, prepareSellerState } from "@/services/auth_service";
 import { NextRequest, NextResponse } from "next/server";
 
 
 export async function POST(req: NextRequest) {
     const body = await req.json();
-    const phone: string = body.phone;
+    const phone = normalizeSellerPhone(String(body?.phone || ""));
 
     if (!phone) {
         return NextResponse.json({ error: "phone is required in request body" }, { status: 400 });

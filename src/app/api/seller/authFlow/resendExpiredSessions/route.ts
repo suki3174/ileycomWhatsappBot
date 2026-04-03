@@ -1,6 +1,7 @@
 import { sendAuthFlowToSeller } from "@/handlers/seller/sendBatch_handler";
 import { type ExpiredSessionSeller, findExpiredSessionsForAuthPortal, markAuthPortalSent } from "@/repositories/auth/seller_repo";
 import { NextRequest, NextResponse } from "next/server";
+import { normalizeSellerPhone } from "@/utils/seller_auth_helpers";
 
 const DEFAULT_PAGE_SIZE = 100;
 const MAX_PAGE_SIZE = 300;
@@ -77,7 +78,7 @@ function normalizeCandidate(seller: ExpiredSessionSeller): ExpiredSessionSeller 
     ...seller,
     name: String(seller.name || "Vendeur"),
     email: String(seller.email || ""),
-    phone: String(seller.phone || "").trim(),
+    phone: normalizeSellerPhone(String(seller.phone || "")),
     code: seller.code ?? null,
     flow_token: seller.flow_token ?? null,
   };

@@ -1,18 +1,14 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
-import { generateFlowtoken, normalizeSellerPhone } from "@/utils/seller_auth_helpers";
+import {
+  areEquivalentSellerPhones,
+  generateFlowtoken,
+  getSellerPhoneCandidates,
+  normalizeSellerPhone,
+} from "@/utils/seller_auth_helpers";
 import { Seller } from "@/models/seller_model";
 import { getSellerByPhone, isSessionActive } from "@/services/auth_service";
 import { extractPhoneFromFlowToken } from "@/utils/data_parser";
 import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
-
-function normalizePhoneCandidates(phone: string): string[] {
-  const normalized = normalizeSellerPhone(phone);
-  if (!normalized) return [];
-
-  const out = new Set<string>([normalized]);
-  if (normalized.startsWith("216") && normalized.length === 11) out.add(normalized.slice(-8));
-  return Array.from(out);
-}
 
 export async function POST(req: NextRequest) {
   let body: Record<string, unknown> = {};
@@ -40,7 +36,7 @@ export async function POST(req: NextRequest) {
 
 
   try {
-    const phoneCandidates = normalizePhoneCandidates(sellerPhone);
+    const phoneCandidates = getSellerPhoneCandidates(sellerPhone);
     let sellerFromState: Seller | undefined;
     for (const phone of phoneCandidates) {
       sellerFromState = await getSellerByPhone(phone);
@@ -49,7 +45,7 @@ export async function POST(req: NextRequest) {
 
     const persistedToken = String(sellerFromState?.flow_token || "").trim();
     const persistedPhone = extractPhoneFromFlowToken(persistedToken || "") || "";
-    const tokenMatchesPhone = !!persistedToken && persistedPhone === sellerPhone;
+    const tokenMatchesPhone = !!persistedToken && areEquivalentSellerPhones(persistedPhone, sellerPhone);
     const token = tokenMatchesPhone ? persistedToken : generateFlowtoken(sellerPhone);
     if (!tokenMatchesPhone) {
       await sendAuthFlowOnce({

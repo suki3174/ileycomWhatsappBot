@@ -4,7 +4,7 @@ import {
   markInboundTriggerSeen,
 } from "@/services/cache/auth_cache_service";
 import { getSellerByPhone, isSessionActive } from "@/services/auth_service";
-import { normalizeSellerPhone } from "@/utils/seller_auth_helpers";
+import { getSellerPhoneCandidates, isTunisianPhone, normalizeSellerPhone } from "@/utils/seller_auth_helpers";
 import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
 
 const MENU_TRIGGERS = new Set([
@@ -22,19 +22,6 @@ const TRIGGER_TO_ENDPOINT: Record<string, string> = {
   "Créer un produit": "/api/seller/addProductFlow/send",
   "Creer un produit": "/api/seller/addProductFlow/send",
 };
-
-function normalizePhoneCandidates(phone: string): string[] {
-  const normalized = normalizeSellerPhone(phone);
-  if (!normalized) return [];
-
-  const candidates = new Set<string>([normalized]);
-  // Temporary compatibility fallback for legacy rows stored without country code.
-  if (normalized.startsWith("216") && normalized.length === 11) {
-    candidates.add(normalized.slice(-8));
-  }
-
-  return Array.from(candidates);
-}
 
 export async function handleIncomingMessage(
   phone: string,
@@ -68,13 +55,13 @@ export async function handleIncomingMessage(
     console.log("[handleIncomingMessage] No phone provided");
     return;
   }
-  if(!phone.startsWith("216")){
+  if (!isTunisianPhone(senderPhone)) {
     console.log("[handleIncomingMessage] Not a tunisian number");
     return;
 
   }
 
-  const phoneCandidates = normalizePhoneCandidates(senderPhone);
+  const phoneCandidates = getSellerPhoneCandidates(senderPhone);
   let seller: Seller | undefined;
   for (const candidate of phoneCandidates) {
     seller = await getSellerByPhone(candidate);

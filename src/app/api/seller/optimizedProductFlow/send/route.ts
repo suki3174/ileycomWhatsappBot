@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { generateFlowtoken } from "@/utils/seller_auth_helpers";
+import { areEquivalentSellerPhones, generateFlowtoken, normalizeSellerPhone } from "@/utils/seller_auth_helpers";
 import { Seller } from "@/models/seller_model";
 import { getSellerByPhone, isSessionActive, prepareSellerState } from "@/services/auth_service";
 import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
@@ -17,17 +17,21 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const recipient = seller.phone;
+    const sellerPhone = normalizeSellerPhone(String(seller?.phone || ""));
+    if (!sellerPhone) {
+      return NextResponse.json({ error: "seller.phone is required in request body" }, { status: 400 });
+    }
+    const recipient = sellerPhone;
 
-    const sellerFromState = await getSellerByPhone(seller.phone);
+    const sellerFromState = await getSellerByPhone(sellerPhone);
     const persistedToken = String(sellerFromState?.flow_token || "").trim();
     const persistedPhone = extractPhoneFromFlowToken(persistedToken || "") || "";
-    const tokenMatchesPhone = !!persistedToken && persistedPhone === seller.phone;
-    const token = tokenMatchesPhone ? persistedToken : generateFlowtoken(seller.phone);
+    const tokenMatchesPhone = !!persistedToken && areEquivalentSellerPhones(persistedPhone, sellerPhone);
+    const token = tokenMatchesPhone ? persistedToken : generateFlowtoken(sellerPhone);
 
     if (!tokenMatchesPhone) {
       await sendAuthFlowOnce({
-        phone: seller.phone,
+        phone: sellerPhone,
         seller,
         source: "send-route:optimized-product:token-mismatch",
       });
@@ -45,7 +49,7 @@ export async function POST(req: NextRequest) {
     const active = await isSessionActive(token);
     if (!active) {
       await sendAuthFlowOnce({
-        phone: seller.phone,
+        phone: sellerPhone,
         seller,
         source: "send-route:optimized-product:session-expired",
       });
@@ -94,7 +98,7 @@ export async function POST(req: NextRequest) {
     const data = await response.json();
     return NextResponse.json({
       seller: seller.name,
-      recipient: seller.phone,
+      recipient,
       status: response.status,
       data,
     });
