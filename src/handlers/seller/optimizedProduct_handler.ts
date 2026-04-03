@@ -1,6 +1,8 @@
 import { FlowRequest } from "@/models/flowRequest";
 import { FlowResponse } from "@/models/flowResponse";
 import { getFlowToken } from "@/utils/core_utils";
+import { validateSellerFlowAccess } from "@/services/auth_service";
+import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
 import {
   getOptimizedProductFlowState,
   updateOptimizedProductFlowState,
@@ -11,6 +13,8 @@ import {
 } from "@/services/ai_optimization_service";
 import { getAddProductState } from "@/repositories/addProduct/add_product_cache";
 import { buildCarousel, toCarouselBase64 } from "@/utils/image_processor";
+import { loadProductForEdit } from "@/services/update_product_service";
+import { resolveFlowImageUrl } from "@/utils/product_flow_renderer";
 
 /**
  * Main handler for optimized product detail flow
@@ -20,6 +24,25 @@ export async function handleOptimizedProductDetail(
 ): Promise<FlowResponse> {
   const action = (parsed.action || "").toUpperCase();
   const token = getFlowToken(parsed);
+  const auth = await validateSellerFlowAccess(token);
+
+  if (!auth.ok || !auth.seller) {
+    void sendAuthFlowOnce({
+      phone: auth.phone || token,
+      seller: auth.seller,
+      source: auth.reason === "session-expired"
+        ? "meta-flow:optimized-product:session-expired"
+        : "meta-flow:optimized-product:seller-not-found",
+    });
+    return {
+      screen: "ERROR",
+      data: {
+        error_msg: auth.reason === "session-expired"
+          ? "Session expiree. Reconnectez-vous."
+          : "Authentification requise. Reconnectez-vous.",
+      },
+    };
+  }
 
   if (!token) {
     return {

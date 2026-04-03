@@ -6,11 +6,17 @@ import {
   parsePluginJsonSafe,
   readResponseBodySafe,
 } from "@/utils/data_parser";
+import { normalizeSellerPhone } from "@/utils/seller_auth_helpers";
 
 const FLOW_LOOKUP_TIMEOUT_MS = Math.max(PLUGIN_TIMEOUT_MS, 10000);
 const UPDATE_CODE_TIMEOUT_MS = Math.max(PLUGIN_TIMEOUT_MS, 12000);
 // Keep signup responsive: state insert must fail fast instead of blocking ~40s.
 const STATE_INSERT_TIMEOUT_MS = Math.max(PLUGIN_TIMEOUT_MS, 12000);
+
+export interface ExpiredSessionSeller extends Seller {
+  user_id?: number;
+  auth_portal_sent_at?: number | null;
+}
 
 function extractSellerFromPluginPayload(payload: Record<string, unknown> | undefined): Seller | undefined {
   if (!payload) return undefined;
@@ -287,5 +293,83 @@ export async function setResetToken(
     return extractSellerFromPluginPayload(data);
   } catch {
     return undefined;
+  }
+}
+
+function extractExpiredSellers(payload: Record<string, unknown> | undefined): ExpiredSessionSeller[] {
+  if (!payload || typeof payload !== "object") return [];
+  const data = payload.data;
+  if (!data || typeof data !== "object") return [];
+
+  const sellers = (data as { sellers?: unknown }).sellers;
+  if (!Array.isArray(sellers)) return [];
+
+  return sellers.filter((item): item is ExpiredSessionSeller => !!item && typeof item === "object");
+}
+
+// Lists sellers whose session will expire soon and needs pre-expiry auth keepalive.
+export async function findExpiredSessionsForAuthPortal(
+  page = 1,
+  limit = 100,
+  leadMinutes = 15,
+): Promise<ExpiredSessionSeller[]> {
+  try {
+    const res = await pluginPostWithRetry(
+      "/seller/session/pre-expiry-auth-pending",
+      {
+        page,
+        limit,
+        lead_minutes: leadMinutes,
+      },
+      { timeoutMs: FLOW_LOOKUP_TIMEOUT_MS, retries: 1, retryDelayMs: 250 },
+    );
+
+    if (!res.ok) {
+      const body = await readResponseBodySafe(res);
+      console.error("plugin pre-expiry-auth-pending failed", {
+        status: res.status,
+        statusText: res.statusText,
+        body,
+        page,
+        limit,
+      });
+      return [];
+    }
+
+    const data = await parsePluginJsonSafe(res, "plugin pre-expiry-auth-pending");
+    return extractExpiredSellers(data);
+  } catch (err) {
+    console.error("plugin pre-expiry-auth-pending exception", err);
+    return [];
+  }
+}
+
+// Marks auth portal as sent for the current pre-expiry keepalive window.
+export async function markAuthPortalSent(phone: string): Promise<boolean> {
+  const normalizedPhone = normalizeSellerPhone(String(phone || ""));
+  if (!normalizedPhone) return false;
+
+  try {
+    const res = await pluginPostWithRetry(
+      "/seller/session/mark-auth-portal-sent",
+      { phone: normalizedPhone },
+      { timeoutMs: UPDATE_CODE_TIMEOUT_MS, retries: 1, retryDelayMs: 250 },
+    );
+
+    if (!res.ok) {
+      const body = await readResponseBodySafe(res);
+      console.error("plugin mark-auth-portal-sent failed", {
+        status: res.status,
+        statusText: res.statusText,
+        body,
+        phone: normalizedPhone,
+      });
+      return false;
+    }
+
+    return true;
+  } catch (err) {
+    console.error("plugin mark-auth-portal-sent exception", err);
+    return false;
   }
 }

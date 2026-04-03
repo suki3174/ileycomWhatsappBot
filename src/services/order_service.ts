@@ -36,7 +36,7 @@ export async function getSellerOrderSummariesPage(
   token: string,
   statusFilter: string,
   page = 1,
-  limit = 10,
+  limit = 5,
 ): Promise<OrderSummariesPage> {
   const normalized = normToken(token);
   if (!normalized) {
@@ -146,7 +146,7 @@ export function primeOrdersAsync(token: string): void {
   const normalized = normToken(token);
   if (!normalized) return;
 
-  void getSellerOrderSummariesPage(normalized, "all", 1, 10);
+  void getSellerOrderSummariesPage(normalized, "all", 1, 5);
 }
 
 export function primeOrderCountersAsync(token: string): void {

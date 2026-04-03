@@ -3,6 +3,7 @@
   findAllSellers,
   findSellerByFlowToken,
   findSellerByPhone,
+  findSellerStateByPhone as findSellerStateByPhoneFromPlugin,
   upsertSellerState,
   updateSellerCode,
 } from "@/repositories/auth/seller_repo";
@@ -14,8 +15,11 @@ import {
   writeSellerSessionCache,
 } from "@/services/cache/auth_cache_service";
 import {
+  areEquivalentSellerPhones,
   generateFlowtoken,
+  getSellerPhoneCandidates,
   hasSellerCodeValue,
+  normalizeSellerPhone,
   sellerEmailMatches,
 } from "@/utils/seller_auth_helpers";
 import { hashPin, verifyStoredPin } from "@/utils/pin_hash";
@@ -23,6 +27,14 @@ import { extractPhoneFromFlowToken } from "@/utils/data_parser";
 import { normToken } from "@/utils/core_utils";
 
 const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
+
+export type SellerFlowAuthResult = {
+  ok: boolean;
+  reason: "ok" | "seller-not-found" | "session-expired";
+  seller?: Seller;
+  phone: string;
+  token: string;
+};
 
 // Returns seller resolved by phone from plugin-backed repository.
 export async function getSellerByPhone(phone: string ): Promise<Seller | undefined> {
@@ -73,6 +85,129 @@ export async function findSellerByTokenOrPhone(token: string): Promise<Seller | 
 
 export async function findSeller(token: string): Promise<Seller | undefined> {
   return await findSellerByTokenOrPhone(token);
+}
+
+async function clearExpiredSession(token: string, seller: Seller): Promise<void> {
+  const deactivated = await upsertSellerState(token, null, { session_active_until: null });
+  await invalidateSellerSessionCache({ token, seller: deactivated || seller });
+}
+
+export async function getSellerStateByPhoneStrict(phone: string): Promise<Seller | undefined> {
+  const normalizedPhone = normalizeSellerPhone(phone);
+  if (!normalizedPhone) return undefined;
+
+  const candidates = getSellerPhoneCandidates(normalizedPhone);
+  for (const candidate of candidates) {
+    const seller = await findSellerStateByPhoneFromPlugin(candidate);
+    if (!seller) continue;
+
+    await writeSellerSessionCache(seller);
+    return seller;
+  }
+
+  return undefined;
+}
+
+export async function validateSellerFlowAccess(token: string): Promise<SellerFlowAuthResult> {
+  const normalizedToken = normToken(token);
+  const extractedPhone = normalizeSellerPhone(extractPhoneFromFlowToken(normalizedToken) || "");
+  if (!normalizedToken) {
+    return { ok: false, reason: "seller-not-found", phone: extractedPhone, token: "" };
+  }
+
+  const cached = await getSellerSessionByToken(normalizedToken);
+  const cachedToken = normToken(String(cached?.flow_token || ""));
+  const seller = cached && cachedToken === normalizedToken
+    ? cached
+    : await findSellerByFlowToken(normalizedToken);
+
+  if (!seller) {
+    return { ok: false, reason: "seller-not-found", phone: extractedPhone, token: normalizedToken };
+  }
+
+  const sellerToken = normToken(String(seller.flow_token || ""));
+  if (sellerToken !== normalizedToken) {
+    await invalidateSellerSessionCache({ token: normalizedToken, seller });
+    return {
+      ok: false,
+      reason: "seller-not-found",
+      seller,
+      phone: normalizeSellerPhone(String(seller.phone || "")) || extractedPhone,
+      token: normalizedToken,
+    };
+  }
+
+  const sessionActiveUntil = Number(seller.session_active_until || 0);
+  const hasSession = Number.isFinite(sessionActiveUntil) && sessionActiveUntil > 0;
+  if (!hasSession || sessionActiveUntil <= Date.now()) {
+    if (hasSession && sessionActiveUntil <= Date.now()) {
+      await clearExpiredSession(normalizedToken, seller);
+    }
+    return {
+      ok: false,
+      reason: "session-expired",
+      seller,
+      phone: normalizeSellerPhone(String(seller.phone || "")) || extractedPhone,
+      token: normalizedToken,
+    };
+  }
+
+  await writeSellerSessionCache(seller);
+  return {
+    ok: true,
+    reason: "ok",
+    seller,
+    phone: normalizeSellerPhone(String(seller.phone || "")) || extractedPhone,
+    token: normalizedToken,
+  };
+}
+
+export async function validateSellerFlowDispatch(phone: string): Promise<SellerFlowAuthResult> {
+  const normalizedPhone = normalizeSellerPhone(phone);
+  if (!normalizedPhone) {
+    return { ok: false, reason: "seller-not-found", phone: "", token: "" };
+  }
+
+  const seller = await getSellerStateByPhoneStrict(normalizedPhone);
+  if (!seller) {
+    return { ok: false, reason: "seller-not-found", phone: normalizedPhone, token: "" };
+  }
+
+  const persistedToken = normToken(String(seller.flow_token || ""));
+  const persistedPhone = normalizeSellerPhone(extractPhoneFromFlowToken(persistedToken) || "");
+  if (!persistedToken || !areEquivalentSellerPhones(persistedPhone, normalizedPhone)) {
+    return {
+      ok: false,
+      reason: "seller-not-found",
+      seller,
+      phone: normalizedPhone,
+      token: persistedToken,
+    };
+  }
+
+  const sessionActiveUntil = Number(seller.session_active_until || 0);
+  const hasSession = Number.isFinite(sessionActiveUntil) && sessionActiveUntil > 0;
+  if (!hasSession || sessionActiveUntil <= Date.now()) {
+    if (hasSession && sessionActiveUntil <= Date.now()) {
+      await clearExpiredSession(persistedToken, seller);
+    }
+    return {
+      ok: false,
+      reason: "session-expired",
+      seller,
+      phone: normalizedPhone,
+      token: persistedToken,
+    };
+  }
+
+  await writeSellerSessionCache(seller);
+  return {
+    ok: true,
+    reason: "ok",
+    seller,
+    phone: normalizedPhone,
+    token: persistedToken,
+  };
 }
 
 // Indicates whether seller currently has a non-empty code set.

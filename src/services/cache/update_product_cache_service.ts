@@ -12,6 +12,7 @@ type UpdateProductsPageCache = {
 };
 
 type UpdateProductForEditCache = Record<string, unknown>;
+type UpdateProductScreenCache = Record<string, unknown>;
 
 function isRedisEnabled(): boolean {
   return String(process.env.REDIS_ENABLED || "false").toLowerCase() === "true";
@@ -42,6 +43,18 @@ function keyUpdateProductsPage(token: string, page: number, pageSize: number): s
 
 function keyUpdateProductForEdit(token: string, productId: string): string {
   return `${getRedisPrefix()}:update-product:edit:token:${token}:product:${productId}`;
+}
+
+function keyUpdateProductPhotos(token: string, productId: string): string {
+  return `${getRedisPrefix()}:update-product:photos:token:${token}:product:${productId}`;
+}
+
+function keyUpdateProductEditInfo(token: string, productId: string): string {
+  return `${getRedisPrefix()}:update-product:edit-info:token:${token}:product:${productId}`;
+}
+
+function keyUpdateProductCategoryInfo(token: string, productId: string): string {
+  return `${getRedisPrefix()}:update-product:category-info:token:${token}:product:${productId}`;
 }
 
 function normalizePositiveInt(value: number, fallback: number): number {
@@ -167,11 +180,82 @@ export async function setCachedUpdateProductForEdit(
   );
 }
 
+async function getCachedScreenData(
+  keyFactory: (token: string, productId: string) => string,
+  token: string,
+  productId: string,
+): Promise<UpdateProductScreenCache | undefined> {
+  const normalized = normToken(token);
+  const pid = String(productId || "").trim();
+  if (!normalized || !pid) return undefined;
+  return readJson<UpdateProductScreenCache>(keyFactory(normalized, pid));
+}
+
+async function setCachedScreenData(
+  keyFactory: (token: string, productId: string) => string,
+  token: string,
+  productId: string,
+  data: UpdateProductScreenCache,
+): Promise<void> {
+  const normalized = normToken(token);
+  const pid = String(productId || "").trim();
+  if (!normalized || !pid) return;
+  await writeJson(keyFactory(normalized, pid), data, UPDATE_PRODUCT_DETAIL_TTL_SEC);
+}
+
+export async function getCachedUpdateProductPhotos(
+  token: string,
+  productId: string,
+): Promise<UpdateProductScreenCache | undefined> {
+  return getCachedScreenData(keyUpdateProductPhotos, token, productId);
+}
+
+export async function setCachedUpdateProductPhotos(
+  token: string,
+  productId: string,
+  data: UpdateProductScreenCache,
+): Promise<void> {
+  await setCachedScreenData(keyUpdateProductPhotos, token, productId, data);
+}
+
+export async function getCachedUpdateProductEditInfo(
+  token: string,
+  productId: string,
+): Promise<UpdateProductScreenCache | undefined> {
+  return getCachedScreenData(keyUpdateProductEditInfo, token, productId);
+}
+
+export async function setCachedUpdateProductEditInfo(
+  token: string,
+  productId: string,
+  data: UpdateProductScreenCache,
+): Promise<void> {
+  await setCachedScreenData(keyUpdateProductEditInfo, token, productId, data);
+}
+
+export async function getCachedUpdateProductCategoryInfo(
+  token: string,
+  productId: string,
+): Promise<UpdateProductScreenCache | undefined> {
+  return getCachedScreenData(keyUpdateProductCategoryInfo, token, productId);
+}
+
+export async function setCachedUpdateProductCategoryInfo(
+  token: string,
+  productId: string,
+  data: UpdateProductScreenCache,
+): Promise<void> {
+  await setCachedScreenData(keyUpdateProductCategoryInfo, token, productId, data);
+}
+
 export async function invalidateUpdateProductsByToken(token: string): Promise<void> {
   const normalized = normToken(token);
   if (!normalized) return;
   await deleteByPrefix(`${getRedisPrefix()}:update-product:list:token:${normalized}`);
   await deleteByPrefix(`${getRedisPrefix()}:update-product:edit:token:${normalized}`);
+  await deleteByPrefix(`${getRedisPrefix()}:update-product:photos:token:${normalized}`);
+  await deleteByPrefix(`${getRedisPrefix()}:update-product:edit-info:token:${normalized}`);
+  await deleteByPrefix(`${getRedisPrefix()}:update-product:category-info:token:${normalized}`);
 }
 
 export async function invalidateUpdateProductForEdit(
@@ -188,6 +272,11 @@ export async function invalidateUpdateProductForEdit(
     return;
   }
 
-  await redis.del(keyUpdateProductForEdit(normalized, pid));
+  await redis.del(
+    keyUpdateProductForEdit(normalized, pid),
+    keyUpdateProductPhotos(normalized, pid),
+    keyUpdateProductEditInfo(normalized, pid),
+    keyUpdateProductCategoryInfo(normalized, pid),
+  );
   cacheLog("invalidate-product", { token: normalized, productId: pid });
 }

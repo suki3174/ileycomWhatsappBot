@@ -1,4 +1,5 @@
 ﻿import { extractPhoneFromFlowToken } from "@/utils/data_parser";
+import { normalizeSellerPhone } from "@/utils/seller_auth_helpers";
 
 const MENU_SENDER_ENDPOINT = "/api/seller/menu_template/send";
 const MAX_RETRIES = 5;
@@ -25,7 +26,7 @@ export async function sendMenu(phoneOrToken: string | null): Promise<void> {
   // If it looks like a flow token, extract the phone; otherwise use as-is.
   const phone = raw.match(/^flowtoken-/i)
     ? (extractPhoneFromFlowToken(raw) ?? "")
-    : raw.replace(/\D+/g, "");
+    : normalizeSellerPhone(raw);
   if (!phone) {
     console.warn(`[sendMenu] No phone resolved from input: ${phoneOrToken}`);
     return;

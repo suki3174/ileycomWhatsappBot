@@ -2,6 +2,7 @@ import type { Seller } from "@/models/seller_model";
 import { getSellerByPhone } from "@/services/auth_service";
 import { markAuthPromptSeen } from "@/services/cache/auth_cache_service";
 import { normalizeSellerPhone } from "@/utils/seller_auth_helpers";
+import { extractPhoneFromFlowToken } from "@/utils/data_parser";
 
 type AuthFlowOnceParams = {
   phone?: string;
@@ -18,8 +19,19 @@ function toSellerPayload(phone: string, seller?: Partial<Seller>): Partial<Selle
   };
 }
 
+function resolvePhoneInput(rawPhone?: string, seller?: Partial<Seller>): string {
+  const directPhone = String(rawPhone || seller?.phone || "").trim();
+  if (!directPhone) return "";
+
+  if (/^flowtoken-/i.test(directPhone)) {
+    return normalizeSellerPhone(extractPhoneFromFlowToken(directPhone) || "");
+  }
+
+  return normalizeSellerPhone(directPhone);
+}
+
 export async function sendAuthFlowOnce(params: AuthFlowOnceParams): Promise<{ sent: boolean; reason: string }> {
-  const normalizedPhone = normalizeSellerPhone(String(params.phone || params.seller?.phone || ""));
+  const normalizedPhone = resolvePhoneInput(params.phone, params.seller);
   if (!normalizedPhone) {
     return { sent: false, reason: "missing-phone" };
   }

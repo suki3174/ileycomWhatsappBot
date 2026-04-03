@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "cron:auth-resend:run": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/invoke-auth-resend-cron.ps1",
+    "cron:auth-resend:register": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/register-auth-resend-task.ps1"
   },
   "dependencies": {
     "@getbrevo/brevo": "^5.0.3",

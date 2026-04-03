@@ -2,7 +2,7 @@
 import { FlowRequest } from "@/models/flowRequest";
 import { FlowResponse } from "@/models/flowResponse";
 import { ProductType } from "@/models/product_model";
-import { findSeller } from "@/services/auth_service";
+import { validateSellerFlowAccess } from "@/services/auth_service";
 import {
   getProductById,
   getSellerProductsPageByFlowToken,
@@ -35,7 +35,6 @@ import {
   toPositivePage,
 } from "@/utils/product_flow_renderer";
 import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
-import { isSessionActive } from "@/services/auth_service";
 import { getFlowToken } from "@/utils/core_utils";
 
 
@@ -282,27 +281,25 @@ export async function handleProductsFlow(
   const action = (parsed.action || "").toUpperCase();
   const screen = parsed.screen || "";
   const token = getFlowToken(parsed);
-  const seller = await findSeller(token)
-  if (!seller) {
-    void sendAuthFlowOnce({ phone: token, source: "meta-flow:products:seller-not-found" });
-    return {
-      screen: "WELCOME",
-      data: { error_msg: "Seller not found" },
-    };
-  }
-
-  const active = await isSessionActive(token);
-  if (!active) {
+  const auth = await validateSellerFlowAccess(token);
+  if (!auth.ok || !auth.seller) {
     void sendAuthFlowOnce({
-      phone: seller.phone || token,
-      seller,
-      source: "meta-flow:products:session-expired",
+      phone: auth.phone || token,
+      seller: auth.seller,
+      source: auth.reason === "session-expired"
+        ? "meta-flow:products:session-expired"
+        : "meta-flow:products:seller-not-found",
     });
     return {
       screen: "WELCOME_SCREEN",
-      data: { error_msg: "Session expiree. Reconnectez-vous." },
+      data: {
+        error_msg: auth.reason === "session-expired"
+          ? "Session expiree. Reconnectez-vous."
+          : "Authentification requise. Reconnectez-vous.",
+      },
     };
   }
+  const seller = auth.seller;
 
   const sellerToken = String(seller.flow_token || "").trim();
   const effectiveToken = sellerToken || token;

@@ -1,9 +1,8 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
-import { generateFlowtoken } from "@/utils/seller_auth_helpers";
+import { normalizeSellerPhone } from "@/utils/seller_auth_helpers";
 import { Seller } from "@/models/seller_model";
-import { getSellerByPhone, isSessionActive, prepareSellerState } from "@/services/auth_service";
+import { validateSellerFlowDispatch } from "@/services/auth_service";
 import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
-import { extractPhoneFromFlowToken } from "@/utils/data_parser";
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
@@ -15,30 +14,27 @@ export async function POST(req: NextRequest) {
 
 
   try {
-    const sellerFromState = await getSellerByPhone(seller.phone);
-    const persistedToken = String(sellerFromState?.flow_token || "").trim();
-    const persistedPhone = extractPhoneFromFlowToken(persistedToken || "") || "";
-    const tokenMatchesPhone = !!persistedToken && persistedPhone === seller.phone;
-    const token = tokenMatchesPhone ? persistedToken : generateFlowtoken(seller.phone);
-    if (!tokenMatchesPhone) {
-      await sendAuthFlowOnce({ phone: seller.phone, seller, source: "send-route:add-product:token-mismatch" });
+    const sellerPhone = normalizeSellerPhone(String(seller?.phone || ""));
+    if (!sellerPhone) {
+      return NextResponse.json({ error: "seller.phone is required in request body" }, { status: 400 });
+    }
+
+    const auth = await validateSellerFlowDispatch(sellerPhone);
+    if (!auth.ok || !auth.seller) {
+      await sendAuthFlowOnce({
+        phone: sellerPhone,
+        seller: auth.seller || seller,
+        source: auth.reason === "session-expired"
+          ? "send-route:add-product:session-expired"
+          : "send-route:add-product:seller-not-found",
+      });
       return NextResponse.json(
-        { error: "Session inactive. Please sign in first." },
+        { error: auth.reason === "session-expired" ? "Session expired. Please sign in again." : "Authentication required. Please sign in first." },
         { status: 401 },
       );
     }
-
-    if (!persistedToken) await prepareSellerState(token);
-
-    const active = await isSessionActive(token);
-    if (!active) {
-      await sendAuthFlowOnce({ phone: seller.phone, seller, source: "send-route:add-product:session-expired" });
-      return NextResponse.json(
-        { error: "Session expired. Please sign in again." },
-        { status: 401 },
-      );
-    }
-    const recipient = seller.phone
+    const token = auth.token;
+    const recipient = sellerPhone;
     const response = await fetch(
       `https://graph.facebook.com/v19.0/${process.env.PHONE_NUMBER_ID}/messages`,
       {
@@ -76,7 +72,7 @@ export async function POST(req: NextRequest) {
     );
 
     const data = await response.json();
-    return NextResponse.json({ seller: seller.name, recipient: seller.phone, status: response.status, data });
+    return NextResponse.json({ seller: seller.name, recipient, status: response.status, data });
 
   } catch (error) {
     console.error(`Error sending to ${seller.name}:`, error);
