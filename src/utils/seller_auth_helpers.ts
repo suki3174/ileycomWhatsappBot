@@ -1,17 +1,64 @@
 import type { Seller } from "@/models/seller_model";
+import { parsePhoneNumberFromString } from "libphonenumber-js";
+
+const SUPPORTED_SELLER_COUNTRIES = new Set(["TN", "FR"]);
 
 export function normalizeSellerPhone(phone: string): string {
-  const digits = String(phone || "").replace(/\D+/g, "");
-  if (!digits) return "";
+  const raw = String(phone || "").trim();
+  if (!raw) return "";
 
-  // Canonical format in this project: Tunisian country code prefix without +
-  // e.g. 21650354773. Supported inputs include 8-digit local, 216-prefixed,
-  // and 00216-prefixed variants.
-  if (digits.startsWith("00216") && digits.length === 13) return digits.slice(2);
-  if (digits.length === 8) return `216${digits}`;
-  if (digits.startsWith("216") && digits.length === 11) return digits;
+  const digits = raw.replace(/\D+/g, "");
+  const normalizedCandidates = new Set<string>();
 
-  // Tunisia-only app: reject any other format instead of guessing.
+  normalizedCandidates.add(raw);
+  if (digits) normalizedCandidates.add(digits);
+
+  // Normalize common international prefix format: 00XXXXXXXX -> +XXXXXXXX
+  if (digits.startsWith("00") && digits.length > 4) {
+    normalizedCandidates.add(`+${digits.slice(2)}`);
+  }
+
+  if (digits.startsWith("00216") && digits.length === 13) {
+    normalizedCandidates.add(digits.slice(2));
+    normalizedCandidates.add(`+${digits.slice(2)}`);
+  }
+  if (digits.startsWith("216") && digits.length === 11) {
+    normalizedCandidates.add(digits);
+    normalizedCandidates.add(`+${digits}`);
+  }
+  if (digits.length === 8) {
+    normalizedCandidates.add(`216${digits}`);
+    normalizedCandidates.add(`+216${digits}`);
+  }
+
+  const defaultCountries: Array<"TN" | "FR"> = ["TN", "FR"];
+  for (const candidate of normalizedCandidates) {
+    for (const defaultCountry of defaultCountries) {
+      try {
+        const parsed = parsePhoneNumberFromString(candidate, defaultCountry);
+        if (!parsed || !parsed.isValid()) continue;
+        if (!parsed.country || !SUPPORTED_SELLER_COUNTRIES.has(parsed.country)) continue;
+
+        return `${parsed.countryCallingCode}${String(parsed.nationalNumber || "").replace(/\D+/g, "")}`;
+      } catch {
+        // Ignore parse errors and continue trying normalized candidates.
+      }
+    }
+  }
+
+  // Legacy Tunisia fallback: keep accepting canonical TN shape even when the
+  // number is a test/placeholder that strict validation marks as invalid.
+  if (/^216\d{8}$/.test(digits)) {
+    return digits;
+  }
+  if (/^00216\d{8}$/.test(digits)) {
+    return digits.slice(2);
+  }
+  if (/^\d{8}$/.test(digits)) {
+    return `216${digits}`;
+  }
+
+  // Reject unsupported countries (for example SN) and malformed numbers.
   return "";
 }
 
@@ -20,6 +67,14 @@ export function getSellerPhoneCandidates(phone: string): string[] {
   if (!normalized) return [];
 
   const candidates = new Set<string>([normalized]);
+  candidates.add(`+${normalized}`);
+  candidates.add(`00${normalized}`);
+
+  if (normalized.startsWith("33") && normalized.length === 11) {
+    // French local format fallback (0 + 9 digits), useful if legacy rows store local format.
+    candidates.add(`0${normalized.slice(2)}`);
+  }
+
   if (normalized.startsWith("216") && normalized.length === 11) {
     candidates.add(normalized.slice(-8));
   }
@@ -78,4 +133,8 @@ export function isTunisianPhone(phone: string): boolean {
   const normalized = normalizeSellerPhone(phone);
   // Tunisian canonical format: country code 216 + 8 local digits = 11 digits total.
   return normalized.startsWith("216") && normalized.length === 11;
+}
+
+export function isSupportedSellerPhone(phone: string): boolean {
+  return normalizeSellerPhone(phone) !== "";
 }
