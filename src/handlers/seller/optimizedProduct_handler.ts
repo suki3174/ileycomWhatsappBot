@@ -99,27 +99,16 @@ async function handleShowOptimizedProduct(token: string): Promise<FlowResponse> 
 
   // Build carousel images
 
-    let rawImages: string[] = optimizationResult?.images ?? [];
+  let rawImages: string[] = optimizationResult?.images ?? [];
 
-    if (Array.isArray(optimizationResult?.images) && optimizationResult?.images.length > 0) {
-      rawImages = optimizationResult.images;
-rawImages = await Promise.all(
-          rawImages.slice(0, 10).map((url: unknown) => toCarouselBase64(String(url || ""))),
-        );
-    } else {
-      const product = await loadProductForEdit(productId, token);
-      if (Array.isArray(product?.image_gallery) && product.image_gallery.length > 0) {
-        rawImages = await Promise.all(
-          product.image_gallery.slice(0, 10).map((url: unknown) => toCarouselBase64(String(url || ""))),
-        );
-      } else {
-        const fallbackUrl = resolveFlowImageUrl(String(product?.image_src || ""), {});
-        const mapped = await fallbackUrl;
-        rawImages = mapped ? [mapped] : [];
-      }
-    }
-  
-  const carousel1   = buildCarousel(rawImages, 0);
+  if (Array.isArray(optimizationResult?.images) && optimizationResult?.images.length > 0) {
+    rawImages = optimizationResult.images;
+    rawImages = await Promise.all(
+      rawImages.slice(0, 10).map((url: unknown) => toCarouselBase64(String(url || ""))),
+    );
+  }
+
+  const carousel1 = buildCarousel(rawImages, 0);
   const CAROUSEL_SIZE = 3;
   const showCarousel2 = rawImages.length > CAROUSEL_SIZE;
   const carousel2 = showCarousel2 ? buildCarousel(rawImages, CAROUSEL_SIZE) : [];
