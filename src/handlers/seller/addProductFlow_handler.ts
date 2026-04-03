@@ -27,6 +27,8 @@ import { sendMenu } from "@/services/menu_service";
 import { invalidateProductsListByTokenCache } from "@/services/cache/products_cache_service";
 import { validateSellerFlowAccess } from "@/services/auth_service";
 import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
+import { triggerProductOptimization } from "@/services/ai_optimization_service";
+import { findSellerByTokenOrPhone } from "@/services/auth_service";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -537,6 +539,23 @@ async function handleSubmitSummary(parsed: FlowRequest): Promise<FlowResponse> {
     return { screen: "SUCCESS", data: {} };
   }
 
+  // Guard: prevent concurrent submissions
+  if (current.submit_status === "submitting") {
+    console.info("Product submission already in progress, skipping duplicate request");
+    return {
+      screen: "SCREEN_SUMMARY",
+      data: {
+        error_message: "Création du produit en cours. Veuillez patienter...",
+      },
+    };
+  }
+
+  // Mark as submitting to prevent concurrent requests
+  await updateAddProductState(token, {
+    submit_status: "submitting",
+    submit_message: "Création du produit en cours...",
+  });
+
   const createResult = await persistDraftProduct(token, current, quantity);
 
   if (!createResult.ok) {
@@ -572,6 +591,24 @@ async function handleSubmitSummary(parsed: FlowRequest): Promise<FlowResponse> {
 
   await invalidateProductsListByTokenCache(token);
   await sendMenu(token);
+
+  // Trigger AI optimization for the newly created product (DoD requirement)
+  // This is fire-and-forget - non-blocking to ensure immediate SUCCESS response
+  void (async () => {
+    try {
+      const seller = await findSellerByTokenOrPhone(token);
+      if (seller?.phone && createResult.productId) {
+        await triggerProductOptimization(createResult.productId, seller.phone);
+        console.info(`[AddProduct] AI optimization triggered for product ${createResult.productId} (seller: ${seller.phone})`);
+      } else {
+        console.warn(`[AddProduct] Could not trigger AI optimization for product ${createResult.productId || 'unknown'}: seller phone or productId not found`);
+      }
+    } catch (err) {
+      console.error(`[AddProduct] Failed to trigger AI optimization for product ${createResult.productId}:`, err);
+      // Don't fail product creation if AI trigger fails
+    }
+  })();
+
   return { screen: "SUCCESS", data: {} };
 }
 
@@ -617,9 +654,15 @@ export async function handleAddProductFlow(
     if (token) {
 
       // Keep INIT fast and deterministic; categories/subcategories are loaded on-demand.
+      // Reset submission state for new product flow
       await updateAddProductState(token, {
         categories: DEFAULT_CATEGORIES,
         subcategories: {},
+        submitted_at: undefined,
+        submit_status: undefined,
+        submit_message: undefined,
+        submit_error_code: undefined,
+        product_id: undefined,
       });
     }
     

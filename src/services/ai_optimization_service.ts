@@ -167,12 +167,16 @@ async function submitToAIService(productId: string, sellerPhone?: string): Promi
     if (sellerPhone) {
       try {
         await triggerOptimizedProductFlowSend(sellerPhone);
+        console.info(`[AI Service] Optimized product flow sent to seller ${sellerPhone} for product ${productId}`);
       } catch (err) {
-        console.warn(
-          `[AI Service] Failed to trigger optimized product flow for ${sellerPhone}:`,
+        console.error(
+          `[AI Service] Failed to send optimized product flow to ${sellerPhone} for product ${productId}:`,
           err
         );
-        // Don't fail the optimization if the send fails
+        // Update state to track flow send failure (but keep optimization as completed)
+        await updateOptimizationState(productId, {
+          errorMessage: `Optimization completed but flow send failed: ${String(err)}`,
+        });
       }
     }
     // ────────────────────────────────────────────────────────────────────
