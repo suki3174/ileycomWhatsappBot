@@ -1,8 +1,7 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
-import { areEquivalentSellerPhones, generateFlowtoken, normalizeSellerPhone } from "@/utils/seller_auth_helpers";
+import { normalizeSellerPhone } from "@/utils/seller_auth_helpers";
 import { Seller } from "@/models/seller_model";
-import { getSellerByPhone, isSessionActive } from "@/services/auth_service";
-import { extractPhoneFromFlowToken } from "@/utils/data_parser";
+import { validateSellerFlowDispatch } from "@/services/auth_service";
 import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
 
 export async function POST(req: NextRequest) {
@@ -22,35 +21,21 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "seller.phone is required in request body" }, { status: 400 });
       }
 
-      const sellerFromState = await getSellerByPhone(recipient);
-      const persistedToken = String(sellerFromState?.flow_token || "").trim();
-      const persistedPhone = extractPhoneFromFlowToken(persistedToken || "") || "";
-      const tokenMatchesPhone = !!persistedToken && areEquivalentSellerPhones(persistedPhone, recipient);
-      const token = tokenMatchesPhone ? persistedToken : generateFlowtoken(recipient);
-      if (!tokenMatchesPhone) {
+      const auth = await validateSellerFlowDispatch(recipient);
+      if (!auth.ok || !auth.seller) {
         await sendAuthFlowOnce({
           phone: recipient,
-          seller,
-          source: "send-route:orders:token-mismatch",
+          seller: auth.seller || seller,
+          source: auth.reason === "session-expired"
+            ? "send-route:orders:session-expired"
+            : "send-route:orders:seller-not-found",
         });
         return NextResponse.json(
-          { error: "Session inactive. Please sign in first." },
+          { error: auth.reason === "session-expired" ? "Session expired. Please sign in again." : "Authentication required. Please sign in first." },
           { status: 401 },
         );
       }
-
-      const active = await isSessionActive(token);
-      if (!active) {
-        await sendAuthFlowOnce({
-          phone: recipient,
-          seller,
-          source: "send-route:orders:session-expired",
-        });
-        return NextResponse.json(
-          { error: "Session expired. Please sign in again." },
-          { status: 401 },
-        );
-      }
+      const token = auth.token;
       
 
       const response = await fetch(

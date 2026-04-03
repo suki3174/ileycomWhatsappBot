@@ -3,7 +3,7 @@ import {
   markInboundMessageSeen,
   markInboundTriggerSeen,
 } from "@/services/cache/auth_cache_service";
-import { getSellerByPhone, isSessionActive } from "@/services/auth_service";
+import { validateSellerFlowDispatch } from "@/services/auth_service";
 import { getSellerPhoneCandidates, isTunisianPhone, normalizeSellerPhone } from "@/utils/seller_auth_helpers";
 import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
 
@@ -62,30 +62,29 @@ export async function handleIncomingMessage(
   }
 
   const phoneCandidates = getSellerPhoneCandidates(senderPhone);
-  let seller: Seller | undefined;
+  let authResult:
+    | Awaited<ReturnType<typeof validateSellerFlowDispatch>>
+    | undefined;
   for (const candidate of phoneCandidates) {
-    seller = await getSellerByPhone(candidate);
-    if (seller) break;
+    authResult = await validateSellerFlowDispatch(candidate);
+    if (authResult.ok || authResult.reason === "session-expired") break;
   }
 
-  if (!seller) {
-    console.log(`[handleIncomingMessage] Seller not found for phone ${senderPhone} (candidates=${phoneCandidates.join(",")})`);
-    return;
-  }
-
-  const active = await isSessionActive(seller.flow_token ?? "");
-
-  if (!active) {
-    console.log(`[handleIncomingMessage] Session expired for ${senderPhone}, sending auth flow.`);
-    const authResult = await sendAuthFlowOnce({
+  if (!authResult?.ok || !authResult.seller) {
+    console.log(
+      `[handleIncomingMessage] Authentication required for ${senderPhone} (reason=${authResult?.reason || "seller-not-found"})`,
+    );
+    const authDispatchResult = await sendAuthFlowOnce({
       phone: senderPhone,
-      seller,
+      seller: authResult?.seller,
       source: `menu-trigger:${trigger}`,
     });
-    console.log(`[handleIncomingMessage] Session inactive auth dispatch result`, authResult);
+    console.log(`[handleIncomingMessage] Session inactive auth dispatch result`, authDispatchResult);
 
     return;
   }
+
+  const seller: Seller = authResult.seller;
 
   const endpoint = TRIGGER_TO_ENDPOINT[trigger];
 

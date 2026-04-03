@@ -22,11 +22,11 @@ import {
   writeOrderStatusScreenCache,
 } from "@/services/cache/orders_cache_service";
 import { buildOrderListResponse, formatOrderDetail, formatOrderArticlesServerPage } from "@/utils/order_flow_renderer";
-import { findSeller, isSessionActive } from "@/services/auth_service";
+import { validateSellerFlowAccess } from "@/services/auth_service";
 import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
 
 const ORDER_LIST_PAGE_SIZE = 5;
-const ORDER_ARTICLES_PAGE_SIZE = 5;
+const ORDER_ARTICLES_PAGE_SIZE = 3;
 
 
 
@@ -402,25 +402,22 @@ export async function handleOrdersFlow(
   const action = (parsed.action || "").toUpperCase();
   const screen = parsed.screen || "";
   const token = getFlowToken(parsed);
-  const seller = await findSeller(token)
-  if (!seller) {
-    void sendAuthFlowOnce({ phone: token, source: "meta-flow:orders:seller-not-found" });
-    return {
-      screen: "WELCOME",
-      data: { error_msg: "Seller not found" },
-    };
-  }
-
-  const active = await isSessionActive(token);
-  if (!active) {
+  const auth = await validateSellerFlowAccess(token);
+  if (!auth.ok || !auth.seller) {
     void sendAuthFlowOnce({
-      phone: seller.phone || token,
-      seller,
-      source: "meta-flow:orders:session-expired",
+      phone: auth.phone || token,
+      seller: auth.seller,
+      source: auth.reason === "session-expired"
+        ? "meta-flow:orders:session-expired"
+        : "meta-flow:orders:seller-not-found",
     });
     return {
       screen: "WELCOME_SCREEN",
-      data: { error_msg: "Session expiree. Reconnectez-vous." },
+      data: {
+        error_msg: auth.reason === "session-expired"
+          ? "Session expiree. Reconnectez-vous."
+          : "Authentification requise. Reconnectez-vous.",
+      },
     };
   }
 

@@ -27,7 +27,7 @@ import {
 } from "@/services/update_product_service";
 import { decryptWhatsAppMedia } from "@/utils/flow_crypto";
 import { sendMenu } from "@/services/menu_service";
-import { findSeller, isSessionActive } from "@/services/auth_service";
+import { validateSellerFlowAccess } from "@/services/auth_service";
 import { invalidateProductsListByTokenCache } from "@/services/cache/products_cache_service";
 import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
 
@@ -667,30 +667,24 @@ export async function handleUpdateProductFlow(parsed: FlowRequest): Promise<Flow
   const data = parsed.data || {};
   const token = getFlowToken(parsed);
 
-  const seller = await findSeller(token);
-  if (!seller) {
+  const auth = await validateSellerFlowAccess(token);
+  if (!auth.ok || !auth.seller) {
     void sendAuthFlowOnce({
-      phone: token,
-      source: "meta-flow:update-product:seller-not-found",
-    });
-    return {
-      screen: "WELCOME",
-      data: { error_message: "Seller not found", error_msg: "Seller not found" },
-    };
-  }
-
-  const active = await isSessionActive(token);
-  if (!active) {
-    void sendAuthFlowOnce({
-      phone: seller.phone || token,
-      seller,
-      source: "meta-flow:update-product:session-expired",
+      phone: auth.phone || token,
+      seller: auth.seller,
+      source: auth.reason === "session-expired"
+        ? "meta-flow:update-product:session-expired"
+        : "meta-flow:update-product:seller-not-found",
     });
     return {
       screen: "WELCOME",
       data: {
-        error_message: "Session expiree. Reconnectez-vous.",
-        error_msg: "Session expiree. Reconnectez-vous.",
+        error_message: auth.reason === "session-expired"
+          ? "Session expiree. Reconnectez-vous."
+          : "Authentification requise. Reconnectez-vous.",
+        error_msg: auth.reason === "session-expired"
+          ? "Session expiree. Reconnectez-vous."
+          : "Authentification requise. Reconnectez-vous.",
       },
     };
   }

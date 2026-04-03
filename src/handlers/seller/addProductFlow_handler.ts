@@ -25,7 +25,7 @@ import { SubCategory } from "@/models/category_model";
 import { decryptWhatsAppMedia } from "@/utils/flow_crypto";
 import { sendMenu } from "@/services/menu_service";
 import { invalidateProductsListByTokenCache } from "@/services/cache/products_cache_service";
-import { findSeller, isSessionActive } from "@/services/auth_service";
+import { validateSellerFlowAccess } from "@/services/auth_service";
 import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -592,25 +592,22 @@ export async function handleAddProductFlow(
     };
   }
 
-    const seller = await findSeller(token);
-    if (!seller) {
-      void sendAuthFlowOnce({ phone: token, source: "meta-flow:add-product:seller-not-found" });
-      return {
-        screen: "WELCOME",
-        data: { error_msg: "Seller not found" },
-      };
-    }
-
-    const active = await isSessionActive(token);
-    if (!active) {
+    const auth = await validateSellerFlowAccess(token);
+    if (!auth.ok || !auth.seller) {
       void sendAuthFlowOnce({
-        phone: seller.phone || token,
-        seller,
-        source: "meta-flow:add-product:session-expired",
+        phone: auth.phone || token,
+        seller: auth.seller,
+        source: auth.reason === "session-expired"
+          ? "meta-flow:add-product:session-expired"
+          : "meta-flow:add-product:seller-not-found",
       });
       return {
         screen: "WELCOME",
-        data: { error_msg: "Session expiree. Reconnectez-vous." },
+        data: {
+          error_msg: auth.reason === "session-expired"
+            ? "Session expiree. Reconnectez-vous."
+            : "Authentification requise. Reconnectez-vous.",
+        },
       };
     }
 
