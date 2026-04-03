@@ -165,38 +165,7 @@ export function toPositivePage(value: unknown): number | undefined {
   return Math.floor(n);
 }
 
-export function resolvePageValue(
-  value: unknown,
-  currentPage: number,
-  nextPage?: number,
-  prevPage?: number,
-): number | undefined {
-  const direct = toPositivePage(value);
-  if (direct) return direct;
 
-  const raw = String(value ?? "").trim();
-  if (!raw) return undefined;
-
-  // Handle literal flow-template style payloads such as:
-  // "${data.current_page} + 1", "${data.current_page}-1", "${data.next_page}"
-  if (raw.includes("next_page")) {
-    return nextPage ?? currentPage + 1;
-  }
-  if (raw.includes("prev_page")) {
-    return prevPage ?? Math.max(1, currentPage - 1);
-  }
-
-  const expr = raw.match(/current_page\}\s*([+-])\s*(\d+)/i);
-  if (expr) {
-    const op = expr[1];
-    const delta = Number(expr[2]);
-    if (Number.isFinite(delta) && delta > 0) {
-      return op === "+" ? currentPage + delta : Math.max(1, currentPage - delta);
-    }
-  }
-
-  return undefined;
-}
 
 export async function resolveFlowImageUrl(
   rawUrl: string,
@@ -310,83 +279,11 @@ export function formatEmptyProductNavItem() {
   };
 }
 
-export function buildNavItems(
-  hasPrev: boolean,
-  hasNext: boolean,
-  currentPage: number,
-  totalPages: number,
-): any[] {
-  const items: any[] = [];
 
-  if (hasPrev) {
-    items.push({
-      id: "nav_prev",
-      "main-content": {
-        title: "⬅️ Page Précédente",
-        metadata: `Page ${currentPage - 1} / ${totalPages}`,
-      },
-      end: { title: "", metadata: "" },
-      tags: [],
-      "on-click-action": {
-        name: "data_exchange",
-        payload: { page: currentPage - 1, cmd: "paginate" },
-      },
-    });
-  }
-
-  if (hasNext) {
-    items.push({
-      id: "nav_next",
-      "main-content": {
-        title: "Page Suivante ➡️",
-        metadata: `Page ${currentPage + 1} / ${totalPages}`,
-      },
-      end: { title: "", metadata: "" },
-      tags: [],
-      "on-click-action": {
-        name: "data_exchange",
-        payload: { page: currentPage + 1, cmd: "paginate" },
-      },
-    });
-  }
-
-  return items;
-}
 
 // ─── Screen Response Builders ────────────────────────────────────────────────
 
-export async function buildProductListResponse(products: any[], page: number): Promise<FlowResponse> {
-  if (products.length === 0) {
-    return {
-      screen: "PRODUCT_LIST",
-      data: {
-        current_page: 1,
-        products: [formatEmptyProductNavItem()],
-      },
-    };
-  }
 
-  // Paginate raw products first so we only fetch images for current page
-  const { pageItems: rawPage, totalPages, hasNext, hasPrev, currentPage } =
-    paginateArray(products, page, PAGE_SIZE);
-
-  // Fetch and process images for this page in parallel
-  const imageMap = await prefetchNavListImages(rawPage, 200);
-
-  const navItems = rawPage.map((p: any) =>
-    formatProductNavItem(p, imageMap.get(String(p.id)) || ""),
-  );
-
-  const paginationItems = buildNavItems(hasPrev, hasNext, currentPage, totalPages);
-
-  return {
-    screen: "PRODUCT_LIST",
-    data: {
-      current_page: currentPage,
-      products: [...navItems, ...paginationItems],
-    },
-  };
-}
 
 export async function buildProductListPagedResponse(
   pageItems: any[],
@@ -447,6 +344,11 @@ export async function buildProductListPagedResponse(
         payload: { page: targetNext, cmd: "paginate" },
       },
     });
+  }
+
+  // Ensure no start/image properties on pagination items
+  for (const item of paginationItems) {
+    delete (item as any)["start"];
   }
 
   return {

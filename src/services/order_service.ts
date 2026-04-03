@@ -129,30 +129,11 @@ export async function getOrderStatusCounters(
   }
 }
 
-export function getOrderStatusCountersCached(
-  _token: string,
-): OrderStatusCounters {
-  return { total: 0, completed: 0, in_delivery: 0, to_deliver: 0 };
-}
 
-export function filterOrdersForStatus(
-  orders: Order[],
-  statusFilter: string,
-): Order[] {
-  return filterOrdersByStatus(orders, statusFilter);
-}
 
-export function primeOrdersAsync(token: string): void {
-  const normalized = normToken(token);
-  if (!normalized) return;
 
-  void getSellerOrderSummariesPage(normalized, "all", 1, 5);
-}
 
-export function primeOrderCountersAsync(token: string): void {
-  const normalized = normToken(token);
-  if (!normalized) return;
 
-  void getOrderStatusCounters(normalized);
-}
+
+
 
