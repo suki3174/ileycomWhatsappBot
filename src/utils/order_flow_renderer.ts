@@ -1,6 +1,5 @@
 ﻿/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Order, OrderArticle } from "@/models/oder_model";
-import { paginateArray } from "./core_utils";
 import { toSizedBase64 } from "./image_processor";
 import { FlowResponse } from "@/models/flowResponse";
 
@@ -9,34 +8,7 @@ import { FlowResponse } from "@/models/flowResponse";
 
 // ─── Status Counters ────────────────────────────────────────────────────────
 
-export function formatOrderStatusCounters(orders: Order[]): {
-  id: string;
-  title: string;
-}[] {
-  const total = orders.length;
-  const completed = orders.filter((o) => o.status === "completed").length;
-  const inDelivery = orders.filter((o) => o.status === "in_delivery").length;
-  const toDeliver = orders.filter((o) => o.status === "to_deliver").length;
 
-  return [
-    {
-      id: "all",
-      title: `🗂️ Total  —  ${total}`,
-    },
-    {
-      id: "completed",
-      title: `✅ Terminées  —  ${completed}`,
-    },
-    {
-      id: "in_delivery",
-      title: `🚚 En livraison  —  ${inDelivery}`,
-    },
-    {
-      id: "to_deliver",
-      title: `📦 À Livrer  —  ${toDeliver}`,
-    },
-  ];
-}
 
 // ─── Order List Items ───────────────────────────────────────────────────────
 
@@ -70,27 +42,7 @@ export function formatOrderListItem(order: Order) {
   };
 }
 
-export function formatEmptyOrderListItem() {
-  return {
-    id: "empty",
-    "main-content": {
-      title: "Aucune commande",
-      description: "Aucun résultat trouvé",
-      metadata: "Essayez un autre filtre",
-    },
-    end: { title: "", metadata: "" },
-    tags: [],
-    "on-click-action": {
-      name: "navigate",
-       next: {
-        type: "screen",
-        name: "ORDER_STATUS",
-      },
-      payload: {
-      },
-    },
-  };
-}
+
 
 // ─── Order Detail ───────────────────────────────────────────────────────────
 
@@ -121,50 +73,7 @@ export function formatOrderDetail(order: Order) {
 
 // ─── Articles Pagination ────────────────────────────────────────────────────
 
-export async function formatOrderArticlesPage(
-  orderId: string,
-  orderRef: string,
-  articles: OrderArticle[],
-  currentPage: number,
-  pageSize: number,
-) {
-  const {
-    pageItems,
-    totalPages,
-    hasNext,
-    hasPrev,
-    currentPage: safePage,
-  } = paginateArray(articles, currentPage, pageSize);
 
-  const [a1, a2, a3] = pageItems;
-
-  return {
-    order_id: orderId,
-    order_ref: orderRef,
-    current_page: safePage,
-    next_page: hasNext ? safePage + 1 : safePage,
-    prev_page: hasPrev ? safePage - 1 : safePage,
-    total_pages: totalPages,
-    has_next: hasNext,
-    has_prev: hasPrev,
-    page_label: `Page ${safePage} / ${totalPages}`,
-    p1_img: await toSizedBase64(a1?.image ?? "", 120),
-    p1_name: a1?.name ?? "",
-    p1_sku: a1?.sku ?? "",
-    p1_qty_price: a1 ? `${a1.quantity} × ${a1.price} ${a1.currency}` : "",
-    p1_visible: !!a1,
-    p2_img: a2 ? await toSizedBase64(a2.image ?? "", 120) : "",
-    p2_name: a2?.name ?? "",
-    p2_sku: a2?.sku ?? "",
-    p2_qty_price: a2 ? `${a2.quantity} × ${a2.price} ${a2.currency}` : "",
-    p2_visible: !!a2,
-    p3_img: a3 ? await toSizedBase64(a3.image ?? "", 120) : "",
-    p3_name: a3?.name ?? "",
-    p3_sku: a3?.sku ?? "",
-    p3_qty_price: a3 ? `${a3.quantity} × ${a3.price} ${a3.currency}` : "",
-    p3_visible: !!a3,
-  };
-}
 
 export async function formatOrderArticlesServerPage(
   orderId: string,
@@ -229,8 +138,8 @@ export function buildPaginationItems(
     items.push({
       id: `fetch_prev_${currentPage - 1}`,
       "main-content": {
-        title: "Page precedente",
-        metadata: "Charger les 5 precedentes",
+        title: "⬅️ Page Précédente",
+        metadata: `Page 2 ${currentPage - 1}`,
       },
       "on-click-action": {
         name: "data_exchange",
@@ -249,8 +158,8 @@ export function buildPaginationItems(
     items.push({
       id: `fetch_more_${targetNext}`,
       "main-content": {
-        title: "Voir plus",
-        metadata: "Charger les 5 suivantes",
+        title: "Page Suivante ➡️",
+        metadata: `Page ${targetNext}`,
       },
       "on-click-action": {
         name: "data_exchange",

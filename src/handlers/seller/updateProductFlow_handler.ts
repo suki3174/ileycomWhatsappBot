@@ -1,4 +1,5 @@
-﻿import type { FlowRequest } from "@/models/flowRequest";
+﻿/* eslint-disable @typescript-eslint/no-explicit-any */
+import type { FlowRequest } from "@/models/flowRequest";
 import type { FlowResponse } from "@/models/flowResponse";
 import {
   getFlowToken,
@@ -30,6 +31,8 @@ import { sendMenu } from "@/services/menu_service";
 import { validateSellerFlowAccess } from "@/services/auth_service";
 import { invalidateProductsListByTokenCache } from "@/services/cache/products_cache_service";
 import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
+import { triggerProductOptimization } from "@/services/ai_optimization_service";
+import { findSellerByTokenOrPhone } from "@/services/auth_service";
 
 const CAROUSEL_SIZE = 3;
 
@@ -656,6 +659,22 @@ async function handleSubmitUpdate(parsed: FlowRequest): Promise<FlowResponse> {
   }
 
   await updateUpdateProductState(token, { submit_status: "submitted" });
+  
+  // Trigger AI optimization for the updated product (non-blocking)
+  void (async () => {
+    try {
+      const seller = await findSellerByTokenOrPhone(token);
+      if (seller?.phone) {
+        await triggerProductOptimization(productId, seller.phone);
+        console.info(`[UpdateProduct] AI optimization triggered for product ${productId} (seller: ${seller.phone})`);
+      } else {
+        console.warn(`[UpdateProduct] Could not trigger AI optimization for product ${productId}: seller phone not found`);
+      }
+    } catch (error) {
+      console.warn(`[UpdateProduct] Failed to trigger AI optimization for updated product ${productId}:`, error);
+    }
+  })();
+  
   void invalidateProductsListByTokenCache(token);
   void sendMenu(token);
   return { screen: "SUCCESS", data: {} };
