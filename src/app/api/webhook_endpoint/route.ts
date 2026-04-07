@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { handleIncomingMessage } from "@/handlers/seller/menu_handler";
+import { isSupportedSellerPhone, normalizeSellerPhone } from "@/utils/seller_auth_helpers";
 
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 
@@ -51,13 +52,20 @@ export async function POST(request: Request) {
     const messages = value?.messages;                  
     const message = messages?.[0];                     
     const messageBody = extractMenuTrigger(message); 
-    const senderPhone = String(message?.from || "").trim(); 
+    const senderPhoneRaw = String(message?.from || "").trim();
+    const isSupportedPhone = isSupportedSellerPhone(senderPhoneRaw);
+    const senderPhone = isSupportedPhone ? normalizeSellerPhone(senderPhoneRaw) : "";
     const messageId = String(message?.id || "").trim();
     const messageTimestamp = String(message?.timestamp || "").trim();
     const messageType = message?.type;               
 
 
-    if (messageBody && senderPhone) {
+    if (messageBody && senderPhoneRaw) {
+        if (!isSupportedPhone) {
+          console.log(`[webhook] Ignored trigger from unsupported country phone: ${senderPhoneRaw}`);
+          return NextResponse.json({ status: "ok" });
+        }
+
         if (MENU_TRIGGERS.has(messageBody.trim())) {
           // Acknowledge webhook quickly; process trigger asynchronously to avoid
           // Meta retries that can duplicate flow sends.
