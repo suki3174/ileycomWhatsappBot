@@ -1,9 +1,11 @@
 ﻿import { extractPhoneFromFlowToken } from "@/utils/data_parser";
 import { normalizeSellerPhone } from "@/utils/seller_auth_helpers";
+import { ensureRedisConnected, getRedisPrefix } from "@/lib/redis/client";
 
 const MENU_SENDER_ENDPOINT = "/api/seller/menu_template/send";
 const MAX_RETRIES = 5;
 const RETRY_DELAY_MS = 1000; // base delay — doubles each attempt
+const MENU_DEDUPE_TTL_SEC = 10; // Prevent menu spam for 10 seconds
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -21,6 +23,29 @@ async function readJsonSafe(response: Response): Promise<unknown> {
  * Send the menu template to a seller.
  * Accepts either a phone number directly or a flow token (phone is extracted).
  */
+function keyMenuDedupe(phone: string): string {
+  return `${getRedisPrefix()}:menu:dedupe:${phone}`;
+}
+
+async function isMenuDuplicate(phone: string): Promise<boolean> {
+  try {
+    const redis = await ensureRedisConnected();
+    const key = keyMenuDedupe(phone);
+    
+    const created = await redis.set(key, "1", {
+      EX: MENU_DEDUPE_TTL_SEC,
+      NX: true,
+    });
+
+    const duplicate = created !== "OK";
+    console.log(`[sendMenu] ${duplicate ? 'Duplicate menu blocked' : 'Menu dedupe set'} for ${phone} (TTL: ${MENU_DEDUPE_TTL_SEC}s)`);
+    return duplicate;
+  } catch (error) {
+    console.warn(`[sendMenu] Redis dedupe check failed for ${phone}, proceeding:`, error);
+    return false; // Allow menu to be sent if Redis fails
+  }
+}
+
 export async function sendMenu(phoneOrToken: string | null): Promise<void> {
   const raw = String(phoneOrToken || "").trim();
   // If it looks like a flow token, extract the phone; otherwise use as-is.
@@ -29,6 +54,12 @@ export async function sendMenu(phoneOrToken: string | null): Promise<void> {
     : normalizeSellerPhone(raw);
   if (!phone) {
     console.warn(`[sendMenu] No phone resolved from input: ${phoneOrToken}`);
+    return;
+  }
+
+  // Check for duplicate menu sends within the TTL window
+  if (await isMenuDuplicate(phone)) {
+    console.info(`[sendMenu] Skipping duplicate menu send to ${phone} within ${MENU_DEDUPE_TTL_SEC}s window`);
     return;
   }
 

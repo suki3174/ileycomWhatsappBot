@@ -4,7 +4,7 @@ import {
   markInboundTriggerSeen,
 } from "@/services/cache/auth_cache_service";
 import { validateSellerFlowDispatch } from "@/services/auth_service";
-import { getSellerPhoneCandidates, isTunisianPhone, normalizeSellerPhone } from "@/utils/seller_auth_helpers";
+import { getSellerPhoneCandidates, isSupportedSellerPhone, normalizeSellerPhone } from "@/utils/seller_auth_helpers";
 import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
 
 const MENU_TRIGGERS = new Set([
@@ -55,8 +55,8 @@ export async function handleIncomingMessage(
     console.log("[handleIncomingMessage] No phone provided");
     return;
   }
-  if (!isTunisianPhone(senderPhone)) {
-    console.log("[handleIncomingMessage] Not a tunisian number");
+  if (!isSupportedSellerPhone(senderPhone)) {
+    console.log("[handleIncomingMessage] Unsupported phone country for this bot");
     return;
 
   }

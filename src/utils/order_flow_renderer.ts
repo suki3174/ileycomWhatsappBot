@@ -4,12 +4,6 @@ import { toSizedBase64 } from "./image_processor";
 import { FlowResponse } from "@/models/flowResponse";
 
 
-
-
-// ─── Status Counters ────────────────────────────────────────────────────────
-
-
-
 // ─── Order List Items ───────────────────────────────────────────────────────
 
 export function formatOrderListItem(order: Order) {

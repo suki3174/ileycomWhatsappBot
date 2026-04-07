@@ -10,7 +10,7 @@ import {
   verifySellerEmail,
   startSellerSession,
 } from "@/services/auth_service";
-import { isPinStrong, isTunisianPhone } from "@/utils/seller_auth_helpers";
+import { isPinStrong, isSupportedSellerPhone } from "@/utils/seller_auth_helpers";
 import { sendResetEmail } from "@/services/reset_code_service";
 import { FlowRequest } from "@/models/flowRequest";
 import { FlowResponse } from "@/models/flowResponse";
@@ -47,11 +47,11 @@ async function handleWelcome(parsed: FlowRequest): Promise<FlowResponse> {
       };
     }
 
-    // Validate phone is Tunisian only (country code 216 + 8 local digits)
-    if (!isTunisianPhone(phone)) {
+    // Validate phone belongs to one of the bot-supported markets.
+    if (!isSupportedSellerPhone(phone)) {
       return {
         screen: "SIGN_UP",
-        data: { error_msg: "Numéro non valide. Seuls les numéros tunisiens sont acceptés." },
+        data: { error_msg: "Numero non valide. Seuls les numeros tunisiens et francais sont acceptes." },
       };
     }
 
@@ -107,12 +107,12 @@ async function handleSignIn(parsed: FlowRequest): Promise<FlowResponse> {
 
     const token = getFlowToken(parsed);
     
-    // Validate phone is Tunisian only before signin process
+    // Validate phone belongs to one of the bot-supported markets before signin process.
     const phoneFromToken = extractPhoneFromFlowToken(token);
-    if (!phoneFromToken || !isTunisianPhone(phoneFromToken)) {
+    if (!phoneFromToken || !isSupportedSellerPhone(phoneFromToken)) {
       return {
         screen: "SIGN_IN",
-        data: { error_msg: "Numéro non valide. Seuls les numéros tunisiens sont acceptés." },
+        data: { error_msg: "Numero non valide. Seuls les numeros tunisiens et francais sont acceptes." },
       };
     }
     
@@ -189,12 +189,12 @@ async function handleSignUp(parsed: FlowRequest): Promise<FlowResponse> {
     };
   }
 
-  // Validate phone is Tunisian only before signup process
+  // Validate phone belongs to one of the bot-supported markets before signup process.
   const phoneFromToken = extractPhoneFromFlowToken(token);
-  if (!phoneFromToken || !isTunisianPhone(phoneFromToken)) {
+  if (!phoneFromToken || !isSupportedSellerPhone(phoneFromToken)) {
     return {
       screen: "SIGN_UP",
-      data: { error_msg: "Numéro non valide. Seuls les numéros tunisiens sont acceptés." },
+      data: { error_msg: "Numero non valide. Seuls les numeros tunisiens et francais sont acceptes." },
     };
   }
 
