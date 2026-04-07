@@ -48,10 +48,7 @@ export async function getOrdersForToken(token: string): Promise<Order[]> {
   return await findOrdersBySellerFlowToken(normalized);
 }
 
-export function getCachedOrdersForToken(token: string): Order[] {
-  void token;
-  return [];
-}
+
 
 export async function loadAndCacheOrderCounters(
   token: string,
@@ -76,12 +73,6 @@ export async function getOrderCountersForToken(
   return await loadAndCacheOrderCounters(token);
 }
 
-export function getCachedOrderCountersForToken(
-  token: string,
-): OrderStatusCounters | undefined {
-  void token;
-  return undefined;
-}
 
 export async function loadAndCacheOrderDetail(
   orderId: string,

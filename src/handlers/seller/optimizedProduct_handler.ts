@@ -13,8 +13,7 @@ import {
 } from "@/services/ai_optimization_service";
 import { getAddProductState } from "@/repositories/addProduct/add_product_cache";
 import { buildCarousel, toCarouselBase64 } from "@/utils/image_processor";
-import { loadProductForEdit } from "@/services/update_product_service";
-import { resolveFlowImageUrl } from "@/utils/product_flow_renderer";
+
 
 /**
  * Main handler for optimized product detail flow
@@ -121,13 +120,11 @@ async function handleShowOptimizedProduct(token: string): Promise<FlowResponse> 
   const optimizationResult = await getOptimizationResult(productId);
 
   // Build carousel images
+  let rawImages: string[] = [];
 
-  let rawImages: string[] = optimizationResult?.images ?? [];
-
-  if (Array.isArray(optimizationResult?.images) && optimizationResult?.images.length > 0) {
-    rawImages = optimizationResult.images;
+  if (Array.isArray(optimizationResult?.images) && optimizationResult.images.length > 0) {
     rawImages = await Promise.all(
-      rawImages.slice(0, 10).map((url: unknown) => toCarouselBase64(String(url || ""))),
+      optimizationResult.images.slice(0, 10).map((url: unknown) => toCarouselBase64(String(url || ""))),
     );
   }
 
@@ -141,12 +138,10 @@ async function handleShowOptimizedProduct(token: string): Promise<FlowResponse> 
     optimizationResult?.optimizedName || addProductState.product_name || "";
   const displayShortDesc =
     optimizationResult?.optimizedShortDescription ||
-    addProductState.product_name ||
-    "";
+    "";  // Don't fall back to product name - use empty string
   const displayFullDesc =
     optimizationResult?.optimizedFullDescription ||
-    addProductState.product_name ||
-    "";
+    "";  // Don't fall back to product name - use empty string
   const displayTags = optimizationResult?.suggestedTags
     ? optimizationResult.suggestedTags.join(" · ")
     : "Add tags";
