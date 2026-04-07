@@ -9,6 +9,7 @@ const AUTH_CACHE_MIN_TTL_SEC = 30;
 const MESSAGE_DEDUPE_TTL_SEC = 10 * 60;
 const TRIGGER_DEDUPE_TTL_SEC = 8;
 const AUTH_PROMPT_DEDUPE_TTL_SEC = 90;
+const RESET_EMAIL_DEDUPE_TTL_SEC = 60;
 
 function isAuthCacheDebugEnabled(): boolean {
   const raw = String(process.env.AUTH_CACHE_DEBUG || "true").trim().toLowerCase();
@@ -51,6 +52,10 @@ function keyTriggerDedupe(phone: string, trigger: string): string {
 
 function keyAuthPromptDedupe(phone: string): string {
   return `${getRedisPrefix()}:auth:dedupe:prompt:${phone}`;
+}
+
+function keyResetEmailDedupe(flowToken: string, email: string): string {
+  return `${getRedisPrefix()}:auth:dedupe:reset-email:${flowToken}:${email}`;
 }
 
 function sanitizeSellerSnapshot(seller: Seller): Seller {
@@ -265,6 +270,37 @@ export async function markAuthPromptSeen(phone: string): Promise<boolean> {
   cacheLog(duplicate ? "dedupe-auth-prompt-hit" : "dedupe-auth-prompt-set", {
     key: keyAuthPromptDedupe(normalizedPhone),
     ttlSec: AUTH_PROMPT_DEDUPE_TTL_SEC,
+  });
+  return duplicate;
+}
+
+export async function markResetEmailSendSeen(
+  flowToken: string,
+  email: string,
+): Promise<boolean> {
+  const token = normToken(flowToken);
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  if (!token || !normalizedEmail) return false;
+
+  const redis = await getRedisOrNull();
+  if (!redis) {
+    cacheLog("skip-dedupe-reset-email-redis-unavailable", {
+      token,
+      email: normalizedEmail,
+    });
+    return false;
+  }
+
+  const key = keyResetEmailDedupe(token, normalizedEmail);
+  const created = await redis.set(key, "1", {
+    EX: RESET_EMAIL_DEDUPE_TTL_SEC,
+    NX: true,
+  });
+
+  const duplicate = created !== "OK";
+  cacheLog(duplicate ? "dedupe-reset-email-hit" : "dedupe-reset-email-set", {
+    key,
+    ttlSec: RESET_EMAIL_DEDUPE_TTL_SEC,
   });
   return duplicate;
 }

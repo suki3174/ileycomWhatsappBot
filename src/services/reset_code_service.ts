@@ -3,6 +3,7 @@
 import { generateResetToken } from "@/utils/core_utils";
 import { setResetToken } from "@/repositories/auth/seller_repo";
 import { sendEmail } from "@/utils/mailer";
+import { storeResetTokenFlowMapping } from "@/services/cache/reset_token_cache_service";
 
 export async function sendResetEmail(email: string): Promise<boolean> {
   const token = generateResetToken();
@@ -13,6 +14,11 @@ console.log(seller)
   // If seller doesn't exist, we return false but don't crash 
   // (Standard security practice to prevent email enumeration)
   if (!seller) return false;
+
+  const flowToken = String(seller.flow_token || "").trim();
+  if (flowToken) {
+    await storeResetTokenFlowMapping(token, flowToken, expiry);
+  }
 
   const base = process.env.BASE_URL || "http://localhost:3000";
   const resetUrl = new URL("/reset_code", base);

@@ -12,6 +12,7 @@ import {
 } from "@/services/auth_service";
 import { isPinStrong, isSupportedSellerPhone } from "@/utils/seller_auth_helpers";
 import { sendResetEmail } from "@/services/reset_code_service";
+import { markResetEmailSendSeen } from "@/services/cache/auth_cache_service";
 import { FlowRequest } from "@/models/flowRequest";
 import { FlowResponse } from "@/models/flowResponse";
 import { sendMenu } from "@/services/menu_service";
@@ -267,6 +268,7 @@ async function handleSignUp(parsed: FlowRequest): Promise<FlowResponse> {
 async function handleForgotPassword(parsed: FlowRequest): Promise<FlowResponse> {
   const data = parsed.data || {};
   const email = String(data.email ?? "").toLowerCase().trim();
+  const flowToken = getFlowToken(parsed);
 
   if (!isValidEmail(email)) {
     return {
@@ -276,7 +278,7 @@ async function handleForgotPassword(parsed: FlowRequest): Promise<FlowResponse> 
   }
 
   // 1. Check if the email is associated with the seller
-  const isValid = await verifySellerEmail(getFlowToken(parsed), email);
+  const isValid = await verifySellerEmail(flowToken, email);
 
   if (!isValid) {
     return {
@@ -284,11 +286,19 @@ async function handleForgotPassword(parsed: FlowRequest): Promise<FlowResponse> 
       data: { error_msg: "Email incorrect." },
     };
   }
-console.log(email)
+  console.log(email)
   // 2. Trigger the email service
   // We don't await this if we want a fast UI response, 
   // but usually, it's safer to await to handle SMTP errors.
   try {
+    const duplicateSend = await markResetEmailSendSeen(flowToken, email);
+    if (duplicateSend) {
+      return {
+        screen: "SUCCESS",
+        data: { message: "Lien de réinitialisation déjà envoyé. Vérifiez votre boîte mail." },
+      };
+    }
+
     const ok = await sendResetEmail(email);
     if (!ok) {
  return {
