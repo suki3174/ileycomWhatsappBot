@@ -205,7 +205,7 @@ User sees next screen
 - `INIT` → SCREEN_SELECT_PRODUCT with seller's products
 - `SELECT_PRODUCT` → SCREEN_PRODUCT_MENU (options: name, desc, pricing, etc.)
 - `EDIT_FIELD` → Screen for specific field editing
-- `SAVE_FIELD` → Update product in database
+- `SAVE_FIELD` → Update product in database and trigger AI optimization asynchronously
 - SUCCESS → Confirmation
 
 ### /api/seller/updateProductFlow/send (POST)

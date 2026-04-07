@@ -273,6 +273,7 @@ Handles product modification workflows.
 - **Input:** Flow token, state object
 - **Side effects:** Stores in cache for later retrieval
 - **TTL:** 24 hours
+- **Note:** Unused legacy helpers were removed from the update service surface to keep the flow lean and focused
 
 ---
 

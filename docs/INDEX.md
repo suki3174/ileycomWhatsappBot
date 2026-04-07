@@ -129,7 +129,7 @@ Each flow has pattern: `meta_endpoint` (receiver) + `send` (trigger) + optional 
 | Add Product Flow | Create product | 2 endpoints + AI trigger |
 | Products Flow | View products | 2 endpoints |
 | Orders Flow | View orders | 2 endpoints |
-| Update Product Flow | Edit product | 2 endpoints |
+| Update Product Flow | Edit product | 2 endpoints + AI trigger |
 | Optimized Product Flow | AI results | 3 endpoints (detect, send, check AI status) |
 
 **→ Reference for API contracts and request/response formats**
@@ -403,6 +403,6 @@ When adding feature:
 ---
 
 **Last Updated:** March 31, 2026  
-**Documentation Version:** 2.0 (includes AI Optimization)  
+**Documentation Version:** 2.0 (includes AI Optimization on create and update)  
 **Status:** Complete and current
 

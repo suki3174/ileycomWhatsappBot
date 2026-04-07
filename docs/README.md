@@ -105,17 +105,17 @@ Session created → flow_token generated
 Menu sent → Seller sees options
 ```
 
-### 2. Product Creation (Add Product Flow)
+### 2. Product Creation & Update (Product Flows)
 ```
-Seller selects "Add Product" → addProductFlow sent
+Seller selects "Add Product" or "Edit Product" → product flow sent
      ↓
-Multi-screen flow: photo → name → category → pricing → details → quantity
+Multi-screen flow: photo/fields → name → category → pricing → details → quantity
      ↓
 Summary screen → Seller submits
      ↓
-Product saved to WordPress → Seller phone extracted
+Product saved or updated in WordPress → Seller phone extracted
      ↓
-AI optimization triggered (async, non-blocking)
+AI optimization triggered asynchronously after create or update
      ↓
 Seller sees SUCCESS → Returns to menu
      ↓
@@ -124,7 +124,7 @@ Seller sees SUCCESS → Returns to menu
 
 ### 3. AI Optimization (NEW)
 ```
-Product created in addProductFlow_handler
+Product created or updated in addProductFlow_handler / updateProductFlow_handler
      ↓
 POST to /api/seller/optimizedProductFlow/genAI_endpoint
   { productId, sellerPhone }

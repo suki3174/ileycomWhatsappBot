@@ -1,6 +1,6 @@
 ## AI Product Optimization Feature
 
-This document explains the AI optimization feature for the ileycom WhatsApp bot. After a product is created, the system automatically sends it to an external AI service for optimization, which can enhance product descriptions, suggest tags, and improve product metadata.
+This document explains the AI optimization feature for the ileycom WhatsApp bot. After a product is created or updated, the system automatically sends it to an external AI service for optimization, which can enhance product descriptions, suggest tags, and improve product metadata.
 
 ---
 
@@ -28,8 +28,8 @@ This document explains the AI optimization feature for the ileycom WhatsApp bot.
    - Shows loading state while AI processes
    - Allows user to accept or reject optimizations
 
-5. **Add Product Flow Handler** (modified)
-   - Now triggers AI optimization after successful product creation
+5. **Add / Update Product Flow Handlers** (modified)
+   - Now trigger AI optimization after successful product creation or product update
    - Sends product data to genAI endpoint
 
 ---
@@ -38,13 +38,13 @@ This document explains the AI optimization feature for the ileycom WhatsApp bot.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ 1. User completes add product flow and submits              │
+│ 1. User completes add or update product flow and submits              │
 └────────────────────┬────────────────────────────────────────┘
                      │
                      ▼
          ┌───────────────────────┐
-         │ Product created       │
-         │ Product ID returned   │
+         │ Product saved         │
+         │ Product ID available  │
          └────────┬──────────────┘
                   │
                   ▼ (Fire & Forget - Non-Blocking)
@@ -244,14 +244,14 @@ Returns:
 
 ## Usage Flow in WhatsApp
 
-### Step 1: Add Product
+### Step 1: Add or Update Product
 
-User completes the add product flow:
-- Uploads product image
+User completes the add or update product flow:
+- Uploads product image or edits fields
 - Enters product name, category, pricing, etc.
 - Submits form
 
-### Step 2: Product Created & AI Triggered (Non-Blocking)
+### Step 2: Product Saved & AI Triggered (Non-Blocking)
 
 - Product is saved to database
 - Product ID is returned
@@ -288,12 +288,12 @@ User can:
 
 ## Implementation Details
 
-### Add Product Handler Changes
+### Product Flow Changes
 
-After successful product creation in `handleSubmitSummary`:
+After successful product creation or update in `handleSubmitSummary` / `handleUpdateProductFlow`:
 
 ```typescript
-// Product is created successfully
+// Product is created or updated successfully
 const createResult = await persistDraftProduct(token, current, quantity);
 
 // Trigger AI optimization (non-blocking, fire & forget)
