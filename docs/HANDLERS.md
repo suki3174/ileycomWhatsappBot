@@ -60,35 +60,7 @@ Manages multi-screen product creation workflow.
 - **Post-save:**
   1. Update state with created_at timestamp
   2. Extract seller phone from flow token
-  3. POST to `/api/seller/optimizedProductFlow/genAI_endpoint` with productId + sellerPhone
-  4. Returns SUCCESS screen (non-blocking, AI processes in background)
-
----
-
-## optimizedProduct_handler.ts
-
-Displays AI-optimized product details.
-
-### handleOptimizedProductDetail(parsed: FlowRequest)
-**Main entry point**
-- **INIT:** Gets recently created product ID, initializes flow
-- **Default:** Shows optimized product with AI suggestions
-
-### handleInitialization(token)
-- Retrieves product_id from addProductState
-- Returns AI_PRODUCT screen
-
-### handleShowOptimizedProduct(token)
-- **Checks optimization status:**
-  - `PENDING` → Returns LOADING screen ("Optimizing...")
-  - `PROCESSING` → Returns LOADING screen ("Still processing...")
-  - `COMPLETED` → Returns AI_PRODUCT (merged data)
-  - `FAILED` → Returns ERROR ("Optimization failed")
-- **Data merging:**
-  - If optimization result exists: use optimizedName, optimizedDescription, suggestedTags, suggestedCategories
-  - Otherwise: use original product data
-  - Pricing always from original (not optimized)
-- **Returns screen with:** Images carousel, product details, pricing, stock, categories, tags, creation date
+  3. Returns SUCCESS screen
 
 ---
 

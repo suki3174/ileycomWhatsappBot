@@ -9,7 +9,7 @@ Complete reference documentation for the ILeycom WhatsApp Seller Bot application
 ### 1. **README.md** - Main Overview
 Complete project documentation with:
 - Architecture overview (layered diagram)
-- Key workflows (Authentication, Add Product, AI Optimization, etc.)
+- Key workflows (Authentication, Add Product, etc.)
 - Directory structure
 - External integrations (WordPress, Meta, AI Service, Email)
 - Configuration and environment variables
@@ -27,7 +27,6 @@ All TypeScript interfaces and enums:
 
 | Model | Purpose |
 |-------|---------|
-| `ai_optimization_model.ts` | AI optimization types (OptimizationStatus, AIOptimizationRequest/Response, OptimizationState) |
 | `product_model.ts` | Product data (Product, ProductVariation, AddProductState) |
 | `seller_model.ts` | Seller profile (Seller interface) |
 | `oder_model.ts` | Order tracking (Order, OrderArticle, OrderStatus) |
@@ -45,7 +44,6 @@ Services implementing core workflows:
 
 | Service | Purpose | Key Functions |
 |---------|---------|----------------|
-| `ai_optimization_service.ts` | AI product optimization | triggerProductOptimization(), getOptimizationStatus(), getOptimizationResult() |
 | `auth_service.ts` | Authentication & sessions | findSeller(), sellerHasCode(), setSellerCode() |
 | `add_product_service.ts` | Product creation | persistDraftProduct(), getProductCategoriesCached() |
 | `menu_service.ts` | Menu distribution | sendMenu() |
@@ -83,7 +81,6 @@ Cache systems and database interactions:
 |------------|-----------|-----------|
 | `add_product_cache.ts` | Product creation state | 24 hours |
 | `add_product_repo.ts` | Product persistence | — |
-| `ai_optimization_cache.ts` | Optimization state | 24 hours |
 | `auth_cache.ts` | Auth warmup cache | 5 minutes |
 | `order_cache.ts` | Order list | 24 hours |
 | `poducts_cache.ts` | Product list | 5 minutes |
@@ -263,15 +260,6 @@ docs/
 
 ## 🔗 Cross-References
 
-### AI Optimization (NEW Feature)
-- **Overview:** README.md → "AI Optimization" section
-- **Models:** MODELS.md → "ai_optimization_model.ts"
-- **Service Logic:** SERVICES.md → "ai_optimization_service.ts"
-- **Handler:** HANDLERS.md → "optimizedProduct_handler.ts"
-- **Repository:** REPOSITORIES.md → "ai_optimization/"
-- **API:** API_ROUTES.md → "Optimized Product Flow"
-- **Quick lookup:** QUICK_REFERENCE.md → "Working with AI Optimization"
-
 ### Authentication Flow
 - **Overview:** README.md → "Seller Authentication" workflow
 - **Service:** SERVICES.md → "auth_service.ts"
@@ -403,6 +391,6 @@ When adding feature:
 ---
 
 **Last Updated:** March 31, 2026  
-**Documentation Version:** 2.0 (includes AI Optimization on create and update)  
+**Documentation Version:** 2.1 (removed AI Optimization)  
 **Status:** Complete and current
 

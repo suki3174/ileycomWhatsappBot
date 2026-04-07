@@ -4,46 +4,6 @@ All TypeScript interfaces and enums used throughout the application.
 
 ---
 
-## ai_optimization_model.ts
-
-Type definitions for AI product optimization workflow.
-
-### OptimizationStatus (Enum)
-States of an optimization workflow:
-- `PENDING` - Queued, waiting for processing
-- `PROCESSING` - Currently being processed by AI
-- `COMPLETED` - Successfully optimized
-- `FAILED` - Failed or timed out
-
-### AIOptimizationRequest (Interface)
-Request payload sent to external AI service:
-- `productId: string` - Product ID to optimize (only this is sent)
-
-### AIOptimizationResponse (Interface)
-Response from AI service with optimization results:
-- `productId: string` - Product identifier
-- `optimizedName?: string` - AI-suggested product name
-- `optimizedShortDescription?: string` - Short product description
-- `optimizedFullDescription?: string` - Detailed product description
-- `suggestedTags?: string[]` - AI-suggested product tags
-- `suggestedCategories?: string[]` - AI-suggested categories
-- `confidence?: number` - Confidence score (0-100)
-- `processingTimeMs?: number` - Processing duration
-
-### OptimizationState (Interface)
-Internal tracking object for optimization progress:
-- `productId: string` - Product being optimized
-- `sellerPhone?: string` - Seller phone (for auto-flow sending)
-- `status: OptimizationStatus` - Current state
-- `requestedAt: number` - Request timestamp
-- `completedAt?: number` - Completion timestamp
-- `result?: AIOptimizationResponse` - AI results if completed
-- `errorMessage?: string` - Error details if failed
-- `retryCount: number` - Number of retry attempts
-- `expiresAt?: number` - Cache expiration (24h TTL)
-
----
-
 ## product_model.ts
 
 Product and product creation state models.

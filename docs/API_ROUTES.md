@@ -10,7 +10,6 @@ Next.js API endpoints for WhatsApp Flow integration and webhooks.
 Each flow has 3 endpoints:
 1. **meta_endpoint/** - Receives encrypted flow requests from WhatsApp
 2. **send/** - Sends flow template to seller (triggers flow in WhatsApp)
-3. Optional: Create/trigger endpoints (e.g., genAI_endpoint for optimization)
 
 ### Request Flow Within a Flow
 ```
@@ -135,15 +134,8 @@ User sees next screen
 - `SCREEN_PRICE_EUR` → Calculate EUR margin
 - `SCREEN_DETAILS` → Save dimensions/color/size
 - `SCREEN_QUANTITY` → Save stock
-- `SCREEN_SUMMARY` → Save product to database + trigger AI optimization
+- `SCREEN_SUMMARY` → Save product to database
 - SUCCESS → Return completion screen
-
-**AI Trigger:** In handleSubmitSummary:
-```
-1. POST to /api/seller/optimizedProductFlow/genAI_endpoint
-2. Body: { productId, sellerPhone }
-3. Returns 202 Accepted (async)
-```
 
 ### /api/seller/addProductFlow/send (POST)
 **Purpose:** Send add product flow to seller
@@ -205,7 +197,7 @@ User sees next screen
 - `INIT` → SCREEN_SELECT_PRODUCT with seller's products
 - `SELECT_PRODUCT` → SCREEN_PRODUCT_MENU (options: name, desc, pricing, etc.)
 - `EDIT_FIELD` → Screen for specific field editing
-- `SAVE_FIELD` → Update product in database and trigger AI optimization asynchronously
+- `SAVE_FIELD` → Update product in database
 - SUCCESS → Confirmation
 
 ### /api/seller/updateProductFlow/send (POST)
@@ -214,70 +206,6 @@ User sees next screen
 **Request:** `{ phone }`
 
 **Used when:** Seller clicks "Edit Product" from menu
-
----
-
-## Optimized Product Flow
-
-### /api/seller/optimizedProductFlow/genAI_endpoint (POST/GET)
-
-**POST: Trigger AI Optimization**
-- **Request:** `{ productId, sellerPhone? }`
-- **Response:** 202 Accepted
-- **Behavior:** 
-  1. Non-blocking, returns immediately
-  2. Fires background AI optimization task
-  3. Phone stored for auto-sending flow when complete
-  4. Status tracked in cache
-
-**GET: Check Optimization Status**
-- **Query:** `?productId=...`
-- **Response:** 
-  ```json
-  {
-    "status": "pending|processing|completed|failed",
-    "productId": "...",
-    "requestedAt": 1711896000000,
-    "completedAt": 1711896045000,
-    "result": { ...AIOptimizationResponse... }
-  }
-  ```
-
-### /api/seller/optimizedProductFlow/meta_endpoint (POST)
-**Receives:** Encrypted optimized product flow requests
-
-**Handlers:**
-- `INIT` → Fetch recently created product
-- `DEFAULT` → Show AI_PRODUCT screen
-  - Checks optimization status:
-    - PENDING/PROCESSING → LOADING screen
-    - COMPLETED → AI_PRODUCT (merged data)
-    - FAILED → ERROR screen
-- `ACCEPT_OPTIMIZATION` → Apply suggestions to product
-- `REJECT_OPTIMIZATION` → Keep original product data
-
-**Data Display:**
-- If optimization complete: Show original + optimized side-by-side
-- Merge optimized name, descriptions, tags, categories
-- Pricing always original (not optimized)
-
-### /api/seller/optimizedProductFlow/send (POST)
-**Purpose:** Send optimized product flow to seller
-
-**Request:** `{ seller: { phone, name } }`
-
-**HTTP:** POST to Meta Graph API
-- **Template:** `optimizedproductflow_message_template`
-- **Data:** Seller's recent product ID
-- **Trigger:** Auto-called when AI optimization completes
-
-**Workflow:**
-1. Validate seller phone
-2. Generate or retrieve flow_token for seller
-3. Send template via Meta API
-4. Return response with Meta API status
-
-**Auto-triggered by:** `/ai_optimization_service.ts` after AI completion
 
 ---
 
@@ -306,7 +234,6 @@ User sees next screen
 | Code | Meaning | Use |
 |------|---------|-----|
 | 200 | OK | Successful GET/POST |
-| 202 | Accepted | Async job queued (AI optimization) |
 | 400 | Bad Request | Missing required fields |
 | 401 | Unauthorized | Invalid credentials |
 | 404 | Not Found | Seller/product not found |

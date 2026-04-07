@@ -53,22 +53,6 @@ Fast lookup for common tasks and code locations.
 - Service: `src/services/auth_service.ts` → `prepareSellerState()`
 - Helper: `src/utils/seller_auth_helpers.ts` → `generateFlowtoken()`
 
-### Working with AI Optimization
-
-**"I need to trigger AI optimization"**
-- Service: `src/services/ai_optimization_service.ts` → `triggerProductOptimization(productId, sellerPhone)`
-- Endpoint: `src/app/api/seller/optimizedProductFlow/genAI_endpoint/route.ts` (POST)
-- Request: `{ productId, sellerPhone }`
-
-**"I need to check optimization status"**
-- Service: `src/services/ai_optimization_service.ts` → `getOptimizationStatus(productId)`
-- Endpoint: `src/app/api/seller/optimizedProductFlow/genAI_endpoint/route.ts` (GET)
-- Query: `?productId=...`
-
-**"I need to handle the optimized product screen"**
-- Handler: `src/handlers/seller/optimizedProduct_handler.ts` → `handleOptimizedProductDetail()`
-- Cache: `src/repositories/optimizedProductFlow/optimized_product_flow_cache.ts`
-
 ### Price Calculations
 
 **"I need to calculate selling price after commission"**
@@ -120,8 +104,6 @@ return {
 | Hash password | `pin_hash.ts` | `hashPin()` |
 | Compress image | `image_processor.ts` | `toCarouselBase64FromBase64()` |
 | Pagination | `core_utils.ts` | `paginateArray()` |
-| AI optimize | `ai_optimization_service.ts` | `triggerProductOptimization()` |
-| Check AI status | `ai_optimization_service.ts` | `getOptimizationStatus()` |
 
 ---
 
@@ -138,27 +120,6 @@ Services: add_product_service.persistDraftProduct()
 Repo: add_product_repo.saveProductDraft()
     ↓
 Cache: add_product_cache (state tracking)
-    ↓
-→ Triggers: genAI_endpoint (AI optimization)
-```
-
-### Optimized Product Flow (NEW)
-```
-addProductFlow POST to genAI_endpoint with { productId, sellerPhone }
-    ↓
-genAI_endpoint/route.ts → triggerProductOptimization()
-    ↓
-ai_optimization_service.submitToAIService() (async background)
-    ↓
-POST to AI_SERVICE_URL
-    ↓
-On completion: triggerOptimizedProductFlowSend()
-    ↓
-POST /api/seller/optimizedProductFlow/send
-    ↓
-optimizedProduct_handler.handleOptimizedProductDetail() 
-    ↓
-Merges AI result with original product
 ```
 
 ### Authentication Flow
@@ -297,7 +258,6 @@ Seller data available throughout flow
 | Code | Usage | Example |
 |------|-------|---------|
 | 200 | Successful | Product fetched |
-| 202 | Accepted (async) | AI optimization queued |
 | 400 | Bad input | Missing product ID |
 | 401 | Unauthorized | Invalid seller token |
 | 404 | Not found | Seller not in system |
@@ -337,12 +297,6 @@ Seller data available throughout flow
 curl -X POST http://localhost:3000/api/seller/addProductFlow/meta_endpoint \
   -H "Content-Type: application/json" \
   -d '{"flow_token":"flowtoken-21650354773-123",...}'
-```
-
-**Check AI optimization:**
-```bash
-# GET /api/seller/optimizedProductFlow/genAI_endpoint?productId=123
-curl http://localhost:3000/api/seller/optimizedProductFlow/genAI_endpoint?productId=123
 ```
 
 **Send menu to test phone:**

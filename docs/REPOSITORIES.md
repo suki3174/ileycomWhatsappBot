@@ -211,24 +211,6 @@ Saves product modifications.
 - Handles image uploads if needed
 - Returns UpdateProductResult { ok, updatedProduct, error }
 
----
-
-## ai_optimization/
-
-Manages AI optimization state.
-
-### ai_optimization_cache.ts
-In-memory optimization tracking.
-
-**getOptimizationState(productId)**
-- Retrieves OptimizationState from cache
-- Checks expiration (24-hour TTL)
-- Returns null if expired
-
-**setOptimizationState(productId, state)**
-- Stores new optimization state
-- Sets expiration timestamp
-
 **updateOptimizationState(productId, updates)**
 - Partial update (merges with existing)
 - Extends expiration

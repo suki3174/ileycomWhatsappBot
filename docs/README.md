@@ -48,7 +48,6 @@ Complete documentation for the ILeycom WhatsApp seller bot application.
 │         Services Layer                               │
 │  (Business Logic)                                    │
 │  - add_product_service                               │
-│  - ai_optimization_service                           │
 │  - auth_service                                      │
 │  - menu_service                                      │
 │  - order_service                                     │
@@ -69,7 +68,6 @@ Complete documentation for the ILeycom WhatsApp seller bot application.
 │         External Services                            │
 │  - WordPress Plugin API                              │
 │  - Meta Graph API (WhatsApp)                         │
-│  - AI Optimization Service                           │
 │  - Email Service                                     │
 └─────────────────────────────────────────────────────┘
 ```
@@ -115,33 +113,12 @@ Summary screen → Seller submits
      ↓
 Product saved or updated in WordPress → Seller phone extracted
      ↓
-AI optimization triggered asynchronously after create or update
-     ↓
 Seller sees SUCCESS → Returns to menu
      ↓
 (Background) AI processes → Auto-sends optimizedProductFlow
 ```
 
-### 3. AI Optimization (NEW)
-```
-Product created or updated in addProductFlow_handler / updateProductFlow_handler
-     ↓
-POST to /api/seller/optimizedProductFlow/genAI_endpoint
-  { productId, sellerPhone }
-     ↓
-Returns 202 Accepted immediately
-     ↓
-(Background) submitToAIService:
-  - POST to AI_SERVICE_URL with { productId }
-  - AI fetches full product details
-  - AI analyzes and returns suggestions
-  - Cache updated to COMPLETED
-     ↓
-triggerOptimizedProductFlowSend:
-  - Fetch seller name from database
-  - POST to /api/seller/optimizedProductFlow/send
-  - WhatsApp sends flow to seller
-     ↓
+
 Seller receives notification + can view optimized product
 ```
 
@@ -181,13 +158,11 @@ src/
 │           ├── productsFlow/          # Product listing (2 endpoints)
 │           ├── ordersFlow/            # Order history (2 endpoints)
 │           ├── updateProductFlow/     # Product editing (2 endpoints)
-│           └── optimizedProductFlow/  # AI optimized product (3 endpoints)
 │
 ├── handlers/seller/
 │   ├── addProductFlow_handler.ts
 │   ├── auth_flowHandler.ts
 │   ├── menu_handler.ts
-│   ├── optimizedProduct_handler.ts     # NEW
 │   ├── ordersFlow_handler.ts
 │   ├── productsFlow_handler.ts
 │   ├── sendBatch_handler.ts
@@ -195,7 +170,6 @@ src/
 │
 ├── services/
 │   ├── add_product_service.ts
-│   ├── ai_optimization_service.ts      # NEW
 │   ├── auth_service.ts
 │   ├── menu_service.ts
 │   ├── order_service.ts
@@ -220,13 +194,10 @@ src/
 │   │   ├── product_repo.ts
 │   │   ├── update_product_cache.ts
 │   │   └── update_product_repo.ts
-│   ├── ai_optimization/              # NEW
-│   │   └── ai_optimization_cache.ts
 │   └── optimizedProductFlow/         # NEW
 │       └── optimized_product_flow_cache.ts
 │
 ├── models/
-│   ├── ai_optimization_model.ts       # NEW
 │   ├── category_model.ts
 │   ├── flowRequest.ts
 │   ├── flowResponse.ts
@@ -275,13 +246,6 @@ src/
 - **Authentication:** Bearer token from environment
 - **Rate limit:** 1000 messages/day per seller
 
-### AI Optimization Service
-- **Endpoint:** Configured via `AI_SERVICE_URL` environment variable
-- **Request:** `{ productId }`
-- **Response:** Optimized suggestions (name, descriptions, tags, categories)
-- **Timeout:** 30 seconds
-- **Non-blocking:** Called async after product creation
-
 ### Email Service
 - **Endpoint:** SMTP configured in `.env`
 - **Usage:** Password reset flows
@@ -302,11 +266,6 @@ META_WEBHOOK_VERIFY_TOKEN=...
 FLOW_ENCRYPTION_PRIVATE_KEY=...
 FLOW_ENCRYPTION_PUBLIC_KEY=...
 
-# AI Optimization
-AI_SERVICE_URL=http://localhost:8000/api/optimize
-AI_SERVICE_TIMEOUT_MS=30000
-AI_SERVICE_API_KEY=...
-
 # Plugin Backend
 PLUGIN_API_URL=...
 PLUGIN_TIMEOUT_MS=15000
@@ -325,40 +284,6 @@ TEST_PHONE_NUMBER=21650354773
 ```
 
 ---
-
-## 📊 Data Flow Examples
-
-### Add Product → AI Optimization
-
-```
-User submits product
-    ↓ [addProductFlow_handler.handleSubmitSummary]
-persistDraftProduct() → Creates in WordPress
-    ↓ Extract seller phone from token
-POST /api/seller/optimizedProductFlow/genAI_endpoint
-    { productId: "123", sellerPhone: "21650354773" }
-    ↓ [genAI_endpoint POST handler]
-triggerProductOptimization(productId, sellerPhone) → Returns 202
-    ↓ (Async background)
-submitToAIService(productId, sellerPhone)
-    ↓ POST to AI_SERVICE_URL with only { productId }
-    [AI fetches details from backend, analyzes]
-    AI returns optimization result
-    ↓ Cache updated to COMPLETED
-triggerOptimizedProductFlowSend(sellerPhone)
-    ↓ Fetch seller name from database
-POST /api/seller/optimizedProductFlow/send
-    { seller: { phone: "21650354773", name: "Maison & Argile" } }
-    ↓ Send WhatsApp Flow template
-Seller receives notification with optimized product screen
-```
-
-### View Products with Optimization Status
-
-```
-User navigates to optimized product flow
-    ↓ [optimizedProduct_handler]
-getAddProductState(token) → Get product_id
     ↓ [handleShowOptimizedProduct]
 getOptimizationStatus(productId) → Check cache
     ↓ if COMPLETED:
@@ -378,10 +303,8 @@ Return AI_PRODUCT screen with merged data
 - **Individual product:** 1-hour TTL
 - **Categories:** 24-hour TTL (rarely change)
 - **Session state:** 24-hour TTL (matches session)
-- **Optimization state:** 24-hour TTL (prevents memory leak)
 
 ### Non-blocking Operations
-- AI optimization: Fire-and-forget, return 202 Accepted
 - Menu sending: Queued with retry logic
 - Image compression: Async processing
 - Batch messages: Background job queue
@@ -435,13 +358,7 @@ Return AI_PRODUCT screen with merged data
 3. Enter "Test Product"
 4. Select category/subcategory
 5. Enter pricing (e.g., 100 TND, 25 EUR)
-6. Submit → Check AI optimization triggered
-
-### Test AI Optimization
-1. Monitor AI_SERVICE_URL logs
-2. Check cache state transitions (PENDING → PROCESSING → COMPLETED)
-3. Verify flow auto-sent when AI completes
-4. View optimized product screen
+6. Submit → Product saved successfully
 
 ### Test Orders/Products
 1. Load test data with mock orders/products
@@ -495,12 +412,6 @@ Return AI_PRODUCT screen with merged data
 - Check: Template published on Meta
 - Check: Endpoint CORS configured
 
-**Issue:** AI optimization not triggering
-- Check: AI_SERVICE_URL configured
-- Check: AI service running and accessible
-- Check: sellerPhone passed through pipeline
-- Check: Cache not full (monitor memory)
-
 **Issue:** Product not created
 - Check: Image encryption/decryption
 - Check: Plugin API accessible
@@ -515,7 +426,7 @@ Return AI_PRODUCT screen with merged data
 
 ---
 
-**Last Updated:** March 31, 2026
-**Version:** 2.0 (with AI Optimization)
+**Last Updated:** April 7, 2026
+**Version:** 2.1 (removed AI Optimization)
 **Maintainer:** Development Team
 
