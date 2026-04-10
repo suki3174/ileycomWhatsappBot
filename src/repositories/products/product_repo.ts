@@ -139,7 +139,7 @@ function extractVariationFromPayload(
 export async function findProductsBySellerFlowToken(
   flowToken: string,
 ): Promise<Product[]> {
-  const pageResult = await findProductsPageBySellerFlowToken(flowToken, 1, 200);
+  const pageResult = await findProductsPageBySellerFlowToken(flowToken, 1, 5);
   return pageResult.products;
 }
 
@@ -155,7 +155,7 @@ export async function findProductsPageBySellerFlowToken(
 
   const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
   const safePerPage = Number.isFinite(perPage) && perPage > 0
-    ? Math.min(50, Math.floor(perPage))
+    ? Math.min(5, Math.floor(perPage))
     : 5;
 
   try {

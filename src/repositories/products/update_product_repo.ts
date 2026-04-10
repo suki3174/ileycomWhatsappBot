@@ -71,11 +71,16 @@ export async function fetchProductsPagedByFlowToken(
   page: number,
   limit: number,
 ): Promise<ProductListPage | null> {
+  const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+  const safeLimit = Number.isFinite(limit) && limit > 0
+    ? Math.min(5, Math.floor(limit))
+    : 5;
+
   try {
     const res = await pluginPost("/seller/product/list-paged/by-flow-token", {
       flow_token: flowToken,
-      page,
-      limit,
+      page: safePage,
+      limit: safeLimit,
     });
     const payload = await parsePluginJsonSafe(res, "fetchProductsPagedByFlowToken");
     if (!payload) return null;

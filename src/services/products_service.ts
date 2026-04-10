@@ -1,6 +1,7 @@
 ﻿import type { Product, ProductVariation } from "@/models/product_model";
 import {
   findProductsBySellerFlowToken,
+  findProductsPageBySellerFlowToken,
   findProductById,
   findVariationById,
   type ProductsPageResult,
@@ -44,21 +45,10 @@ export async function getSellerProductsPageByFlowToken(
 
   const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
   const safePerPage = Number.isFinite(perPage) && perPage > 0
-    ? Math.min(50, Math.floor(perPage))
+    ? Math.min(5, Math.floor(perPage))
     : 5;
 
-  const products = await getSellerProductsByFlowToken(normalized);
-  const start = (safePage - 1) * safePerPage;
-  const pageItems = products.slice(start, start + safePerPage);
-  const hasMore = start + safePerPage < products.length;
-
-  return {
-    products: pageItems,
-    page: safePage,
-    perPage: safePerPage,
-    hasMore,
-    nextPage: hasMore ? safePage + 1 : undefined,
-  };
+  return await findProductsPageBySellerFlowToken(normalized, safePage, safePerPage);
 }
 
 export async function getProductById(

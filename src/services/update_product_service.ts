@@ -181,7 +181,12 @@ export async function getSellerProductsPageByFlowToken(
   page: number,
   pageSize: number,
 ): Promise<ProductsPage> {
-  const cached = await getCachedUpdateProductsPage(flowToken, page, pageSize);
+  const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+  const safePageSize = Number.isFinite(pageSize) && pageSize > 0
+    ? Math.min(5, Math.floor(pageSize))
+    : 5;
+
+  const cached = await getCachedUpdateProductsPage(flowToken, safePage, safePageSize);
   if (cached && Array.isArray(cached.products)) {
     return {
       products: cached.products,
@@ -191,12 +196,12 @@ export async function getSellerProductsPageByFlowToken(
     };
   }
 
-  const result = await fetchProductsPagedByFlowToken(flowToken, page, pageSize);
+  const result = await fetchProductsPagedByFlowToken(flowToken, safePage, safePageSize);
   if (!result) return { products: [], page: 1, hasMore: false, nextPage: 1 };
 
-  const totalPages = Math.ceil(result.total / pageSize);
-  const hasMore = page < totalPages;
-  const nextPage = hasMore ? page + 1 : page;
+  const totalPages = Math.ceil(result.total / safePageSize);
+  const hasMore = safePage < totalPages;
+  const nextPage = hasMore ? safePage + 1 : safePage;
 
   const products = result.products.map((p) => ({
     id: p.id,
@@ -212,8 +217,8 @@ export async function getSellerProductsPageByFlowToken(
     image_src: p.image_url,
   }));
 
-  const response = { products, page, hasMore, nextPage };
-  await setCachedUpdateProductsPage(flowToken, page, pageSize, response);
+  const response = { products, page: safePage, hasMore, nextPage };
+  await setCachedUpdateProductsPage(flowToken, safePage, safePageSize, response);
   return response;
 }
 
