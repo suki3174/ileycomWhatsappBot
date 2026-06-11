@@ -63,7 +63,6 @@ export function findAllSellers(): Seller[] {
   return sellers;
 }
 
-// Fetches seller by phone from plugin endpoint.
 /**
  * Fetches a seller using phone as primary key through the plugin API and logs
  * request timing for operational visibility. It returns undefined for transport,
@@ -90,10 +89,6 @@ export async function findSellerByPhone(phone: string): Promise<Seller | undefin
   }
 }
 
-// OPTIMIZATION: State-table-only seller lookup by phone (WELCOME fast path).
-// This endpoint queries ONLY wp_cwsb_seller_state, avoiding heavy wp_users/wp_usermeta joins.
-// Called by WELCOME instead of findSellerByPhone to eliminate cache dependency on first run.
-// Phone must exist in both state table AND linked to a wp_vendor for this to return a real seller.
 /**
  * Resolves seller state directly from the state table endpoint to support fast
  * WELCOME routing and first-run reliability. This avoids heavier joined lookups
@@ -119,7 +114,6 @@ export async function findSellerStateByPhone(phone: string): Promise<Seller | un
   }
 }
 
-// Fetches seller by flow token from plugin endpoint.
 /**
  * Finds a seller by flow token with retry-aware plugin transport to absorb brief
  * timeout spikes. Token normalization is applied up front so callers do not need
@@ -145,7 +139,6 @@ export async function findSellerByFlowToken(token: string): Promise<Seller | und
   }
 }
 
-// Updates seller code in plugin state by flow token.
 /**
  * Updates the stored seller PIN value for the provided flow token using bounded
  * retries and timeout controls. Errors and invalid response shapes are logged so
@@ -287,20 +280,6 @@ export async function activateSellerSessionViaPlugin(token:string): Promise<bool
     return !!extractSellerFromPluginPayload(data);
   } catch {
     return false;
-  }
-}
-
-// Deactivates seller session for given flow token.
-export async function endSellerSession(token : string): Promise<Seller | undefined> {
-  try {
-    const res = await pluginPost("/seller/session/deactivate", { flow_token: token });
-
-    if (!res.ok) return undefined;
-
-    const data = await parsePluginJsonSafe(res, "plugin session-deactivate");
-    return extractSellerFromPluginPayload(data);
-  } catch {
-    return undefined;
   }
 }
 

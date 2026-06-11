@@ -16,9 +16,7 @@ import {
 } from "@/services/cache/auth_cache_service";
 import {
   areEquivalentSellerPhones,
-  generateFlowtoken,
   getSellerPhoneCandidates,
-  hasSellerCodeValue,
   normalizeSellerPhone,
   sellerEmailMatches,
 } from "@/utils/seller_auth_helpers";
@@ -219,33 +217,6 @@ export async function validateSellerFlowDispatch(phone: string): Promise<SellerF
   };
 }
 
-// Indicates whether seller currently has a non-empty code set.
-export async function sellerHasCode(token: string): Promise<boolean> {
-  const normalized = normToken(token);
-
-  // Look up by token first (token is authoritative for this flow session)
-  let seller = await findSellerByFlowToken(normalized);
-  
-  // If token lookup fails, try phone-based lookup as fallback
-  if (!seller) {
-    const phone = extractPhoneFromFlowToken(normalized);
-    seller = phone ? await findSellerByPhone(phone) : undefined;
-  }
-
-  return hasSellerCodeValue(seller);
-}
-
-// OPTIMIZATION: Fast code check for SIGN_UP pre-check guard.
-// Flow-token-only, no phone fallback fallback.
-// This removes the slow /seller/by-phone call (~7-8s) from SIGN_UP critical path.
-// Name: sellerHasCodeByFlowToken (clarifies that phone lookup is NOT done).
-export async function sellerHasCodeByFlowToken(token: string): Promise<boolean> {
-  const normalized = normToken(token);
-  if (!normalized) return false;
-  const seller = await findSellerByFlowToken(normalized);
-  return hasSellerCodeValue(seller);
-}
-
 /**
  * Persists a new seller PIN (hashed) using flow token context and validates the
  * result via read-after-write when the update response is inconclusive. This
@@ -352,40 +323,9 @@ export async function startSellerSession(token: string): Promise<boolean> {
   return !!recovered;
 }
 
-// Returns whether seller session is still valid and deactivates expired sessions.
-export async function isSessionActive(token: string): Promise<boolean> {
-  const normalized = normToken(token);
-  const seller = await findSeller(normalized);
-  if (!seller) return false;
-
-  if (!seller.session_active_until) return false;
-
-  if (seller.session_active_until < Date.now()) {
-    const deactivated = await upsertSellerState(normalized, null, { session_active_until: null });
-    await invalidateSellerSessionCache({ token: normalized, seller: deactivated || seller });
-    return false;
-  }
-
-  return true;
-}
-
 // Verifies provided email against normalized seller email.
 export async function verifySellerEmail(token: string, email: string): Promise<boolean> {
   const seller = await findSeller(token);
   return sellerEmailMatches(seller, email);
 }
-
-export async function isSignupPhoneRegistered(token: string): Promise<boolean> {
-  const normalized = normToken(token);
-  if (!normalized) return false;
-
-  const phone = extractPhoneFromFlowToken(normalized);
-  if (!phone) return false;
-
-  const seller = await findSellerByPhone(phone);
-  return !!seller;
-}
-
-export { normToken };
-export { generateFlowtoken };
 

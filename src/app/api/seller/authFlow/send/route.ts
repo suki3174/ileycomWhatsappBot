@@ -1,6 +1,5 @@
-﻿/* eslint-disable @typescript-eslint/no-unused-vars */
-import { NextRequest, NextResponse } from "next/server";
-import { getAllSellers, getSellerByPhone, prepareSellerState } from "@/services/auth_service";
+﻿import { NextRequest, NextResponse } from "next/server";
+import { getSellerByPhone, prepareSellerState } from "@/services/auth_service";
 import { areEquivalentSellerPhones, generateFlowtoken, normalizeSellerPhone } from "@/utils/seller_auth_helpers";
 import { Seller } from "@/models/seller_model";
 import { extractPhoneFromFlowToken } from "@/utils/data_parser";
