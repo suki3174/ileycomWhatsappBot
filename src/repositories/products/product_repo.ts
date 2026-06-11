@@ -25,6 +25,11 @@ export interface ProductsPageResult {
   nextPage?: number;
 }
 
+/*
+Maps a raw plugin variation payload into the internal ProductVariation shape with strict
+normalization for ids, attributes, stock metadata, pricing, and image source fields.
+Invalid or id-less rows are discarded by returning undefined.
+*/
 function mapVariation(rawVariation: unknown): ProductVariation | undefined {
   const row = asRecord(rawVariation);
   if (!row) return undefined;
@@ -52,6 +57,11 @@ function mapVariation(rawVariation: unknown): ProductVariation | undefined {
   };
 }
 
+/*
+Maps a raw plugin product payload into the internal Product model while normalizing type,
+status, text fields, pricing, categories/tags, stock controls, and nested variations.
+Rows missing a stable product id are treated as invalid and ignored.
+*/
 function mapProduct(rawProduct: unknown): Product | undefined {
   const row = asRecord(rawProduct);
   if (!row) return undefined;
@@ -102,6 +112,11 @@ function mapProduct(rawProduct: unknown): Product | undefined {
   return mapped;
 }
 
+/*
+Extracts the nested data object from a plugin response payload while tolerating missing
+or malformed shapes. This helper centralizes data envelope handling for all product
+response extraction paths.
+*/
 function extractDataObject(
   payload: Record<string, unknown> | undefined,
 ): Record<string, unknown> | undefined {
@@ -109,6 +124,11 @@ function extractDataObject(
   return asRecord(payload.data);
 }
 
+/*
+Extracts and maps the product array from a plugin response payload into validated Product
+entities. Any malformed rows are filtered out so downstream callers receive only usable
+domain objects.
+*/
 function extractProductsFromPayload(
   payload: Record<string, unknown> | undefined,
 ): Product[] {
@@ -120,6 +140,10 @@ function extractProductsFromPayload(
     .filter((product): product is Product => !!product);
 }
 
+/*
+Extracts and maps a single product entity from the plugin payload envelope. This keeps
+single-product read paths consistent with bulk mapping rules and normalization behavior.
+*/
 function extractProductFromPayload(
   payload: Record<string, unknown> | undefined,
 ): Product | undefined {
@@ -128,6 +152,10 @@ function extractProductFromPayload(
   return mapProduct(data.product);
 }
 
+/*
+Extracts and maps a single variation entity from the plugin payload envelope using the
+same normalization semantics as other variation conversion paths.
+*/
 function extractVariationFromPayload(
   payload: Record<string, unknown> | undefined,
 ): ProductVariation | undefined {
@@ -136,6 +164,11 @@ function extractVariationFromPayload(
   return mapVariation(data.variation);
 }
 
+/*
+Convenience wrapper that returns the first page of seller products by flow token. This
+delegates to the paginated repository call and exposes a simple list contract for callers
+that do not require paging metadata.
+*/
 export async function findProductsBySellerFlowToken(
   flowToken: string,
 ): Promise<Product[]> {
@@ -143,6 +176,11 @@ export async function findProductsBySellerFlowToken(
   return pageResult.products;
 }
 
+/*
+Repository boundary for seller products pagination via plugin endpoint
+/seller/products/by-flow-token. It normalizes paging parameters, executes the plugin call,
+parses response metadata, and degrades to an empty result on failures.
+*/
 export async function findProductsPageBySellerFlowToken(
   flowToken: string,
   page = 1,
@@ -196,6 +234,11 @@ export async function findProductsPageBySellerFlowToken(
   }
 }
 
+/*
+Repository boundary for product detail lookup by id via plugin endpoint
+/seller/product/by-id. It returns a normalized Product entity when available and logs
+plugin or parsing failures before returning undefined.
+*/
 export async function findProductById(
   productId: string,
 ): Promise<Product | undefined> {
@@ -227,6 +270,11 @@ export async function findProductById(
   }
 }
 
+/*
+Repository boundary for variation lookup by product and variation ids via plugin endpoint
+/seller/product/variation/by-id. It returns a normalized ProductVariation on success and
+falls back to undefined on transport, status, or payload failures.
+*/
 export async function findVariationById(
   productId: string,
   variationId: string,

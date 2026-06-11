@@ -4,16 +4,15 @@ import { handleProductsFlow } from "@/handlers/seller/productsFlow_handler";
 import type { FlowRequest } from "@/models/flowRequest";
 import type { FlowResponse } from "@/models/flowResponse";
 
+/*
+This callback endpoint receives encrypted Meta flow events for productsFlow. It decrypts
+the payload, enriches request context metadata used by downstream rendering, dispatches
+screen actions to the products flow handler, and encrypts the response back to Meta.
+Ping actions are handled inline to provide a lightweight liveness response.
+*/
 export async function POST(req: NextRequest) {
   try {
-    console.log("Products Flow POST received", {
-      url: req.url,
-      host: req.headers.get("host"),
-      forwarded: req.headers.get("x-forwarded-for"),
-    });
-
     const body = await req.json();
-    console.log("Products Flow POST body keys:", Object.keys(body));
 
     let parsed: FlowRequest;
     let aesKey: Buffer;
@@ -32,14 +31,6 @@ export async function POST(req: NextRequest) {
         __request_host: host,
         __request_proto: reqProto,
       };
-
-      console.log("Decrypted products flow payload:", {
-        action: parsed.action,
-        version: parsed.version,
-        flow_token: parsed?.data?.flow_token ?? parsed?.flow_token,
-        screen: parsed.screen,
-        data: parsed?.data || {},
-      });
     } catch (deErr: unknown) {
       const err =
         typeof deErr === "object" && deErr !== null && "message" in deErr
@@ -62,10 +53,6 @@ export async function POST(req: NextRequest) {
         screen: flowResponse.screen,
         data: flowResponse.data,
       };
-      console.log("Products flow response prepared:", {
-        screen: flowResponse.screen,
-        data: flowResponse.data,
-      });
     }
 
     const encoded = encryptFlowResponse(resp, aesKey, iv);
@@ -90,12 +77,12 @@ export async function POST(req: NextRequest) {
   }
 }
 
+/*
+Lightweight health endpoint used for smoke checks and tunnel verification. It does not
+participate in encrypted flow exchanges and simply confirms that the products callback
+route is active and reachable.
+*/
 export async function GET(req: Request) {
-  console.log(
-    "Products Flow GET ping from",
-    req.headers instanceof Headers
-      ? req.headers.get("x-forwarded-for")
-      : "unknown",
-  );
+  void req;
   return new Response("Products flow endpoint active", { status: 200 });
 }

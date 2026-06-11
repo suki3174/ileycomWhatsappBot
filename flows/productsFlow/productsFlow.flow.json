@@ -1,0 +1,658 @@
+{
+    "version": "7.3",
+    "data_api_version": "3.0",
+    "routing_model": {
+        "WELCOME_SCREEN": [
+            "PRODUCT_LIST"
+        ],
+        "PRODUCT_LIST": [
+            "PRODUCT_DETAIL_SIMPLE",
+            "PRODUCT_DETAIL_VARIABLE"
+        ],
+        "PRODUCT_DETAIL_VARIABLE": [
+            "VARIATION_DETAIL"
+        ],
+        "PRODUCT_DETAIL_SIMPLE": [
+            "SUCCESS"
+        ],
+        "VARIATION_DETAIL": [
+            "SUCCESS"
+        ]
+    },
+    "screens": [
+        {
+            "id": "WELCOME_SCREEN",
+            "title": "Bienvenue",
+            "layout": {
+                "type": "SingleColumnLayout",
+                "children": [
+                    {
+                        "type": "TextHeading",
+                        "text": "📦 Gestionnaire de Catalogue"
+                    },
+                    {
+                        "type": "TextBody",
+                        "text": "👋 Bonjour ! Cet outil vous permet de visualiser et de vérifier vos derniers produits mis en ligne sur votre boutique."
+                    },
+                    {
+                        "type": "TextSubheading",
+                        "text": "Ce que vous pouvez faire :"
+                    },
+                    {
+                        "type": "TextBody",
+                        "text": "• 🔍 Parcourir votre liste de produits.\n• 🖼️ Vérifier les descriptions et images.\n• 💰 Consulter les prix (EUR & TND).\n• 📊 Consulter les stocks et variations."
+                    },
+                    {
+                        "type": "TextCaption",
+                        "text": "Appuyez sur le bouton ci-dessous pour commencer. 👇"
+                    },
+                    {
+                        "type": "Footer",
+                        "label": "Voir mes produits",
+                        "on-click-action": {
+                            "name": "data_exchange",
+                            "payload": {
+                                "cmd": "init"
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "id": "PRODUCT_LIST",
+            "title": "Mes Produits",
+            "data": {
+                "current_page": {
+                    "type": "number",
+                    "__example__": 1
+                },
+                "products": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "type": "string"
+                            },
+                            "main-content": {
+                                "type": "object",
+                                "properties": {
+                                    "title": {
+                                        "type": "string"
+                                    },
+                                    "description": {
+                                        "type": "string"
+                                    },
+                                    "metadata": {
+                                        "type": "string"
+                                    }
+                                }
+                            },
+                            "end": {
+                                "type": "object",
+                                "properties": {
+                                    "title": {
+                                        "type": "string"
+                                    },
+                                    "metadata": {
+                                        "type": "string"
+                                    }
+                                }
+                            },
+                            "tags": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                }
+                            },
+                            "on-click-action": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {
+                                        "type": "string"
+                                    },
+                                    "payload": {
+                                        "type": "object"
+                                    }
+                                }
+                            },
+                            "start": {
+                                "type": "object",
+                                "properties": {
+                                    "image": {
+                                        "type": "string"
+                                    },
+                                    "alt-text": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "__example__": [
+                        {
+                            "id": "283891",
+                            "main-content": {
+                                "title": "Sucre en cubes irresist.",
+                                "description": "Variable · Publié",
+                                "metadata": "VNDSUCREXX55597 · 10 en stock · Prix variable"
+                            },
+                            "end": {
+                                "title": "Variable",
+                                "metadata": ""
+                            },
+                            "tags": [
+                                "Publié"
+                            ],
+                            "on-click-action": {
+                                "name": "data_exchange",
+                                "payload": {
+                                    "product_id": "283891",
+                                    "cmd": "details"
+                                }
+                            },
+                            "start": {
+                                "image": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+                                "alt-text": "Sucre en cubes"
+                            }
+                        },
+                        {
+                            "id": "nav_next",
+                            "main-content": {
+                                "title": "Page Suivante ➡️",
+                                "metadata": "Page 2 / 5"
+                            },
+                            "end": {
+                                "title": "",
+                                "metadata": ""
+                            },
+                            "tags": [],
+                            "on-click-action": {
+                                "name": "data_exchange",
+                                "payload": {
+                                    "page": 2,
+                                    "cmd": "paginate"
+                                }
+                            }
+                        }
+                    ]
+                }
+            },
+            "layout": {
+                "type": "SingleColumnLayout",
+                "children": [
+                    {
+                        "type": "NavigationList",
+                        "name": "products_nav",
+                        "list-items": "${data.products}"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "PRODUCT_DETAIL_SIMPLE",
+            "title": "Détails Produit Simple",
+            "terminal": true,
+            "data": {
+                "name": {
+                    "type": "string",
+                    "__example__": "Sucre en cubes irrésistible"
+                },
+                "carousel_images": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "src": {
+                                "type": "string"
+                            },
+                            "alt-text": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "__example__": [
+                        {
+                            "src": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+                            "alt-text": "Image principale du produit"
+                        },
+                        {
+                            "src": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+                            "alt-text": "Vue de côté du produit"
+                        },
+                        {
+                            "src": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+                            "alt-text": "Détail du produit"
+                        }
+                    ]
+                },
+                "id_sku": {
+                    "type": "string",
+                    "__example__": "ID: 283891 | SKU: VNDSUCREXX55597"
+                },
+                "short_desc": {
+                    "type": "string",
+                    "__example__": "❀ Poids : 73 g..."
+                },
+                "full_desc": {
+                    "type": "string",
+                    "__example__": "Présentation du produit..."
+                },
+                "price_tnd": {
+                    "type": "string",
+                    "__example__": "24"
+                },
+                "price_eur": {
+                    "type": "string",
+                    "__example__": "24"
+                },
+                "promo_price_tnd": {
+                    "type": "string",
+                    "__example__": "50"
+                },
+                "promo_price_eur": {
+                    "type": "string",
+                    "__example__": "24 "
+                },
+                "stock_info": {
+                    "type": "string",
+                    "__example__": "10 en stock"
+                },
+                "categories": {
+                    "type": "string",
+                    "__example__": "Suppléments"
+                },
+                "date_creation": {
+                    "type": "string",
+                    "__example__": "02/03/2026"
+                },
+                "tags": {
+                    "type": "string",
+                    "__example__": "accompagnement thé · addition élégante · cubes de sucre"
+                }
+            },
+            "layout": {
+                "type": "SingleColumnLayout",
+                "children": [
+                    {
+                        "type": "ImageCarousel",
+                        "images": "${data.carousel_images}",
+                        "aspect-ratio": "4:3",
+                        "scale-type": "cover"
+                    },
+                    {
+                        "type": "TextHeading",
+                        "text": "${data.name}"
+                    },
+                    {
+                        "type": "TextBody",
+                        "text": "${data.id_sku}"
+                    },
+                    {
+                        "type": "TextSubheading",
+                        "text": "Prix:"
+                    },
+                    {
+                        "type": "TextBody",
+                        "text": "`${data.price_tnd} ' TND'`"
+                    },
+                    {
+                        "type": "TextBody",
+                        "text": "`${data.price_eur} ' €'`"
+                    },
+                    {
+                        "type": "TextSubheading",
+                        "text": "En pormotion:"
+                    },
+                    {
+                        "type": "TextBody",
+                        "text": "`${data.promo_price_tnd} ' TND'`"
+                    },
+                    {
+                        "type": "TextBody",
+                        "text": "`${data.promo_price_eur} ' €'`"
+                    },
+                    {
+                        "type": "TextSubheading",
+                        "text": "Stock:"
+                    },
+                    {
+                        "type": "TextBody",
+                        "text": "${data.stock_info}"
+                    },
+                    {
+                        "type": "TextSubheading",
+                        "text": "Description courte:"
+                    },
+                    {
+                        "type": "TextBody",
+                        "text": "${data.short_desc}"
+                    },
+                    {
+                        "type": "TextSubheading",
+                        "text": "Description complète:"
+                    },
+                    {
+                        "type": "TextCaption",
+                        "text": "${data.full_desc}"
+                    },
+                    {
+                        "type": "TextSubheading",
+                        "text": "Catégories:"
+                    },
+                    {
+                        "type": "TextCaption",
+                        "text": "${data.categories}"
+                    },
+                    {
+                        "type": "TextSubheading",
+                        "text": "Étiquettes:"
+                    },
+                    {
+                        "type": "TextCaption",
+                        "text": "${data.tags}"
+                    },
+                    {
+                        "type": "TextCaption",
+                        "text": "${data.date_creation}"
+                    },
+                    {
+                        "type": "Footer",
+                        "label": "Fermer",
+                        "on-click-action": {
+                            "name": "data_exchange",
+                            "payload": {
+                                "status": "success"
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "id": "PRODUCT_DETAIL_VARIABLE",
+            "title": "Détails Produit Variable",
+            "data": {
+                "product_id": {
+                    "type": "string",
+                    "__example__": "283891"
+                },
+                "name": {
+                    "type": "string",
+                    "__example__": "Sucre en cubes irrésistible"
+                },
+                "carousel_images": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "src": {
+                                "type": "string"
+                            },
+                            "alt-text": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "__example__": [
+                        {
+                            "src": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+                            "alt-text": "Image principale du produit"
+                        },
+                        {
+                            "src": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+                            "alt-text": "Vue de côté du produit"
+                        },
+                        {
+                            "src": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+                            "alt-text": "Détail du produit"
+                        }
+                    ]
+                },
+                "id_sku": {
+                    "type": "string",
+                    "__example__": "ID: 283891 | SKU: VNDSUCREXX55597"
+                },
+                "short_desc": {
+                    "type": "string",
+                    "__example__": "❀ Poids..."
+                },
+                "full_desc": {
+                    "type": "string",
+                    "__example__": "Présentation..."
+                },
+                "categories": {
+                    "type": "string",
+                    "__example__": "Suppléments"
+                },
+                "date_creation": {
+                    "type": "string",
+                    "__example__": "02/03/2026"
+                },
+                "variations": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "type": "string"
+                            },
+                            "title": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "__example__": [
+                        {
+                            "id": "283894",
+                            "title": "250g"
+                        }
+                    ]
+                },
+                "tags": {
+                    "type": "string",
+                    "__example__": "accompagnement thé · addition élégante · cubes de sucre"
+                }
+            },
+            "layout": {
+                "type": "SingleColumnLayout",
+                "children": [
+                    {
+                        "type": "ImageCarousel",
+                        "images": "${data.carousel_images}",
+                        "aspect-ratio": "4:3",
+                        "scale-type": "cover"
+                    },
+                    {
+                        "type": "TextHeading",
+                        "text": "${data.name}"
+                    },
+                    {
+                        "type": "TextBody",
+                        "text": "${data.id_sku}"
+                    },
+                    {
+                        "type": "TextSubheading",
+                        "text": "Description courte:"
+                    },
+                    {
+                        "type": "TextBody",
+                        "text": "${data.short_desc}"
+                    },
+                    {
+                        "type": "TextSubheading",
+                        "text": "Description complète:"
+                    },
+                    {
+                        "type": "TextCaption",
+                        "text": "${data.full_desc}"
+                    },
+                    {
+                        "type": "TextSubheading",
+                        "text": "Catégories:"
+                    },
+                    {
+                        "type": "TextCaption",
+                        "text": "${data.categories}"
+                    },
+                    {
+                        "type": "TextSubheading",
+                        "text": "Étiquettes:"
+                    },
+                    {
+                        "type": "TextCaption",
+                        "text": "${data.tags}"
+                    },
+                    {
+                        "type": "TextCaption",
+                        "text": "${data.date_creation}"
+                    },
+                    {
+                        "type": "Form",
+                        "name": "var_form",
+                        "children": [
+                            {
+                                "type": "RadioButtonsGroup",
+                                "label": "Sélectionnez une variation",
+                                "name": "selected_var",
+                                "data-source": "${data.variations}",
+                                "required": true
+                            },
+                            {
+                                "type": "Footer",
+                                "label": "Voir détails variation",
+                                "on-click-action": {
+                                    "name": "data_exchange",
+                                    "payload": {
+                                        "variation_id": "${form.selected_var}",
+                                        "product_id": "${data.product_id}"
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "id": "VARIATION_DETAIL",
+            "title": "Détails Variation",
+            "terminal": true,
+            "data": {
+                "var_img": {
+                    "type": "string",
+                    "__example__": "https://example.com/img.jpg"
+                },
+                "var_id_sku": {
+                    "type": "string",
+                    "__example__": "ID: 283891 | SKU: VAR001"
+                },
+                "stock": {
+                    "type": "string",
+                    "__example__": "En stock"
+                },
+                "attr": {
+                    "type": "string",
+                    "__example__": "Poids: 250g"
+                },
+                "price_euro": {
+                    "type": "string",
+                    "__example__": "144.80"
+                },
+               
+                "price_tnd": {
+                    "type": "string",
+                    "__example__": "456"
+                }
+            },
+            "layout": {
+                "type": "SingleColumnLayout",
+                "children": [
+                    {
+                        "type": "Image",
+                        "src": "${data.var_img}",
+                        "height": 280,
+                        "scale-type": "cover"
+                    },
+                    {
+                        "type": "TextHeading",
+                        "text": "Détails de la Variation"
+                    },
+                    {
+                        "type": "TextBody",
+                        "text": "${data.var_id_sku}"
+                    },
+                    {
+                        "type": "TextSubheading",
+                        "text": "Prix :"
+                    },
+                    {
+                        "type": "TextBody",
+                        "text": "`${data.price_euro} ' €'`"
+                    },
+                    {
+                        "type": "TextBody",
+                        "text": "`${data.price_tnd} ' TND'`"
+                    },
+                    {
+                        "type": "TextSubheading",
+                        "text": "Stock :"
+                    },
+                    {
+                        "type": "TextBody",
+                        "text": "${data.stock}"
+                    },
+                    {
+                        "type": "TextSubheading",
+                        "text": "Attributs :"
+                    },
+                    {
+                        "type": "TextBody",
+                        "text": "${data.attr}"
+                    },
+                    {
+                        "type": "Footer",
+                        "label": "Terminer",
+                        "on-click-action": {
+                            "name": "data_exchange",
+                            "payload": {
+                                "status": "success"
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "id": "SUCCESS",
+            "title": "Succès",
+            "terminal": true,
+            "data": {
+                "message": {
+                    "type": "string",
+                    "__example__": "Action terminée avec succès !"
+                }
+            },
+            "layout": {
+                "type": "SingleColumnLayout",
+                "children": [
+                    {
+                        "type": "TextHeading",
+                        "text": "${data.message}"
+                    },
+                    {
+                        "type": "Footer",
+                        "label": "Fermer",
+                        "on-click-action": {
+                            "name": "complete",
+                            "payload": {
+                                "status": "success"
+                            }
+                        }
+                    }
+                ]
+            }
+        }
+    ]
+}

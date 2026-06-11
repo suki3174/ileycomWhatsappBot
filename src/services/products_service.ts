@@ -16,7 +16,11 @@ import {
   writeVariationByIdsCache,
 } from "@/services/cache/products_cache_service";
 
-
+/*
+Fetches the seller product list using a cache-first strategy keyed by normalized flow
+token. This is the broad list retrieval entry point used for warm-up and fallback paths,
+and it persists fresh plugin results in cache to reduce repeated backend latency.
+*/
 export async function getSellerProductsByFlowToken(
   token: string,
 ): Promise<Product[]> {
@@ -33,6 +37,11 @@ export async function getSellerProductsByFlowToken(
   return fetched;
 }
 
+/*
+Fetches a paginated product slice for a seller by flow token with page and page-size
+normalization. This path delegates to repository paging behavior and is used by list
+screen rendering where pagination metadata must be preserved.
+*/
 export async function getSellerProductsPageByFlowToken(
   token: string,
   page = 1,
@@ -51,6 +60,11 @@ export async function getSellerProductsPageByFlowToken(
   return await findProductsPageBySellerFlowToken(normalized, safePage, safePerPage);
 }
 
+/*
+Resolves a single product by id using cache-first lookup and repository fallback. The
+resolved entity is written back to cache so subsequent detail requests can avoid another
+plugin round-trip.
+*/
 export async function getProductById(
   productId: string,
 ): Promise<Product | undefined> {
@@ -66,6 +80,11 @@ export async function getProductById(
   return fetched;
 }
 
+/*
+Resolves a specific variation using product/variation identifiers with cache-first read,
+then repository fallback if needed. Successful repository responses are cached to speed
+repeated variation detail navigation within the same flow session.
+*/
 export async function getVariationDetail(
   productId: string,
   variationId: string,
@@ -84,12 +103,12 @@ export async function getVariationDetail(
   return fetched;
 }
 
+/*
+Triggers a non-blocking prefetch of the seller product list to warm cache ahead of user
+navigation. Errors are intentionally swallowed because this optimization must never block
+screen routing or alter functional behavior.
+*/
 export function primeProductsAsync(token: string): void {
   void getSellerProductsByFlowToken(token)
     .catch(() => undefined);
-}
-
-export function rememberVariableProduct(token: string, productId: string): void {
-  void token;
-  void productId;
 }

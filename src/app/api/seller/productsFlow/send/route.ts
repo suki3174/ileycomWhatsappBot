@@ -4,6 +4,12 @@ import { Seller } from "@/models/seller_model";
 import { validateSellerFlowDispatch } from "@/services/auth_service";
 import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
 
+/*
+This endpoint launches the products WhatsApp flow template for a seller. It validates
+the incoming body, resolves the seller phone, enforces the auth/session dispatch guard,
+and sends the Meta template with the current flow token when authorized. If the seller
+session is invalid or expired, it triggers the auth fallback flow and returns 401.
+*/
 export async function POST(req: NextRequest) {
   let body: Record<string, unknown> = {};
   try {
@@ -61,7 +67,7 @@ export async function POST(req: NextRequest) {
           type: "template",
           mode: "published",
           template: {
-            name: "productsflow_message",
+            name: "products_flow_local",
             language: { code: "fr" },
             components: [
 

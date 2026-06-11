@@ -4,14 +4,16 @@
 import { FlowResponse } from "@/models/flowResponse";
 import { ProductType, ProductVariation } from "@/models/product_model";
 import { prefetchNavListImages, toSizedBase64 } from "./image_processor";
-import { paginateArray } from "./core_utils";
 
 
-const PAGE_SIZE = 5;
 const MAX_CAROUSEL_IMAGES = 3;
 
 // ─── Price & Stock Formatting ─────────────────────────────────────────────────
 
+/*
+Formats the standard product price pair into a compact WhatsApp-friendly label. It keeps
+the Euro and TND values aligned with the data contract expected by the products flow.
+*/
 export function formatSimplePrices(product: any): string {
   const euro = String(
     product?.general_price_euro ?? "",
@@ -25,20 +27,10 @@ export function formatSimplePrices(product: any): string {
   if (!tnd) return `${euro} EUR`;
   return `${euro} EUR | ${tnd} TND`;
 }
-export function formatPromoPrices(product: any): string {
-  const euro = String(
-    product.promo_price_euro ?? "",
-  ).trim();
-  const tnd = String(
-    product.promo_price_tnd ?? "",
-  ).trim();
-
-  if (!euro && !tnd) return "";
-  if (!euro) return `${tnd} TND`;
-  if (!tnd) return `${euro} EUR`;
-  return `${euro} EUR | ${tnd} TND`;
-}
-
+/*
+Normalizes stock representation for simple products so the flow receives a stable text
+label regardless of raw inventory flags or quantity handling.
+*/
 export function formatStock(product: any): string {
   if (!product.manage_stock) return "Stock non géré";
   return `${product.stock_quantity ?? 0} en stock`;
@@ -46,6 +38,10 @@ export function formatStock(product: any): string {
 
 // ─── Image Building ─────────────────────────────────────────────────────────
 
+/*
+Builds a small set of carousel images for a product detail screen, mapping raw media URLs
+into flow-safe image values while preserving a deterministic maximum count.
+*/
 export async function buildProductCarouselImages(
   imageUrls: string[] | undefined,
   fallbackImageUrl: string | undefined,
@@ -78,6 +74,10 @@ export async function buildProductCarouselImages(
 
 // ─── Product Detail Building ──────────────────────────────────────────────────
 
+/*
+Constructs the response payload for variable products, including text fields, carousel
+images, normalized tags/categories, and variation references used by the selection form.
+*/
 export async function buildVariableDetailData(product: {
   id: string;
   name: string;
@@ -124,6 +124,10 @@ export async function buildVariableDetailData(product: {
 
 // ─── Text & Label Normalisation ──────────────────────────────────────────────
 
+/*
+Normalizes punctuation and whitespace so flow-facing labels remain visually consistent
+across WhatsApp clients and avoid typographic rendering artifacts.
+*/
 export function normalizeFlowLabel(value: string): string {
   // Replace typographic apostrophes/quotes with plain ASCII equivalents to
   // avoid rendering artifacts in some WhatsApp clients.
@@ -136,6 +140,10 @@ export function normalizeFlowLabel(value: string): string {
     .trim();
 }
 
+  /*
+  Strips HTML and unsafe control characters from rich text content, collapsing it into a
+  compact plain-text string suitable for flow display elements.
+  */
 export function sanitizeRichText(value: string): string {
   const raw = String(value || "");
   if (!raw) return "";
@@ -156,17 +164,12 @@ export function sanitizeRichText(value: string): string {
     .trim();
 }
 
-// ─── Pagination Helpers ─────────────────────────────────────────────────────────
 
-export function toPositivePage(value: unknown): number | undefined {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return undefined;
-  if (n <= 0) return undefined;
-  return Math.floor(n);
-}
-
-
-
+/*
+Resolves a flow image URL into a sized base64 payload for WhatsApp rendering. The current
+implementation delegates directly to toSizedBase64 so downstream screens always receive a
+display-safe image source.
+*/
 export async function resolveFlowImageUrl(
   rawUrl: string,
   _options: { requestHost?: string; requestProto?: string },
@@ -176,6 +179,10 @@ export async function resolveFlowImageUrl(
 
 // ─── Variation Formatting ─────────────────────────────────────────────────────
 
+/*
+Formats variation stock state into a human-readable label based on stock quantity,
+inventory management flags, and WooCommerce stock status metadata.
+*/
 export function formatVariationStock(variation: ProductVariation): string {
   const stockStatus = String(variation.stock_status || "").toLowerCase();
   const managesStock = variation.manage_stock === true;
@@ -192,6 +199,10 @@ export function formatVariationStock(variation: ProductVariation): string {
   return variation.stock > 0 ? `${variation.stock} en stock` : "Stock non renseigne";
 }
 
+/*
+Serializes variation attributes into a compact label string that can be displayed in the
+flow detail screen without exposing raw object structure.
+*/
 export function formatVariationAttributes(
   attrs: ProductVariation["attributes"] | undefined,
 ): string {
@@ -213,6 +224,10 @@ export function formatVariationAttributes(
 
 // ─── Navigation List Items ───────────────────────────────────────────────────
 
+/*
+Shapes a single product into a NavigationList item with constrained text fields, status
+tags, and a data_exchange payload that drives list-to-detail navigation.
+*/
 export function formatProductNavItem(product: any, imageBase64?: string) {
   const isVariable = product.is_variable || product.type === ProductType.VARIABLE;
   const typeLabel = isVariable ? "Variable" : "Simple";
@@ -262,6 +277,10 @@ export function formatProductNavItem(product: any, imageBase64?: string) {
   return item;
 }
 
+/*
+Builds the special empty-state NavigationList item used when a seller has no products.
+It preserves the same interaction contract while clearly signaling an empty catalog.
+*/
 export function formatEmptyProductNavItem() {
   return {
     id: "empty",
@@ -285,6 +304,11 @@ export function formatEmptyProductNavItem() {
 
 
 
+/*
+Builds the PRODUCT_LIST screen payload for a page of products, optionally including
+pagination controls and pre-fetched list images. This is the primary response builder for
+list rendering and cache persistence.
+*/
 export async function buildProductListPagedResponse(
   pageItems: any[],
   currentPage: number,

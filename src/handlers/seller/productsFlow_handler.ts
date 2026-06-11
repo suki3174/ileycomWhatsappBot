@@ -8,7 +8,6 @@ import {
   getSellerProductsPageByFlowToken,
   getVariationDetail,
   primeProductsAsync,
-  rememberVariableProduct,
 } from "@/services/products_service";
 import {
   getProductSimpleScreenCache,
@@ -24,8 +23,6 @@ import {
   buildProductCarouselImages,
   buildProductListPagedResponse,
   buildVariableDetailData,
-  formatPromoPrices,
-  formatSimplePrices,
   formatStock,
   formatVariationAttributes,
   formatVariationStock,
@@ -46,6 +43,12 @@ import { getFlowToken } from "@/utils/core_utils";
 // Screen handlers
 // ---------------------------------------------------------------------------
 
+/*
+This handler is the entry for list-related interactions. It reads the incoming command
+from the flow payload, resolves pagination and product selection, and returns either a
+cached or freshly built screen response. It also branches to simple or variable detail
+screens depending on the selected product type.
+*/
 async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
   const rawData = parsed.data || {};
@@ -96,8 +99,6 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
   if (mode === "details") {
     const selectedId = String(rawData.product_id ?? "").trim();
 
-    console.log("details — product_id:", selectedId);
-
     if (!selectedId || selectedId === "empty" || selectedId.startsWith("nav_")) {
       return await renderPage();
     }
@@ -111,10 +112,7 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
       (await getProductById(selectedId)) ||
       (await getPageResult()).products.find((p: any) => String(p.id) === selectedId);
 
-    console.log("produit:", product)
-
     if (!product) {
-      console.log("product not found:", selectedId);
       return await renderPage();
     }
 
@@ -125,8 +123,37 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
     const tags = (product.tags ?? []).join(" · ") || "";
 
     if (product.type === ProductType.SIMPLE && !product.is_variable) {
+      const priceEur = normalizeFlowLabel(String(product.general_price_euro || "").trim());
+      const priceTnd = normalizeFlowLabel(String(product.general_price_tnd || "").trim());
+      const promoPriceEur = normalizeFlowLabel(String(product.promo_price_euro || "").trim());
+      const promoPriceTnd = normalizeFlowLabel(String(product.promo_price_tnd || "").trim());
+
       const cachedSimple = await getProductSimpleScreenCache(token, selectedId);
-      if (cachedSimple) return cachedSimple;
+      if (cachedSimple) {
+        const cachedData = (cachedSimple.data || {}) as Record<string, unknown>;
+        const needsBackfill =
+          !Object.prototype.hasOwnProperty.call(cachedData, "price_tnd") ||
+          !Object.prototype.hasOwnProperty.call(cachedData, "price_eur") ||
+          !Object.prototype.hasOwnProperty.call(cachedData, "promo_price_tnd") ||
+          !Object.prototype.hasOwnProperty.call(cachedData, "promo_price_eur");
+
+        if (!needsBackfill) {
+          return cachedSimple;
+        }
+
+        const patched: FlowResponse = {
+          ...cachedSimple,
+          data: {
+            ...cachedData,
+            price_tnd: String(cachedData.price_tnd ?? priceTnd),
+            price_eur: String(cachedData.price_eur ?? priceEur),
+            promo_price_tnd: String(cachedData.promo_price_tnd ?? promoPriceTnd),
+            promo_price_eur: String(cachedData.promo_price_eur ?? promoPriceEur),
+          },
+        };
+        await writeProductSimpleScreenCache(token, selectedId, patched);
+        return patched;
+      }
 
       const image = await mapImageUrl(product.image_src || "");
       const carouselImages = await buildProductCarouselImages(
@@ -156,8 +183,10 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
               "Description complete non renseignee",
             ),
           ),
-          prices: formatSimplePrices(product),
-          promo_prices:formatPromoPrices(product),
+          price_tnd: priceTnd,
+          price_eur: priceEur,
+          promo_price_tnd: promoPriceTnd,
+          promo_price_eur: promoPriceEur,
           stock_info: formatStock(product),
           categories: normalizeFlowLabel(categories),
           tags,
@@ -170,8 +199,6 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
 
     const cachedVariable = await getProductVariableScreenCache(token, String(product.id));
     if (cachedVariable) return cachedVariable;
-
-    rememberVariableProduct(token, String(product.id));
     const response: FlowResponse = {
       screen: "PRODUCT_DETAIL_VARIABLE",
       data: await buildVariableDetailData(product, mapImageUrl),
@@ -184,6 +211,12 @@ async function handleProductList(parsed: FlowRequest): Promise<FlowResponse> {
   return await renderPage();
 }
 
+/*
+This handler resolves variable-product selection events and renders VARIATION_DETAIL.
+It supports both direct variation lookups and fallback recovery paths, then formats stock,
+attributes, image, and pricing fields expected by the flow schema. It also handles the
+return-to-variable-detail behavior on transition edge cases.
+*/
 async function handleVariationDetail(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
   const data = parsed.data || {};
@@ -199,13 +232,11 @@ async function handleVariationDetail(parsed: FlowRequest): Promise<FlowResponse>
 
     if (productId) {
       const product = await getProductById(productId);
-      console.log("produit:", product)
 
       if (product) {
         const cachedVariable = await getProductVariableScreenCache(token, String(product.id));
         if (cachedVariable) return cachedVariable;
 
-        rememberVariableProduct(token, String(product.id));
         const response: FlowResponse = {
           screen: "PRODUCT_DETAIL_VARIABLE",
           data: await buildVariableDetailData(product, mapImageUrl),
@@ -238,8 +269,6 @@ async function handleVariationDetail(parsed: FlowRequest): Promise<FlowResponse>
     const product = await getProductById(productId);
     variation = product?.variations?.find((v: any) => String(v.id) === String(variationId));
   }
-
-  if (productId) rememberVariableProduct(token, productId);
 
   if (!variation) {
     return { screen: "PRODUCT_DETAIL_VARIABLE", data: { error_msg: "Variation introuvable." } };
@@ -275,6 +304,12 @@ async function handleVariationDetail(parsed: FlowRequest): Promise<FlowResponse>
 // Main entry point
 // ---------------------------------------------------------------------------
 
+/*
+Main productsFlow state machine entry point. It validates seller access using the flow
+token, normalizes effective token context, then routes INIT/NAVIGATE and DATA_EXCHANGE
+actions to the appropriate screen handlers. Authentication failures are redirected through
+the auth fallback mechanism with a user-facing reconnect message.
+*/
 export async function handleProductsFlow(
   parsed: FlowRequest,
 ): Promise<FlowResponse | null> {
@@ -314,7 +349,6 @@ export async function handleProductsFlow(
 
   if (action === "INIT" || action === "NAVIGATE") {
     if (effectiveToken) primeProductsAsync(effectiveToken);
-    console.log("PLUGIN_BASE_URL env:", process.env.WP_PLUGIN_BASE_URL);
     return { screen: "WELCOME_SCREEN", data: {} };
   }
 
