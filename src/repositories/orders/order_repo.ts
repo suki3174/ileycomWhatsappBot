@@ -18,6 +18,10 @@ export interface OrderStatusCounters {
   completed: number;
   in_delivery: number;
   to_deliver: number;
+  pending: number;
+  cancelled: number;
+  refunded: number;
+  anomaly: number;
 }
 
 export interface OrderSummariesPage {
@@ -38,13 +42,23 @@ export interface OrderArticlesPage {
   total: number;
 }
 
+/**
+ * Maps raw plugin status strings into normalized app status values.
+ */
 function mapStatus(value: unknown): OrderStatus {
   const normalized = normText(value).toLowerCase();
   if (normalized === OrderStatus.COMPLETED) return OrderStatus.COMPLETED;
   if (normalized === OrderStatus.IN_DELIVERY) return OrderStatus.IN_DELIVERY;
+  if (normalized === OrderStatus.PENDING) return OrderStatus.PENDING;
+  if (normalized === OrderStatus.CANCELLED) return OrderStatus.CANCELLED;
+  if (normalized === OrderStatus.REFUNDED) return OrderStatus.REFUNDED;
+  if (normalized === OrderStatus.ANOMALY) return OrderStatus.ANOMALY;
   return OrderStatus.TO_DELIVER;
 }
 
+/**
+ * Normalizes plugin text fields before they are rendered in flow payloads.
+ */
 function cleanOrderText(value: unknown): string {
   const normalized = normText(value);
   if (!normalized) return "";
@@ -57,6 +71,9 @@ function cleanOrderText(value: unknown): string {
     .trim();
 }
 
+/**
+ * Maps a raw article row from plugin payload into the internal OrderArticle type.
+ */
 function mapOrderArticle(raw: unknown): OrderArticle | undefined {
   const row = asRecord(raw);
   if (!row) return undefined;
@@ -72,6 +89,9 @@ function mapOrderArticle(raw: unknown): OrderArticle | undefined {
   };
 }
 
+/**
+ * Maps a raw order payload from plugin response into the internal Order model.
+ */
 function mapOrder(raw: unknown): Order | undefined {
   const row = asRecord(raw);
   if (!row) return undefined;
@@ -110,6 +130,9 @@ function mapOrder(raw: unknown): Order | undefined {
   };
 }
 
+/**
+ * Extracts the plugin `data` object safely from a parsed response payload.
+ */
 function extractDataObject(
   payload: Record<string, unknown> | undefined,
 ): Record<string, unknown> | undefined {
@@ -117,6 +140,9 @@ function extractDataObject(
   return asRecord(payload.data);
 }
 
+/**
+ * Returns all seller orders bound to a flow token.
+ */
 export async function findOrdersBySellerFlowToken(
   flowToken: string,
 ): Promise<Order[]> {
@@ -144,29 +170,24 @@ export async function findOrdersBySellerFlowToken(
     const data = extractDataObject(payload);
     if (!data || !Array.isArray(data.orders)) return [];
 
-    const mapped = data.orders
+    return data.orders
       .map((item) => mapOrder(item))
       .filter((item): item is Order => !!item);
-
-    console.log("orders/list/by-flow-token result", {
-      tokenSuffix: token.slice(-6),
-      rawCount: data.orders.length,
-      mappedCount: mapped.length,
-    });
-
-    return mapped;
   } catch (err) {
     console.error("plugin orders/list/by-flow-token exception", err);
     return [];
   }
 }
 
+/**
+ * Returns aggregated order counters for ORDER_STATUS.
+ */
 export async function findOrderStatusCountersByFlowToken(
   flowToken: string,
 ): Promise<OrderStatusCounters> {
   const token = normToken(flowToken);
   if (!token) {
-    return { total: 0, completed: 0, in_delivery: 0, to_deliver: 0 };
+    return { total: 0, completed: 0, in_delivery: 0, to_deliver: 0, pending: 0, cancelled: 0, refunded: 0, anomaly: 0 };
   }
 
   try {
@@ -183,7 +204,7 @@ export async function findOrderStatusCountersByFlowToken(
         statusText: res.statusText,
         body,
       });
-      return { total: 0, completed: 0, in_delivery: 0, to_deliver: 0 };
+      return { total: 0, completed: 0, in_delivery: 0, to_deliver: 0, pending: 0, cancelled: 0, refunded: 0, anomaly: 0 };
     }
 
     const payload = await parsePluginJsonSafe(res, "plugin orders/counters/by-flow-token");
@@ -195,13 +216,20 @@ export async function findOrderStatusCountersByFlowToken(
       completed: toNum(counters?.completed, 0),
       in_delivery: toNum(counters?.in_delivery, 0),
       to_deliver: toNum(counters?.to_deliver, 0),
+      pending: toNum(counters?.pending, 0),
+      cancelled: toNum(counters?.cancelled, 0),
+      refunded: toNum(counters?.refunded, 0),
+      anomaly: toNum(counters?.anomaly, 0),
     };
   } catch (err) {
     console.error("plugin orders/counters/by-flow-token exception", err);
-    return { total: 0, completed: 0, in_delivery: 0, to_deliver: 0 };
+    return { total: 0, completed: 0, in_delivery: 0, to_deliver: 0, pending: 0, cancelled: 0, refunded: 0, anomaly: 0 };
   }
 }
 
+/**
+ * Returns full order details for a single order id.
+ */
 export async function findOrderById(
   orderId: string,
 ): Promise<Order | undefined> {
@@ -236,6 +264,9 @@ export async function findOrderById(
   }
 }
 
+/**
+ * Returns a paginated seller order list filtered by status.
+ */
 export async function findOrderSummariesPageByFlowToken(
   flowToken: string,
   statusFilter: string,
@@ -324,6 +355,9 @@ export async function findOrderSummariesPageByFlowToken(
   }
 }
 
+/**
+ * Returns all articles for an order without pagination.
+ */
 export async function findOrderArticlesByOrderId(
   orderId: string,
 ): Promise<OrderArticle[]> {
@@ -360,6 +394,9 @@ export async function findOrderArticlesByOrderId(
   }
 }
 
+/**
+ * Returns a paginated list of order articles for ORDER_ARTICLES.
+ */
 export async function findOrderArticlesPageByOrderId(
   orderId: string,
   page = 1,
@@ -419,6 +456,9 @@ export async function findOrderArticlesPageByOrderId(
   }
 }
 
+/**
+ * Client-side fallback status filter for already-fetched order arrays.
+ */
 export function filterOrdersByStatus(
   orders: Order[],
   statusFilter: string,
@@ -429,6 +469,18 @@ export function filterOrdersByStatus(
   }
   if (statusFilter === OrderStatus.IN_DELIVERY) {
     return orders.filter((o) => o.status === OrderStatus.IN_DELIVERY);
+  }
+  if (statusFilter === OrderStatus.PENDING) {
+    return orders.filter((o) => o.status === OrderStatus.PENDING);
+  }
+  if (statusFilter === OrderStatus.CANCELLED) {
+    return orders.filter((o) => o.status === OrderStatus.CANCELLED);
+  }
+  if (statusFilter === OrderStatus.REFUNDED) {
+    return orders.filter((o) => o.status === OrderStatus.REFUNDED);
+  }
+  if (statusFilter === OrderStatus.ANOMALY) {
+    return orders.filter((o) => o.status === OrderStatus.ANOMALY);
   }
   if (statusFilter === OrderStatus.TO_DELIVER) {
     return orders.filter((o) => o.status === OrderStatus.TO_DELIVER);

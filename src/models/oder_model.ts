@@ -2,6 +2,10 @@ export enum OrderStatus {
   COMPLETED = "completed",
   IN_DELIVERY = "in_delivery",
   TO_DELIVER = "to_deliver",
+  PENDING = "pending",
+  CANCELLED = "cancelled",
+  REFUNDED = "refunded",
+  ANOMALY = "anomaly",
 }
 
 export interface OrderArticle {

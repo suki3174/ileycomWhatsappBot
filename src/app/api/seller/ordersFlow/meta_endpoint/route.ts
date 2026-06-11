@@ -4,16 +4,12 @@ import { handleOrdersFlow } from "@/handlers/seller/ordersFlow_handler";
 import type { FlowRequest } from "@/models/flowRequest";
 import type { FlowResponse } from "@/models/flowResponse";
 
+/**
+ * Decrypts, routes, and re-encrypts orders flow callback payloads from Meta.
+ */
 export async function POST(req: NextRequest) {
   try {
-    console.log("Orders Flow POST received", {
-      url: req.url,
-      host: req.headers.get("host"),
-      forwarded: req.headers.get("x-forwarded-for"),
-    });
-
     const body = await req.json();
-    console.log("Orders Flow POST body keys:", Object.keys(body));
 
     let parsed: FlowRequest;
     let aesKey: Buffer;
@@ -23,12 +19,6 @@ export async function POST(req: NextRequest) {
       parsed = dec.parsed;
       aesKey = dec.aesKey;
       iv = dec.iv;
-      console.log("Decrypted orders flow payload:", {
-        action: parsed.action,
-        version: parsed.version,
-        flow_token: parsed?.data?.flow_token ?? parsed?.flow_token,
-        screen: parsed.screen,
-      });
     } catch (deErr: unknown) {
       const err =
         typeof deErr === "object" && deErr !== null && "message" in deErr
@@ -48,10 +38,6 @@ export async function POST(req: NextRequest) {
         screen: flowResponse.screen,
         data: flowResponse.data,
       };
-      console.log("Orders flow response prepared:", {
-        screen: flowResponse.screen,
-        data: flowResponse.data,
-      });
     }
 
     const encoded = encryptFlowResponse(resp, aesKey, iv);
@@ -76,13 +62,10 @@ export async function POST(req: NextRequest) {
   }
 }
 
+/**
+ * Simple health endpoint used by Meta callback validation and smoke tests.
+ */
 export async function GET(req: Request) {
-  console.log(
-    "Orders Flow GET ping from",
-    req.headers instanceof Headers
-      ? req.headers.get("x-forwarded-for")
-      : "unknown",
-  );
   return new Response("Orders flow endpoint active", { status: 200 });
 }
 

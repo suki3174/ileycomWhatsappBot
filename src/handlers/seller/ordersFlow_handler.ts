@@ -1,5 +1,4 @@
-﻿/* eslint-disable @typescript-eslint/no-explicit-any */
-import { FlowRequest } from "@/models/flowRequest";
+﻿import { FlowRequest } from "@/models/flowRequest";
 import { FlowResponse } from "@/models/flowResponse";
 import {
   getFlowToken,
@@ -36,6 +35,9 @@ const ORDER_ARTICLES_PAGE_SIZE = 3;
 // Screen handlers
 // ---------------------------------------------------------------------------
 
+/**
+ * Builds ORDER_STATUS and handles transition into ORDER_LIST by selected filter.
+ */
 async function handleOrderStatus(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
   const data = parsed.data || {};
@@ -69,21 +71,16 @@ async function handleOrderStatus(parsed: FlowRequest): Promise<FlowResponse> {
       ORDER_LIST_PAGE_SIZE,
     );
 
-    console.log("ordersFlow ORDER_STATUS filter", {
-      tokenSuffix: token.slice(-6),
-      statusFilter,
-      pageCount: pageResult.orders.length,
-      page: pageResult.page,
-      hasMore: pageResult.hasMore,
-    });
-
     if (pageResult.orders.length === 0) {
       const counters = await getOrderStatusCounters(token);
       const statuses = [
-        { id: "all", title: `🗂️ Total  —  ${counters.total}` },
-        { id: "completed", title: `✅ Terminées  —  ${counters.completed}` },
+        { id: "all", title: `🗂️ Toutes  —  ${counters.total}` },
+        { id: "completed", title: `✅ Livrée  —  ${counters.completed}` },
         { id: "in_delivery", title: `🚚 En livraison  —  ${counters.in_delivery}` },
-        { id: "to_deliver", title: `📦 À Livrer  —  ${counters.to_deliver}` },
+        { id: "pending", title: `⏳ En traitement  —  ${counters.pending}` },
+        { id: "cancelled", title: `❌ Annulée  —  ${counters.cancelled}` },
+        { id: "refunded", title: `↩️ Remboursée  —  ${counters.refunded}` },
+        { id: "anomaly", title: `⚠️ Anomalie  —  ${counters.anomaly}` },
       ];
       return {
         screen: "ORDER_STATUS",
@@ -109,17 +106,14 @@ async function handleOrderStatus(parsed: FlowRequest): Promise<FlowResponse> {
 
   const counters = await getOrderStatusCounters(token);
 
-  console.log("ordersFlow ORDER_STATUS counters", {
-    tokenSuffix: token.slice(-6),
-    requestedFilter,
-    counters,
-  });
-
   const statuses = [
-    { id: "all", title: `🗂️ Total  —  ${counters.total}` },
-    { id: "completed", title: `✅ Terminées  —  ${counters.completed}` },
+    { id: "all", title: `🗂️ Toutes  —  ${counters.total}` },
+    { id: "completed", title: `✅ Livrée  —  ${counters.completed}` },
     { id: "in_delivery", title: `🚚 En livraison  —  ${counters.in_delivery}` },
-    { id: "to_deliver", title: `📦 À Livrer  —  ${counters.to_deliver}` },
+    { id: "pending", title: `⏳ En traitement  —  ${counters.pending}` },
+    { id: "cancelled", title: `❌ Annulée  —  ${counters.cancelled}` },
+    { id: "refunded", title: `↩️ Remboursée  —  ${counters.refunded}` },
+    { id: "anomaly", title: `⚠️ Anomalie  —  ${counters.anomaly}` },
   ];
 
   const response: FlowResponse = {
@@ -130,6 +124,9 @@ async function handleOrderStatus(parsed: FlowRequest): Promise<FlowResponse> {
   return response;
 }
 
+/**
+ * Handles ORDER_LIST pagination and order-to-detail navigation.
+ */
 async function handleOrderList(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
 
@@ -137,9 +134,6 @@ async function handleOrderList(parsed: FlowRequest): Promise<FlowResponse> {
   // parsed.action is always "data_exchange" (the WhatsApp action type).
   // The semantic action ("order_details", "paginate", etc.) is in parsed.data.action.
   const rawData = parsed.data || {};
-
-  console.log("handleOrderList full parsed keys:", Object.keys(parsed as any));
-  console.log("handleOrderList rawData:", JSON.stringify(rawData));
 
   // Read semantic action from payload data, NOT from parsed.action
   const mode = String(rawData.cmd || "").toLowerCase();
@@ -163,8 +157,6 @@ async function handleOrderList(parsed: FlowRequest): Promise<FlowResponse> {
   // Order tapped — navigate to detail without refetching the list first.
   if (mode === "order_details") {
     const orderId = String(rawData.order_id ?? "").trim();
-
-    console.log("order_details — orderId:", orderId);
 
     // Guard against empty, missing, or pagination pseudo-IDs.
     if (!orderId || orderId.startsWith("nav_")) {
@@ -229,15 +221,6 @@ async function handleOrderList(parsed: FlowRequest): Promise<FlowResponse> {
     ORDER_LIST_PAGE_SIZE,
   );
 
-  console.log("ordersFlow ORDER_LIST", {
-    tokenSuffix: token.slice(-6),
-    mode,
-    statusFilter,
-    page,
-    pageCount: pageResult.orders.length,
-    hasMore: pageResult.hasMore,
-  });
-
   // Explicit noop — empty state item tapped
   const built = buildOrderListResponse(
     pageResult.orders,
@@ -256,6 +239,9 @@ async function handleOrderList(parsed: FlowRequest): Promise<FlowResponse> {
   return built;
 }
 
+/**
+ * Handles ORDER_DETAIL actions, including loading the article page.
+ */
 async function handleOrderDetail(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
   const data = parsed.data || {};
@@ -321,6 +307,9 @@ async function handleOrderDetail(parsed: FlowRequest): Promise<FlowResponse> {
   return response;
 }
 
+/**
+ * Handles ORDER_ARTICLES pagination and close-to-success behavior.
+ */
 async function handleOrderArticles(
   parsed: FlowRequest,
 ): Promise<FlowResponse> {
@@ -352,7 +341,6 @@ async function handleOrderArticles(
 
   const requestedPage = Number(data.page ?? data.current_page ?? 1);
   const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
-  console.log("handleOrderArticles — page:", page);
 
   const cachedArticles = await getOrderArticlesScreenCache(
     token,
@@ -399,6 +387,9 @@ async function handleOrderArticles(
 // Main entry point
 // ---------------------------------------------------------------------------
 
+/**
+ * Orders flow state-machine entrypoint for all decrypted Meta callback actions.
+ */
 export async function handleOrdersFlow(
   parsed: FlowRequest,
 ): Promise<FlowResponse> {

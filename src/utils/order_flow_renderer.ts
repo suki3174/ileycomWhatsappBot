@@ -6,6 +6,9 @@ import { FlowResponse } from "@/models/flowResponse";
 
 // ─── Order List Items ───────────────────────────────────────────────────────
 
+/**
+ * Converts an order summary into a WhatsApp NavigationList item.
+ */
 export function formatOrderListItem(order: Order) {
   const articlesCount =
     typeof order.articles_count === "number"
@@ -40,6 +43,9 @@ export function formatOrderListItem(order: Order) {
 
 // ─── Order Detail ───────────────────────────────────────────────────────────
 
+/**
+ * Converts full order data into ORDER_DETAIL screen fields.
+ */
 export function formatOrderDetail(order: Order) {
   const articlesCount =
     typeof order.articles_count === "number"
@@ -69,6 +75,9 @@ export function formatOrderDetail(order: Order) {
 
 
 
+/**
+ * Shapes one ORDER_ARTICLES page with per-item visibility and paging metadata.
+ */
 export async function formatOrderArticlesServerPage(
   orderId: string,
   orderRef: string,
@@ -120,6 +129,9 @@ export async function formatOrderArticlesServerPage(
 
 // ─── Pagination Nav Items ───────────────────────────────────────────────────
 
+/**
+ * Builds ORDER_LIST pagination controls appended to the navigation list.
+ */
 export function buildPaginationItems(
   currentPage: number,
   hasMore: boolean,
@@ -172,6 +184,9 @@ export function buildPaginationItems(
 
 // ─── Screen Response Builders ───────────────────────────────────────────────
 
+/**
+ * Builds the ORDER_LIST response payload combining order rows and nav items.
+ */
 export function buildOrderListResponse(
   orders: any[],
   page: number,

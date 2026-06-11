@@ -13,6 +13,10 @@ const EMPTY_COUNTERS: OrderStatusCounters = {
   completed: 0,
   in_delivery: 0,
   to_deliver: 0,
+  pending: 0,
+  cancelled: 0,
+  refunded: 0,
+  anomaly: 0,
 };
 
 function deriveCountersFromOrders(orders: Order[]): OrderStatusCounters {
@@ -21,6 +25,10 @@ function deriveCountersFromOrders(orders: Order[]): OrderStatusCounters {
     completed: 0,
     in_delivery: 0,
     to_deliver: 0,
+    pending: 0,
+    cancelled: 0,
+    refunded: 0,
+    anomaly: 0,
   };
 
   for (const order of orders) {
@@ -28,6 +36,14 @@ function deriveCountersFromOrders(orders: Order[]): OrderStatusCounters {
       counters.completed += 1;
     } else if (order.status === "in_delivery") {
       counters.in_delivery += 1;
+    } else if (order.status === "pending") {
+      counters.pending += 1;
+    } else if (order.status === "cancelled") {
+      counters.cancelled += 1;
+    } else if (order.status === "refunded") {
+      counters.refunded += 1;
+    } else if (order.status === "anomaly") {
+      counters.anomaly += 1;
     } else {
       counters.to_deliver += 1;
     }

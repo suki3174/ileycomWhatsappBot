@@ -1,5 +1,4 @@
-﻿/* eslint-disable @typescript-eslint/no-unused-vars */
-import type { Order, OrderArticle } from "@/models/oder_model";
+﻿import type { Order, OrderArticle } from "@/models/oder_model";
 import {
   findOrderById,
   findOrderArticlesByOrderId,
@@ -7,7 +6,6 @@ import {
   findOrderStatusCountersByFlowToken,
   findOrderSummariesPageByFlowToken,
   findOrdersBySellerFlowToken,
-  filterOrdersByStatus,
   type OrderArticlesPage,
   type OrderSummariesPage,
   type OrderStatusCounters,
@@ -32,6 +30,9 @@ export async function getSellerOrdersByFlowToken(
   return findOrdersBySellerFlowToken(normalized);
 }
 
+/**
+ * Returns a filtered, paginated order summary page with cache-first behavior.
+ */
 export async function getSellerOrderSummariesPage(
   token: string,
   statusFilter: string,
@@ -74,6 +75,9 @@ export async function getSellerOrderSummariesPage(
   return fresh;
 }
 
+/**
+ * Resolves a single order detail, using cache when available.
+ */
 export async function getOrderById(
   orderId: string,
   token?: string,
@@ -89,12 +93,18 @@ export async function getOrderById(
   return fresh;
 }
 
+/**
+ * Returns all articles attached to a single order.
+ */
 export async function getOrderArticles(
   orderId: string,
 ): Promise<OrderArticle[]> {
   return findOrderArticlesByOrderId(orderId);
 }
 
+/**
+ * Returns a paged article result for ORDER_ARTICLES rendering.
+ */
 export async function getOrderArticlesPage(
   orderId: string,
   page = 1,
@@ -109,12 +119,15 @@ export async function getOrderArticlesPage(
   return fresh;
 }
 
+/**
+ * Returns plugin-backed status counters for ORDER_STATUS with cache fallback.
+ */
 export async function getOrderStatusCounters(
   token: string,
 ): Promise<OrderStatusCounters> {
   const normalized = normToken(token);
   if (!normalized) {
-    return { total: 0, completed: 0, in_delivery: 0, to_deliver: 0 };
+    return { total: 0, completed: 0, in_delivery: 0, to_deliver: 0, pending: 0, cancelled: 0, refunded: 0, anomaly: 0 };
   }
 
   const cached = await getOrderStatusCountersCache(normalized);
@@ -125,7 +138,7 @@ export async function getOrderStatusCounters(
     await writeOrderStatusCountersCache(normalized, fresh);
     return fresh;
   } catch {
-    return { total: 0, completed: 0, in_delivery: 0, to_deliver: 0 };
+    return { total: 0, completed: 0, in_delivery: 0, to_deliver: 0, pending: 0, cancelled: 0, refunded: 0, anomaly: 0 };
   }
 }
 
