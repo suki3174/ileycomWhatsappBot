@@ -3,6 +3,11 @@ import { parsePhoneNumberFromString } from "libphonenumber-js";
 
 const SUPPORTED_SELLER_COUNTRIES = new Set(["TN", "FR"]);
 
+/**
+ * Normalizes raw phone input into canonical digits-only international format for
+ * supported markets, with tolerant handling for local and prefixed variants.
+ * Unsupported or malformed numbers are rejected with an empty-string result.
+ */
 export function normalizeSellerPhone(phone: string): string {
   const raw = String(phone || "").trim();
   if (!raw) return "";
@@ -82,6 +87,11 @@ export function getSellerPhoneCandidates(phone: string): string[] {
   return Array.from(candidates);
 }
 
+/**
+ * Compares two phone inputs by expanding both into normalized equivalent forms.
+ * This prevents false mismatches caused by prefixes, local formatting, or plus
+ * notation differences across persisted and incoming values.
+ */
 export function areEquivalentSellerPhones(left: string, right: string): boolean {
   const leftCandidates = getSellerPhoneCandidates(left);
   const rightCandidates = new Set(getSellerPhoneCandidates(right));
@@ -90,12 +100,22 @@ export function areEquivalentSellerPhones(left: string, right: string): boolean 
   return leftCandidates.some((candidate) => rightCandidates.has(candidate));
 }
 
+/**
+ * Creates a flow token that embeds normalized phone identity with a timestamp,
+ * allowing downstream handlers to recover phone context without extra request
+ * fields while keeping token uniqueness per send attempt.
+ */
 export function generateFlowtoken(phone: string): string {
   const normalizedPhone = normalizeSellerPhone(phone);
   const token = `flowtoken-${normalizedPhone}-${Date.now()}`;
   return token;
 }
 
+/**
+ * Returns true when seller code exists and is non-empty after trimming. This is
+ * used by auth routing decisions to distinguish registered sellers from pending
+ * onboarding records.
+ */
 export function hasSellerCodeValue(seller: Seller | undefined): boolean {
   return !!(seller && seller.code !== null && String(seller.code).trim() !== "");
 }
@@ -107,6 +127,10 @@ export function sellerEmailMatches(seller: Seller | undefined, email: string): b
   return stored !== "" && stored === provided;
 }
 
+/**
+ * Validates signup PIN quality using both format and pattern checks so trivial
+ * sequences or highly repetitive codes are rejected before persistence.
+ */
 export function isPinStrong(pin: string): boolean {
   if (!/^[0-9]{4}$/.test(pin)) return false;
 
@@ -135,6 +159,10 @@ export function isTunisianPhone(phone: string): boolean {
   return normalized.startsWith("216") && normalized.length === 11;
 }
 
+/**
+ * Indicates whether a phone can be normalized into a supported seller market.
+ * The function acts as a single guard used by send/signin/signup paths.
+ */
 export function isSupportedSellerPhone(phone: string): boolean {
   return normalizeSellerPhone(phone) !== "";
 }

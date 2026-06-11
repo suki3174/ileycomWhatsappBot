@@ -64,6 +64,12 @@ export function findAllSellers(): Seller[] {
 }
 
 // Fetches seller by phone from plugin endpoint.
+/**
+ * Fetches a seller using phone as primary key through the plugin API and logs
+ * request timing for operational visibility. It returns undefined for transport,
+ * status, or payload-shape failures so caller logic can safely trigger fallback
+ * behavior without throwing.
+ */
 export async function findSellerByPhone(phone: string): Promise<Seller | undefined> {
   try {
     const startedAt = Date.now();
@@ -88,6 +94,11 @@ export async function findSellerByPhone(phone: string): Promise<Seller | undefin
 // This endpoint queries ONLY wp_cwsb_seller_state, avoiding heavy wp_users/wp_usermeta joins.
 // Called by WELCOME instead of findSellerByPhone to eliminate cache dependency on first run.
 // Phone must exist in both state table AND linked to a wp_vendor for this to return a real seller.
+/**
+ * Resolves seller state directly from the state table endpoint to support fast
+ * WELCOME routing and first-run reliability. This avoids heavier joined lookups
+ * and returns undefined when the state record is absent or malformed.
+ */
 export async function findSellerStateByPhone(phone: string): Promise<Seller | undefined> {
   try {
     const startedAt = Date.now();
@@ -109,6 +120,11 @@ export async function findSellerStateByPhone(phone: string): Promise<Seller | un
 }
 
 // Fetches seller by flow token from plugin endpoint.
+/**
+ * Finds a seller by flow token with retry-aware plugin transport to absorb brief
+ * timeout spikes. Token normalization is applied up front so callers do not need
+ * to handle whitespace or formatting variance.
+ */
 export async function findSellerByFlowToken(token: string): Promise<Seller | undefined> {
   const normalizedToken = normText(token);
   if (!normalizedToken) return undefined;
@@ -130,6 +146,11 @@ export async function findSellerByFlowToken(token: string): Promise<Seller | und
 }
 
 // Updates seller code in plugin state by flow token.
+/**
+ * Updates the stored seller PIN value for the provided flow token using bounded
+ * retries and timeout controls. Errors and invalid response shapes are logged so
+ * callers can distinguish persistence failures from success-path latency.
+ */
 export async function updateSellerCode(
   token: string,
   code: string,
@@ -167,8 +188,12 @@ export async function updateSellerCode(
   }
 }
 
-// Inserts or refreshes seller state row using token-derived phone.
-// Pass extraState to atomically update additional fields (e.g. session_active_until) in the same upsert.
+/**
+ * Upserts seller state using token-derived phone context and optional extra
+ * fields, then returns the normalized seller payload when available. The method
+ * includes resilient fallback reads when insert responses fail or return null,
+ * which helps keep onboarding flow continuity during plugin instability.
+ */
 export async function upsertSellerState(
   token: string,
   code: string | null = null,
@@ -243,6 +268,11 @@ export async function upsertSellerState(
 
 
 
+/**
+ * Activates seller session expiration metadata through the plugin endpoint and
+ * reports whether a valid seller payload was returned. This provides a compact
+ * boolean contract for service-layer session orchestration.
+ */
 export async function activateSellerSessionViaPlugin(token:string): Promise<boolean> {
   try {
     const sessionActiveUntil = Date.now() + 24 * 60 * 60 * 1000;

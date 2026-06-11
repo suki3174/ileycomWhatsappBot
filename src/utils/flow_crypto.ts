@@ -8,6 +8,12 @@ export interface DecryptedFlowResult<TParsed = any> {
   iv: Buffer;
 }
 
+/**
+ * Decrypts Meta flow payloads by recovering the AES session key with RSA OAEP,
+ * validating IV and auth tag structure, and parsing the resulting JSON body.
+ * It throws explicit errors for missing inputs and malformed crypto material so
+ * endpoint handlers can map failures to the expected HTTP contract.
+ */
 export function decryptFlowPayload<TParsed = any>(body: {
   encrypted_flow_data?: string;
   encrypted_aes_key?: string;
@@ -73,6 +79,11 @@ export function decryptFlowPayload<TParsed = any>(body: {
   return { parsed, aesKey, iv };
 }
 
+/**
+ * Encrypts flow responses with AES-GCM using the key material tied to the
+ * incoming request and Meta's required IV transform convention. The returned
+ * base64 blob is suitable for direct response body output.
+ */
 export function encryptFlowResponse(
   response: any,
   aesKey: Buffer,

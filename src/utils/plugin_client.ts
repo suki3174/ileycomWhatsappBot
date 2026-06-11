@@ -18,6 +18,11 @@ export const PLUGIN_TIMEOUT_MS = Number.isFinite(timeoutFromEnv)
   ? Math.max(timeoutFromEnv, 1000)
   : 5000;
 
+/**
+ * Extracts a compact token/phone summary for structured logging so plugin calls
+ * can be traced without printing full payload contents. This is used only for
+ * observability and does not alter request behavior.
+ */
 function summarizeFlowToken(payload: Record<string, unknown>): { token: string; phone: string } {
   const raw = payload.flow_token;
   const token = typeof raw === "string" ? raw.trim() : String(raw ?? "").trim();
@@ -28,6 +33,11 @@ function summarizeFlowToken(payload: Record<string, unknown>): { token: string; 
   };
 }
 
+/**
+ * Sends a single POST request to the WordPress plugin API with standardized
+ * timeout and authentication headers. The function centralizes transport policy
+ * and logging so repository methods stay focused on endpoint-level semantics.
+ */
 export async function pluginPost(
   path: string,
   payload: Record<string, unknown>,
@@ -59,6 +69,11 @@ export async function pluginPost(
   });
 }
 
+/**
+ * Wraps pluginPost with timeout-aware retry behavior for transient failures.
+ * Only timeout-class errors are retried, which prevents accidental replay on
+ * deterministic server-side validation errors.
+ */
 export async function pluginPostWithRetry(
   path: string,
   payload: Record<string, unknown>,
@@ -80,12 +95,19 @@ export async function pluginPostWithRetry(
   throw new Error("pluginPostWithRetry exhausted unexpectedly");
 }
 
+/**
+ * Identifies timeout-like fetch errors across runtime variants so retry logic
+ * can remain implementation-agnostic.
+ */
 function isTimeoutError(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
   const candidate = err as { name?: string; code?: number };
   return candidate.name === "TimeoutError" || candidate.code === 23;
 }
 
+/**
+ * Provides a minimal async backoff primitive for retry spacing.
+ */
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }

@@ -4,7 +4,6 @@ import { extractPhoneFromFlowToken } from "@/utils/data_parser";
 import { findSellerStateByPhone } from "@/repositories/auth/seller_repo";
 import {
   prepareSellerState,
-  sellerHasCodeByFlowToken,
   setSellerCode,
   verifyCode,
   verifySellerEmail,
@@ -23,11 +22,14 @@ import { sendMenu } from "@/services/menu_service";
 /* -------------------------------- */
 /* WELCOME */
 /* -------------------------------- */
-/* OPTIMIZATION: Use state-table-only phone lookup (fast path) instead of vendor-joined lookup.
-   This removes dependency on heavy wp_users/wp_usermeta joins and avoids cache misses on first run.
-   Phone 50354773 must be registered in wp_cwsb_seller_state table AND linked to a wp_vendor.
-   See: findSellerStateByPhone() for the direct state-table path.
-*/
+
+
+/**
+ * Resolves the initial auth screen for a token by validating phone support and
+ * reading seller state from the state table fast path. It routes registered
+ * sellers to SIGN_IN and unregistered sellers to SIGN_UP, with a safe fallback
+ * to SIGN_UP if lookup or parsing fails.
+ */
 async function handleWelcome(parsed: FlowRequest): Promise<FlowResponse> {
   try {
     const token = getFlowToken(parsed);
@@ -93,6 +95,11 @@ async function handleWelcome(parsed: FlowRequest): Promise<FlowResponse> {
 /* SIGN IN */
 /* -------------------------------- */
 
+/**
+ * Validates signin intent, checks PIN correctness, and transitions to SUCCESS
+ * when authentication passes. Session activation and menu send are executed in
+ * the background so flow navigation is not blocked by secondary network calls.
+ */
 async function handleSignIn(parsed: FlowRequest): Promise<FlowResponse> {
   const data = parsed.data || {};
   const pin = String(data.pin_code ?? "").trim();
@@ -158,6 +165,12 @@ async function handleSignIn(parsed: FlowRequest): Promise<FlowResponse> {
 /* SIGN UP */
 /* -------------------------------- */
 
+/**
+ * Registers or updates seller credentials by validating PIN input and supported
+ * phone constraints, then attempting code update first for latency. If update
+ * fails, it prepares state and retries once, returning explicit user-facing
+ * errors when vendor linkage or code persistence cannot be confirmed.
+ */
 async function handleSignUp(parsed: FlowRequest): Promise<FlowResponse> {
   const data = parsed.data || {};
   const pin = String(data.pin_code ?? "").trim();
@@ -200,50 +213,44 @@ async function handleSignUp(parsed: FlowRequest): Promise<FlowResponse> {
   }
 
   try {
-    // OPTIMIZATION: Guard against duplicate signup attempts.
-    // Use flow-token-only check (sellerHasCodeByFlowToken) instead of phone fallback.
-    // This avoids the slow /seller/by-phone lookup (~7-8s) in SIGN_UP critical path.
-    // Phone fallback is removed; only check current flow-token binding.
-    const alreadyRegistered = await sellerHasCodeByFlowToken(token);
-    if (alreadyRegistered) {
-      return {
-        screen: "SIGN_IN",
-        data: { error_msg: "Compte deja inscrit. Connectez-vous avec votre code." },
-      };
-    }
-
-    // Step 1: Insert seller into seller_state (without code).
-    // OPTIMIZATION: upsertSellerState now has state-table-first path that returns state rows directly,
-    // avoiding null response when vendor-join resolution is slow/flaky.
-    // If seller null despite HTTP 200, recovery path does state-by-phone read-back.
-    const stateInsertStartedAt = Date.now();
-    const inserted = await prepareSellerState(token);
-    console.log("SIGN_UP prepareSellerState completed", {
-      inserted,
-      durationMs: Date.now() - stateInsertStartedAt,
-    });
-    if (!inserted) {
-      return {
-        screen: "SIGN_UP",
-        // Clear error message: phone must be registered in DB before signup can proceed.
-        data: { error_msg: "Numero non lie a un vendeur. Contactez l'administrateur pour associer ce numero." },
-      };
-    }
-
-    // Step 2: Update the code for this seller.
-    // OPTIMIZATION: This call is non-blocking in background on success.
-    // Code is hashed before persistence (bcrypt via pinHash utility).
+    // Step 1: Try direct code update first (fast path).
     const setCodeStartedAt = Date.now();
-    const codeUpdated = await setSellerCode(token, pin);
-    console.log("SIGN_UP setSellerCode completed", {
+    let codeUpdated = await setSellerCode(token, pin);
+    console.log("SIGN_UP setSellerCode first attempt completed", {
       codeUpdated: !!codeUpdated,
       durationMs: Date.now() - setCodeStartedAt,
     });
+
+    // Step 2: If update failed, prepare state then retry code update once.
     if (!codeUpdated) {
-      return {
-        screen: "SIGN_UP",
-        data: { error_msg: "Erreur lors de la configuration du code. Réessayez." },
-      };
+      const stateInsertStartedAt = Date.now();
+      let inserted = await prepareSellerState(token);
+      if (!inserted) {
+        inserted = await prepareSellerState(token);
+      }
+      console.log("SIGN_UP prepareSellerState completed", {
+        inserted,
+        durationMs: Date.now() - stateInsertStartedAt,
+      });
+      if (!inserted) {
+        return {
+          screen: "SIGN_UP",
+          data: { error_msg: "Numero non lie a un vendeur. Contactez l'administrateur pour associer ce numero." },
+        };
+      }
+
+      const retrySetCodeStartedAt = Date.now();
+      codeUpdated = await setSellerCode(token, pin);
+      console.log("SIGN_UP setSellerCode retry completed", {
+        codeUpdated: !!codeUpdated,
+        durationMs: Date.now() - retrySetCodeStartedAt,
+      });
+      if (!codeUpdated) {
+        return {
+          screen: "SIGN_UP",
+          data: { error_msg: "Erreur lors de la configuration du code. Réessayez." },
+        };
+      }
     }
 
     // Step 3: Go to SIGN_IN
@@ -265,6 +272,12 @@ async function handleSignUp(parsed: FlowRequest): Promise<FlowResponse> {
 /* -------------------------------- */
 
 // authHandler logic
+/**
+ * Handles password reset initiation by validating email syntax, verifying email
+ * ownership for the current flow token, and sending a reset message with dedupe
+ * protection. It returns deterministic screen responses for invalid email,
+ * duplicate send, delivery failure, and successful dispatch.
+ */
 async function handleForgotPassword(parsed: FlowRequest): Promise<FlowResponse> {
   const data = parsed.data || {};
   const email = String(data.email ?? "").toLowerCase().trim();
@@ -326,6 +339,12 @@ async function handleForgotPassword(parsed: FlowRequest): Promise<FlowResponse> 
 /* MAIN HANDLER */
 /* -------------------------------- */
 
+/**
+ * Central dispatcher for auth flow actions and screens.
+ * INIT and NAVIGATE warm state asynchronously before returning WELCOME, while
+ * DATA_EXCHANGE delegates to screen-specific handlers and normalizes unknown
+ * actions/screens to a safe WELCOME response.
+ */
 export async function handleAuthFlow(
   parsed: FlowRequest
 ): Promise<FlowResponse> {

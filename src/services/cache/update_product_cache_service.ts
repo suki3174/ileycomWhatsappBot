@@ -272,11 +272,11 @@ export async function invalidateUpdateProductForEdit(
     return;
   }
 
-  await redis.del(
+  await redis.del([
     keyUpdateProductForEdit(normalized, pid),
     keyUpdateProductPhotos(normalized, pid),
     keyUpdateProductEditInfo(normalized, pid),
     keyUpdateProductCategoryInfo(normalized, pid),
-  );
+  ]);
   cacheLog("invalidate-product", { token: normalized, productId: pid });
 }

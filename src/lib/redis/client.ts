@@ -19,10 +19,19 @@ function getRedisUrl(): string {
   return url;
 }
 
+/**
+ * Returns the namespace prefix used for all Redis keys in this application so
+ * auth cache and dedupe keys remain isolated across environments.
+ */
 export function getRedisPrefix(): string {
   return String(process.env.REDIS_PREFIX || "ileycom:seller-bot").trim();
 }
 
+/**
+ * Lazily creates or returns a singleton Redis client with reconnect strategy.
+ * It enforces feature gating through REDIS_ENABLED so callers fail fast when
+ * cache infrastructure is intentionally disabled.
+ */
 export function getRedisClient(): AppRedisClient {
   if (!isRedisEnabled()) {
     throw new Error("Redis is disabled. Set REDIS_ENABLED=true to use Redis.");
@@ -52,6 +61,10 @@ export function getRedisClient(): AppRedisClient {
   return client;
 }
 
+/**
+ * Ensures the shared Redis client is connected before cache operations run and
+ * returns the ready-to-use client instance.
+ */
 export async function ensureRedisConnected(): Promise<AppRedisClient> {
   const client = getRedisClient();
   if (!client.isOpen) {

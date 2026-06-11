@@ -57,6 +57,11 @@ function tryRepairMojibake(input: string): string {
   return patchedScore <= bestScore ? patched : best;
 }
 
+/**
+ * Normalizes unknown input into a trimmed text value with best-effort repair of
+ * common mojibake artifacts. This helps token and payload parsing remain stable
+ * when upstream systems produce encoding-corrupted strings.
+ */
 export function normText(value: unknown): string {
   const raw = String(value ?? "").trim();
   if (!raw) return "";
@@ -89,6 +94,11 @@ export function toStringArray(value: unknown): string[] {
 
 // ─── Token Parsing ─────────────────────────────────────────────────────────────
 
+/**
+ * Extracts and normalizes the seller phone embedded in a flow token generated
+ * by this application. It returns null when token shape is invalid or the phone
+ * cannot be normalized to a supported format.
+ */
 export function extractPhoneFromFlowToken(token: string): string | null {
   const tok = normText(token);
   const match = tok.match(/^flowtoken-(.+)-\d+$/);
@@ -99,6 +109,11 @@ export function extractPhoneFromFlowToken(token: string): string | null {
 
 // ─── HTTP Response Parsing ───────────────────────────────────────────────────
 
+/**
+ * Reads response text safely for logging and error analysis without throwing.
+ * When stream consumption fails, it returns an empty string to keep callers
+ * deterministic in their fallback handling.
+ */
 export async function readResponseBodySafe(res: Response): Promise<string> {
   try {
     return await res.text();
@@ -174,6 +189,12 @@ function extractFirstCompleteJsonObject(text: string): string | undefined {
   return undefined;
 }
 
+/**
+ * Parses plugin responses that may include noisy prefixes/suffixes and returns
+ * a structured object only when valid JSON content can be extracted. Failures
+ * are logged with status and body preview to aid debugging of upstream PHP/WP
+ * output issues.
+ */
 export async function parsePluginJsonSafe(
   res: Response,
   context: string,

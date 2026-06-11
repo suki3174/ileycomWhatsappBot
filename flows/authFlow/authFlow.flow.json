@@ -1,0 +1,263 @@
+{
+  "version": "7.3",
+  "data_api_version": "3.0",
+  "routing_model": {
+    "WELCOME": [
+      "SIGN_IN",
+      "SIGN_UP"
+    ],
+    "SIGN_IN": [
+      "FORGOT_PASSWORD",
+      "SUCCESS"
+    ],
+    "SIGN_UP": [
+      "SIGN_IN"
+    ],
+    "FORGOT_PASSWORD": [
+      "SUCCESS"
+    ],
+    "SUCCESS": []
+  },
+  "screens": [
+    {
+      "id": "WELCOME",
+      "title": "Bienvenue",
+      "data": {},
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "👋 Bienvenue sur IleycomBot"
+          },
+          {
+            "type": "TextBody",
+            "text": "Ce bot est réservé aux vendeurs Ileycom. Il vous permet de gérer votre activité facilement et rapidement depuis WhatsApp."
+          },
+          {
+            "type": "TextSubheading",
+            "text": "Fonctionnalités disponibles :"
+          },
+          {
+            "type": "TextBody",
+            "text": "• 📦 Ajouter un produit\n• 🆕 Voir les derniers produits ajoutés\n• 🛒 Consulter vos commandes\n• 🌐 Accéder à l’application web vendeur\n• ❔Demander l'assistance d'un membre de l'équipe Ileycom"
+          },
+          {
+            "type": "Footer",
+            "label": "Continuer",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {
+                "error_msg": ""
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "SIGN_UP",
+      "title": "Créer un compte",
+      "data": {
+        "error_msg": {
+          "type": "string",
+          "__example__": ""
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextSubheading",
+            "text": "🔐 Sécurité"
+          },
+          {
+            "type": "TextBody",
+            "text": "Pour accéder au bot, vous devez créer un code PIN à 4 chiffres. Ce code vous sera demandé à chaque connexion. Merci de bien le mémoriser."
+          },
+          {
+            "type": "Form",
+            "name": "create_pin_form",
+            "children": [
+              {
+                "type": "TextBody",
+                "text": "${data.error_msg}",
+                "visible": "`${data.error_msg != ''}`"
+              },
+              {
+                "type": "TextInput",
+                "label": "Créer un code PIN",
+                "name": "pin_code",
+                "required": true,
+                "input-type": "number",
+                "pattern": "^[0-9]{4}$",
+                "helper-text": "Le code doit contenir exactement 4 chiffres."
+              },
+              {
+                "type": "TextInput",
+                "label": "Confirmer le code",
+                "name": "confirm_pin_code",
+                "required": true,
+                "input-type": "number",
+                "pattern": "^[0-9]{4}$",
+                "helper-text": "Le code doit contenir exactement 4 chiffres."
+              },
+              {
+                "type": "Footer",
+                "label": "S'inscrire",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "pin_code": "${form.pin_code}",
+                    "confirm_pin_code": "${form.confirm_pin_code}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "SIGN_IN",
+      "title": "Connexion",
+      "data": {
+        "error_msg": {
+          "type": "string",
+          "__example__": ""
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "sign_in_form",
+            "children": [
+              {
+                "type": "TextBody",
+                "text": "${data.error_msg}",
+                "visible": "`${data.error_msg != ''}`"
+              },
+              {
+                "type": "TextInput",
+                "label": "Code PIN",
+                "name": "pin_code",
+                "required": true,
+                "input-type": "number",
+                "pattern": "^[0-9]{4}$",
+                "helper-text": "Le code doit contenir exactement 4 chiffres."
+              },
+              {
+                "type": "EmbeddedLink",
+                "text": "Mot de passe oublié",
+                "on-click-action": {
+                  "name": "navigate",
+                  "next": {
+                    "type": "screen",
+                    "name": "FORGOT_PASSWORD"
+                  },
+                  "payload": {
+                    "requested_from": "SIGN_IN",
+                    "error_msg": ""
+                  }
+                }
+              },
+              {
+                "type": "Footer",
+                "label": "Se connecter",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "pin_code": "${form.pin_code}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "FORGOT_PASSWORD",
+      "title": "Réinitialisation",
+      "data": {
+        "error_msg": {
+          "type": "string",
+          "__example__": ""
+        },
+        "requested_from": {
+          "type": "string",
+          "__example__": "SIGN_IN"
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "forgot_password_form",
+            "children": [
+              {
+                "type": "TextBody",
+                "text": "Entrez votre email pour recevoir un code de vérification."
+              },
+              {
+                "type": "TextBody",
+                "text": "${data.error_msg}",
+                "visible": "`${data.error_msg != ''}`"
+              },
+              {
+                "type": "TextInput",
+                "label": "Email",
+                "name": "email",
+                "required": true,
+                "input-type": "email"
+              },
+              {
+                "type": "Footer",
+                "label": "Envoyer",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "email": "${form.email}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "SUCCESS",
+      "title": "Succès",
+      "terminal": true,
+      "data": {
+        "message": {
+          "type": "string",
+          "__example__": "Action terminée avec succès !"
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "${data.message}"
+          },
+          {
+            "type": "Footer",
+            "label": "Fermer",
+            "on-click-action": {
+              "name": "complete",
+              "payload": {
+                "status": "success"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

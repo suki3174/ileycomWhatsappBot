@@ -7,18 +7,31 @@ import { asRecord, parsePluginJsonSafe } from "@/utils/data_parser";
 
 // ─── Validation ──────────────────────────────────────────────────────────────
 
+/**
+ * Performs lightweight syntax validation for email-like input used in forgot
+ * password flow gating. It is intentionally simple and meant for early screen-
+ * level feedback before backend ownership checks are executed.
+ */
 export function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
 // ─── Token / Flow Utilities ───────────────────────────────────────────────────
 
+/**
+ * Normalizes optional token values to a trimmed string so repository and cache
+ * keys stay consistent across request boundaries.
+ */
 export const normToken = (t: string): string => (t ? String(t).trim() : "");
 
 export function generateResetToken(): string {
   return crypto.randomBytes(32).toString("hex");
 }
 
+/**
+ * Extracts flow token from canonical request locations and returns a normalized
+ * string value used as the primary auth context identifier.
+ */
 export function getFlowToken(parsed: FlowRequest): string {
   const t = parsed?.data?.flow_token ?? parsed?.flow_token ?? "";
   return typeof t === "string" ? t.trim() : String(t).trim();

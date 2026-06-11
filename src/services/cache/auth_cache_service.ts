@@ -80,6 +80,11 @@ function resolveAuthTtlSeconds(seller: Seller): number {
   return AUTH_CACHE_DEFAULT_TTL_SEC;
 }
 
+/**
+ * Reads seller session snapshot by normalized phone key when Redis is enabled.
+ * Cache failures and malformed payloads return undefined so callers can safely
+ * continue with plugin lookups.
+ */
 export async function getSellerSessionByPhone(phone: string): Promise<Seller | undefined> {
   const normalized = normalizeSellerPhone(phone);
   if (!normalized) return undefined;
@@ -106,6 +111,10 @@ export async function getSellerSessionByPhone(phone: string): Promise<Seller | u
   }
 }
 
+/**
+ * Reads seller session snapshot by flow token key to support token-first auth
+ * resolution. Missing cache or decode errors are treated as cache misses.
+ */
 export async function getSellerSessionByToken(token: string): Promise<Seller | undefined> {
   const normalizedToken = normToken(token);
   if (!normalizedToken) return undefined;
@@ -132,6 +141,11 @@ export async function getSellerSessionByToken(token: string): Promise<Seller | u
   }
 }
 
+/**
+ * Writes seller session snapshot to both phone and token indexes with a TTL
+ * derived from session expiration when available. This keeps cross-path auth
+ * reads coherent while limiting stale cache lifetime.
+ */
 export async function writeSellerSessionCache(seller: Seller): Promise<void> {
   const redis = await getRedisOrNull();
   if (!redis) {
@@ -163,6 +177,10 @@ export async function writeSellerSessionCache(seller: Seller): Promise<void> {
   }
 }
 
+/**
+ * Invalidates phone/token cache entries for seller state transitions such as
+ * logout, token mismatch, or session expiration handling.
+ */
 export async function invalidateSellerSessionCache(params: {
   phone?: string;
   token?: string;

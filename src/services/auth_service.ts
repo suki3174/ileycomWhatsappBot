@@ -36,7 +36,11 @@ export type SellerFlowAuthResult = {
   token: string;
 };
 
-// Returns seller resolved by phone from plugin-backed repository.
+/**
+ * Resolves a seller by phone with cache-first behavior to reduce plugin latency
+ * on repeated requests. When a cache miss occurs, the repository lookup result
+ * is written back into cache so subsequent reads can avoid external calls.
+ */
 export async function getSellerByPhone(phone: string ): Promise<Seller | undefined> {
   const cached = await getSellerSessionByPhone(phone);
   if (cached) return cached;
@@ -53,6 +57,11 @@ export function getAllSellers(): Seller[] {
   return findAllSellers();
 }
 
+/**
+ * Finds a seller for auth operations by preferring token-bound identity first,
+ * then falling back to phone extraction when token lookup misses. Successful
+ * lookups are cached so downstream checks in the same flow stay consistent.
+ */
 export async function findSellerByTokenOrPhone(token: string): Promise<Seller | undefined> {
   const normalized = normToken(token);
   if (!normalized) return undefined;
@@ -237,7 +246,12 @@ export async function sellerHasCodeByFlowToken(token: string): Promise<boolean> 
   return hasSellerCodeValue(seller);
 }
 
-// Updates seller code and falls back to a read-after-write consistency check.
+/**
+ * Persists a new seller PIN (hashed) using flow token context and validates the
+ * result via read-after-write when the update response is inconclusive. This
+ * design favors fast direct update but still tolerates transient plugin issues
+ * by accepting a verified stored value as success.
+ */
 export async function setSellerCode(token: string, code: string): Promise<Seller | undefined> {
   // Normalize incoming flow token to avoid whitespace mismatch across requests.
   const normalized = normToken(token);
@@ -269,7 +283,11 @@ export async function setSellerCode(token: string, code: string): Promise<Seller
   return undefined;
 }
 
-// Ensures seller state row exists for current flow without blocking UI response.
+/**
+ * Ensures the seller state row exists for the current flow token before steps
+ * that depend on persistent state. The function performs a blocking upsert and
+ * writes any resolved seller snapshot to cache to keep later lookups aligned.
+ */
 export async function prepareSellerState(token: string): Promise<boolean> {
   // Normalize incoming flow token once for downstream calls.
   const normalized = normToken(token);
@@ -289,7 +307,11 @@ export async function prepareSellerState(token: string): Promise<boolean> {
   }
 }
 
-// Verifies provided code against the seller code stored in plugin state.
+/**
+ * Verifies a user-provided PIN against the currently stored seller code for the
+ * flow token. It resolves seller identity through the normal lookup path so the
+ * comparison works with either cached or freshly fetched plugin state.
+ */
 export async function verifyCode(token: string, code: string): Promise<boolean> {
   const provided = String(code).trim();
 
@@ -299,9 +321,11 @@ export async function verifyCode(token: string, code: string): Promise<boolean> 
   return await verifyStoredPin(provided, stored);
 }
 
-// Activates session in background to keep flow transition latency low.
-// Uses a single phone-based state upsert so flow_token and session_active_until
-// are written atomically — no dependency on prepareSellerState having completed first.
+/**
+ * Activates seller session validity for authenticated users and refreshes cache
+ * with the latest session metadata. If the dedicated activation endpoint fails,
+ * it falls back to a state upsert so session continuity can still be recovered.
+ */
 export async function startSellerSession(token: string): Promise<boolean> {
   const normalized = normToken(token);
   if (!normalized) return false;

@@ -8,6 +8,10 @@ if (!PIN_PEPPER) {
   throw new Error("PIN_PEPPER is not defined in environment variables");
 }
 
+/**
+ * Detects whether a stored PIN value is a bcrypt hash so verification logic can
+ * choose secure compare semantics instead of plaintext fallback compatibility.
+ */
 export function isBcryptHash(value: string): boolean {
   return /^\$2[aby]\$\d{2}\$/.test(String(value || "").trim());
 }
@@ -29,6 +33,10 @@ export async function verifyPin(pin: string, hash: string): Promise<boolean> {
   return await bcrypt.compare(pepperedPin, hash);
 }
 
+/**
+ * Verifies a provided PIN against either modern bcrypt storage or legacy plain
+ * values, preserving backward compatibility during incremental migrations.
+ */
 export async function verifyStoredPin(pin: string, storedValue: string): Promise<boolean> {
   const provided = String(pin ?? "").trim();
   const stored = String(storedValue ?? "").trim();

@@ -4,6 +4,12 @@ import { handleAuthFlow } from "@/handlers/seller/auth_flowHandler";
 import type { FlowRequest } from "@/models/flowRequest";
 import type { FlowResponse } from "@/models/flowResponse";
 
+/**
+ * Handles encrypted flow callbacks from Meta by decrypting the request payload,
+ * dispatching business logic for non-ping actions, and re-encrypting the response
+ * with the same session keys. Decryption failures return 421 so the client can
+ * refresh key material, while other failures are mapped to 400/500 statuses.
+ */
 export async function POST(req: NextRequest) {
   try {
     console.log("Flow POST received", {
@@ -80,6 +86,11 @@ export async function POST(req: NextRequest) {
   }
 }
 
+/**
+ * Exposes a lightweight health endpoint used for connectivity checks.
+ * This route intentionally avoids crypto and business logic so operators
+ * can quickly verify tunnel and routing availability.
+ */
 export async function GET(req: Request) {
   console.log(
     "Flow GET ping from",
