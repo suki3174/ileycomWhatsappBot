@@ -1,6 +1,7 @@
 ﻿/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { FlowRequest } from "@/models/flowRequest";
 import type { FlowResponse } from "@/models/flowResponse";
+import type { UpdateProductState } from "@/models/product_model";
 import {
   getFlowToken,
   hasInvalidPromoPrice,
@@ -16,7 +17,7 @@ import {
 import {
   getUpdateProductState,
   updateUpdateProductState,
-} from "@/repositories/products/update_product_cache";
+} from "@/repositories/updateProduct/update_product_cache";
 import {
   getSellerProductsPageByFlowToken,
   loadProductCategoryInfoForEditScreen,
@@ -59,7 +60,7 @@ function normalizeOptionalValue(value: unknown): string {
 async function ensureEditInfoInState(token: string, productId: string): Promise<void> {
   if (!productId) return;
 
-  const state = (await getUpdateProductState(token)) || {};
+  const state = ((await getUpdateProductState(token)) || {}) as UpdateProductState;
   if (asTrimmed(state.edit_info_loaded_for) === productId) {
     return;
   }
@@ -70,15 +71,15 @@ async function ensureEditInfoInState(token: string, productId: string): Promise<
   await updateUpdateProductState(token, {
     product_id: productId,
     product_name: asTrimmed(editInfo.product_name),
-    prix_regulier_tnd: asTrimmed(editInfo.regular_tnd),
-    prix_promo_tnd: asTrimmed(editInfo.sale_tnd),
-    prix_regulier_eur: asTrimmed(editInfo.regular_eur),
-    prix_promo_eur: asTrimmed(editInfo.sale_eur),
-    longueur: normalizeOptionalValue(editInfo.length),
-    largeur: normalizeOptionalValue(editInfo.width),
-    profondeur: normalizeOptionalValue(editInfo.height),
+    prix_regulier_tnd: Number(asTrimmed(editInfo.regular_tnd)) || 0,
+    prix_promo_tnd: Number(asTrimmed(editInfo.sale_tnd)) || 0,
+    prix_regulier_eur: Number(asTrimmed(editInfo.regular_eur)) || 0,
+    prix_promo_eur: Number(asTrimmed(editInfo.sale_eur)) || 0,
+    longueur: Number(normalizeOptionalValue(editInfo.length)) || undefined,
+    largeur: Number(normalizeOptionalValue(editInfo.width)) || undefined,
+    profondeur: Number(normalizeOptionalValue(editInfo.height)) || undefined,
     unite_dimension: asTrimmed(editInfo.dim_unit) || "cm",
-    valeur_poids: normalizeOptionalValue(editInfo.weight),
+    valeur_poids: Number(normalizeOptionalValue(editInfo.weight)) || undefined,
     unite_poids: asTrimmed(editInfo.weight_unit) || "kg",
     couleur: normalizeOptionalValue(editInfo.color),
     taille: normalizeOptionalValue(editInfo.size),
@@ -90,7 +91,7 @@ async function ensureEditInfoInState(token: string, productId: string): Promise<
 async function ensureCategoryInfoInState(token: string, productId: string): Promise<void> {
   if (!productId) return;
 
-  const state = (await getUpdateProductState(token)) || {};
+  const state = ((await getUpdateProductState(token)) || {}) as UpdateProductState;
   if (asTrimmed(state.category_info_loaded_for) === productId) {
     return;
   }
@@ -182,19 +183,19 @@ async function handleLoadProductForEdit(parsed: FlowRequest): Promise<FlowRespon
   // Reset per-product edit state
   await updateUpdateProductState(token, {
     product_id: productId,
-    photos_modifiees: false,
+    photos_modified: false,
     images: undefined,
     submit_status: "",
     product_name: asTrimmed(photosData.product_name),
-    prix_regulier_tnd: "",
-    prix_promo_tnd: "",
-    prix_regulier_eur: "",
-    prix_promo_eur: "",
-    longueur: "",
-    largeur: "",
-    profondeur: "",
+    prix_regulier_tnd: 0,
+    prix_promo_tnd: 0,
+    prix_regulier_eur: 0,
+    prix_promo_eur: 0,
+    longueur: 0,
+    largeur: 0,
+    profondeur: 0,
     unite_dimension: "cm",
-    valeur_poids: "",
+    valeur_poids: 0,
     unite_poids: "kg",
     couleur: "",
     taille: "",
@@ -275,7 +276,7 @@ async function handleSavePhotos(parsed: FlowRequest): Promise<FlowResponse> {
   await updateUpdateProductState(token, {
     product_id: productId,
     images: images,
-    photos_modifiees: true,
+    photos_modified: true,
   });
 
   return buildEditInfoScreen(token, productId);
@@ -311,7 +312,7 @@ function buildEditInfoPayload(state: any, productId: string, errorMessage = "") 
 
 async function buildEditInfoScreen(token: string, productId: string, errorMessage = ""): Promise<FlowResponse> {
   await ensureEditInfoInState(token, productId);
-  const state = (await getUpdateProductState(token)) || {};
+  const state = ((await getUpdateProductState(token)) || {}) as UpdateProductState;
   return {
     screen: "SCREEN_EDIT_INFO",
     data: buildEditInfoPayload(state, productId, errorMessage),
@@ -322,7 +323,7 @@ async function handleSaveInfoAndContinue(parsed: FlowRequest): Promise<FlowRespo
   const token = getFlowToken(parsed);
   const data = parsed.data || {};
   const productId = String(data.product_id ?? "").trim();
-  const previous = (await getUpdateProductState(token)) || {};
+  const previous = ((await getUpdateProductState(token)) || {}) as UpdateProductState;
 
   const mergedName = keepOldIfBlank(data.product_name, previous.product_name);
   const mergedRegularTnd = keepOldIfBlank(data.prix_regulier_tnd, previous.prix_regulier_tnd);
@@ -339,15 +340,15 @@ async function handleSaveInfoAndContinue(parsed: FlowRequest): Promise<FlowRespo
     await updateUpdateProductState(token, {
       product_id: productId,
       product_name: mergedName,
-      prix_regulier_tnd: mergedRegularTnd,
-      prix_promo_tnd: mergedPromoTnd,
-      prix_regulier_eur: mergedRegularEur,
-      prix_promo_eur: mergedPromoEur,
-      longueur: keepOldIfBlank(data.longueur, previous.longueur),
-      largeur: keepOldIfBlank(data.largeur, previous.largeur),
-      profondeur: keepOldIfBlank(data.profondeur, previous.profondeur),
+      prix_regulier_tnd: parsePrice(mergedRegularTnd, 0),
+      prix_promo_tnd: parsePrice(mergedPromoTnd, 0),
+      prix_regulier_eur: parsePrice(mergedRegularEur, 0),
+      prix_promo_eur: parsePrice(mergedPromoEur, 0),
+      longueur: Number(keepOldIfBlank(data.longueur, previous.longueur)) || undefined,
+      largeur: Number(keepOldIfBlank(data.largeur, previous.largeur)) || undefined,
+      profondeur: Number(keepOldIfBlank(data.profondeur, previous.profondeur)) || undefined,
       unite_dimension: keepOldIfBlank(data.unite_dimension, previous.unite_dimension) || "cm",
-      valeur_poids: keepOldIfBlank(data.valeur_poids, previous.valeur_poids),
+      valeur_poids: Number(keepOldIfBlank(data.valeur_poids, previous.valeur_poids)) || undefined,
       unite_poids: keepOldIfBlank(data.unite_poids, previous.unite_poids) || "kg",
       couleur: keepOldIfBlank(data.couleur, previous.couleur),
       taille: keepOldIfBlank(data.taille, previous.taille),
@@ -372,15 +373,15 @@ async function handleSaveInfoAndContinue(parsed: FlowRequest): Promise<FlowRespo
   await updateUpdateProductState(token, {
     product_id: productId,
     product_name: mergedName,
-    prix_regulier_tnd: String(regularTndValue),
-    prix_promo_tnd: promoTndValue > 0 ? String(promoTndValue) : "",
-    prix_regulier_eur: mergedRegularEur,
-    prix_promo_eur: mergedPromoEur,
-    longueur: keepOldIfBlank(data.longueur, previous.longueur),
-    largeur: keepOldIfBlank(data.largeur, previous.largeur),
-    profondeur: keepOldIfBlank(data.profondeur, previous.profondeur),
+    prix_regulier_tnd: regularTndValue,
+    prix_promo_tnd: promoTndValue,
+    prix_regulier_eur: regularEurValue,
+    prix_promo_eur: promoEurValue,
+    longueur: Number(keepOldIfBlank(data.longueur, previous.longueur)) || undefined,
+    largeur: Number(keepOldIfBlank(data.largeur, previous.largeur)) || undefined,
+    profondeur: Number(keepOldIfBlank(data.profondeur, previous.profondeur)) || undefined,
     unite_dimension: keepOldIfBlank(data.unite_dimension, previous.unite_dimension) || "cm",
-    valeur_poids: keepOldIfBlank(data.valeur_poids, previous.valeur_poids),
+    valeur_poids: Number(keepOldIfBlank(data.valeur_poids, previous.valeur_poids)) || undefined,
     unite_poids: keepOldIfBlank(data.unite_poids, previous.unite_poids) || "kg",
     couleur: keepOldIfBlank(data.couleur, previous.couleur),
     taille: keepOldIfBlank(data.taille, previous.taille),
@@ -389,7 +390,7 @@ async function handleSaveInfoAndContinue(parsed: FlowRequest): Promise<FlowRespo
 
   await ensureCategoryInfoInState(token, productId);
 
-  const st = (await getUpdateProductState(token)) || {};
+  const st = ((await getUpdateProductState(token)) || {}) as UpdateProductState;
   return {
     screen: "SCREEN_CATEGORY_INFO",
     data: {
@@ -405,7 +406,7 @@ async function handleGoEditCategory(parsed: FlowRequest): Promise<FlowResponse> 
   const data = parsed.data || {};
   const productId = String(data.product_id ?? "").trim();
   await ensureCategoryInfoInState(token, productId);
-  const state = (await getUpdateProductState(token)) || {};
+  const state = ((await getUpdateProductState(token)) || {}) as UpdateProductState;
 
   let categories = (state.categories && state.categories.length > 0)
     ? state.categories
@@ -440,7 +441,7 @@ async function handleLoadSubcategories(parsed: FlowRequest): Promise<FlowRespons
   const data = parsed.data || {};
   const productId = String(data.product_id ?? "").trim();
   const categoryId = String(data.product_category ?? "").trim();
-  const state = (await getUpdateProductState(token)) || {};
+  const state = ((await getUpdateProductState(token)) || {}) as UpdateProductState;
   const categoryLabel =
     (state.categories as Array<{ id: string; title: string }> || []).find((c) => c.id === categoryId)?.title || categoryId;
 
@@ -480,7 +481,7 @@ async function handleSaveCategoryAndContinue(parsed: FlowRequest): Promise<FlowR
   const data = parsed.data || {};
   const productId = String(data.product_id ?? "").trim();
   const categoryId = String(data.product_category ?? "").trim();
-  const state = (await getUpdateProductState(token)) || {};
+  const state = ((await getUpdateProductState(token)) || {}) as UpdateProductState;
   const label =
     (state.categories as Array<{ id: string; title: string }> || []).find((c) => c.id === categoryId)?.title || categoryId;
 
@@ -503,7 +504,7 @@ async function handleSaveSubcategoryAndContinue(parsed: FlowRequest): Promise<Fl
   const data = parsed.data || {};
   const productId = String(data.product_id ?? "").trim();
   const subcatId = String(data.product_subcategory ?? "").trim();
-  const state = (await getUpdateProductState(token)) || {};
+  const state = ((await getUpdateProductState(token)) || {}) as UpdateProductState;
 
   let label = subcatId;
   for (const list of Object.values(state.subcategoriesByCategory || {}) as Array<Array<{ id: string; description: string }>>) {
@@ -529,7 +530,7 @@ async function handleSkipCategory(parsed: FlowRequest): Promise<FlowResponse> {
 }
 
 async function buildSummaryScreen(token: string, productId: string): Promise<FlowResponse> {
-  const state = (await getUpdateProductState(token)) || {};
+  const state = ((await getUpdateProductState(token)) || {}) as UpdateProductState;
 
   let rawImages: string[] = [];
   if (Array.isArray(state.images) && state.images.length > 0) {
@@ -558,7 +559,7 @@ async function buildSummaryScreen(token: string, productId: string): Promise<Flo
       images: carousel1,
       images_2:carousel2,
       show_carousel_2: showCarousel2,
-      photos_modifiees: !!state.photos_modifiees,
+      photos_modified: !!state.photos_modified,
       product_name: safeInitLabel(state.product_name, { fallback: "Produit", maxLen: 80 }),
       product_category: safeInitLabel(state.product_category_label || state.product_category, { fallback: "Autre", maxLen: 40 }),
       product_subcategory: safeInitLabel(state.product_subcategory_label || state.product_subcategory, { fallback: "Autre", maxLen: 60 }),
@@ -584,7 +585,7 @@ async function handleSubmitUpdate(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
   const data = parsed.data || {};
   const productId = String(data.product_id ?? "").trim();
-  const state = (await getUpdateProductState(token)) || {};
+  const state = ((await getUpdateProductState(token)) || {}) as UpdateProductState;
 
   if (!productId) {
     return {
@@ -620,7 +621,7 @@ async function handleSubmitUpdate(parsed: FlowRequest): Promise<FlowResponse> {
 
   await updateUpdateProductState(token, {
     submit_status: "submitting",
-    submittedAt: Date.now(),
+    submitted_at: Date.now(),
   });
 
   const ok = await updateProductNow(productId, token, {
@@ -644,8 +645,8 @@ async function handleSubmitUpdate(parsed: FlowRequest): Promise<FlowResponse> {
     taille: state.taille,
     quantite: state.quantite,
     images_base64: Array.isArray(state.images) ? state.images : [],
-    photos_modifiees: !!state.photos_modifiees,
-    submittedAt: Date.now(),
+    photos_modified: !!state.photos_modified,
+    submitted_at: Date.now(),
   });
 
   if (!ok) {

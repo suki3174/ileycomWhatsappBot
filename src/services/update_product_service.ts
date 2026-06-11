@@ -1,34 +1,37 @@
-﻿import {
+﻿/* eslint-disable @typescript-eslint/no-explicit-any */
+import type { SubCategory } from "@/models/category_model";
+import type { ProductCategory } from "@/repositories/addProduct/product_category_repo";
+import {
+  getCachedUpdateProductsPage,
+  setCachedUpdateProductsPage,
+  getCachedUpdateProductPhotos,
+  setCachedUpdateProductPhotos,
+  getCachedUpdateProductEditInfo,
+  setCachedUpdateProductEditInfo,
+  getCachedUpdateProductCategoryInfo,
+  setCachedUpdateProductCategoryInfo,
+  invalidateUpdateProductForEdit,
+  invalidateUpdateProductsByToken,
+} from "@/services/cache/update_product_cache_service";
+import {
   fetchProductsPagedByFlowToken,
   fetchProductPhotosByFlowToken,
   fetchProductEditInfoByFlowToken,
   fetchProductCategoryInfoByFlowToken,
-  persistProductUpdate,
-} from "@/repositories/products/update_product_repo";
-import {
-  getCachedUpdateProductForEdit,
-  getCachedUpdateProductCategoryInfo,
-  getCachedUpdateProductEditInfo,
-  getCachedUpdateProductPhotos,
-  getCachedUpdateProductsPage,
-  invalidateUpdateProductForEdit,
-  invalidateUpdateProductsByToken,
-  setCachedUpdateProductForEdit,
-  setCachedUpdateProductCategoryInfo,
-  setCachedUpdateProductEditInfo,
-  setCachedUpdateProductPhotos,
-  setCachedUpdateProductsPage,
-} from "@/services/cache/update_product_cache_service";
+  saveProductUpdate,
+  type ProductListPage,
+  type ProductPhotos,
+  type ProductEditInfo,
+  type ProductCategoryInfo,
+} from "@/repositories/updateProduct/update_product_repo";
 import {
   fetchAllProductCategories,
   fetchSubCategoriesByCategory,
 } from "@/repositories/addProduct/product_category_repo";
+import { convertTndPricesViaPlugin } from "@/repositories/addProduct/pricing_repo";
 import { normText } from "@/utils/data_parser";
 
 const inflightFetches = new Map<string, Promise<unknown>>();
-const submitInflight = new Map<string, Promise<boolean>>();
-const submitSuccessCache = new Map<string, number>();
-const SUBMIT_SUCCESS_TTL_MS = 2 * 60 * 1000;
 
 function withInFlightDedup<T>(key: string, task: () => Promise<T>): Promise<T> {
   const existing = inflightFetches.get(key) as Promise<T> | undefined;
@@ -41,146 +44,14 @@ function withInFlightDedup<T>(key: string, task: () => Promise<T>): Promise<T> {
   return run;
 }
 
-function stableSerialize(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map((item) => stableSerialize(item)).join(",")}]`;
-
-  const entries = Object.entries(value as Record<string, unknown>)
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([key, val]) => `${JSON.stringify(key)}:${stableSerialize(val)}`);
-  return `{${entries.join(",")}}`;
-}
-
-function normalizeForComparison(value: unknown): string {
-  return normText(value).toLowerCase();
-}
-
-function valuesMatch(actual: unknown, expected: unknown): boolean {
-  return normalizeForComparison(actual) === normalizeForComparison(expected);
-}
-
-async function verifyPersistedUpdate(
-  flowToken: string,
-  productId: string,
-  payload: Record<string, unknown>,
-): Promise<boolean> {
-  const [editInfo, categoryInfo] = await Promise.all([
-    fetchProductEditInfoByFlowToken(flowToken, productId),
-    fetchProductCategoryInfoByFlowToken(flowToken, productId),
-  ]);
-  if (!editInfo) return false;
-
-  const editChecks: Array<[unknown, unknown]> = [
-    [editInfo.product_name, payload.name],
-    [editInfo.regular_tnd, payload.regular_tnd],
-    [editInfo.sale_tnd, payload.sale_tnd],
-    [editInfo.regular_eur, payload.regular_eur],
-    [editInfo.sale_eur, payload.sale_eur],
-    [String(editInfo.stock ?? ""), payload.stock],
-    [editInfo.length, payload.length],
-    [editInfo.width, payload.width],
-    [editInfo.height, payload.height],
-    [editInfo.dim_unit, payload.dim_unit],
-    [editInfo.weight, payload.weight],
-    [editInfo.weight_unit, payload.weight_unit],
-    [editInfo.color, payload.color],
-    [editInfo.size, payload.size],
-  ];
-
-  for (const [actual, expected] of editChecks) {
-    if (!valuesMatch(actual, expected)) return false;
-  }
-
-  const requestedCategory = normText(payload.category_id);
-  const requestedSubcategory = normText(payload.subcategory_id);
-  if (categoryInfo && requestedCategory && !valuesMatch(categoryInfo.category_slug, requestedCategory)) {
-    return false;
-  }
-  if (categoryInfo && requestedSubcategory && !valuesMatch(categoryInfo.subcategory_slug, requestedSubcategory)) {
-    return false;
-  }
-
-  return true;
-}
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-export type ProductForEdit = {
-  name: string;
-  general_price_tnd?: string;
-  promo_price_tnd?: string;
-  general_price_euro?: string;
-  promo_price_euro?: string;
-  stock_quantity?: string | number;
-  dim_unit?: string;
-  weight_unit?: string;
-  length?: string;
-  width?: string;
-  height?: string;
-  weight?: string;
-  color?: string;
-  size?: string;
-  categories?: (string | number)[];
-  category_id?: string;
-  subcategory_id?: string;
-  category_label?: string;
-  subcategory_label?: string;
-  image_gallery?: string[];
-  image_src?: string;
-};
-
-export type ProductPhotosForEditScreen = {
-  product_name: string;
-  image_gallery: string[];
-  image_src: string;
-};
-
-export type ProductEditInfoForEditScreen = {
-  product_name: string;
-  regular_tnd: string;
-  sale_tnd: string;
-  regular_eur: string;
-  sale_eur: string;
-  stock: string;
-  dim_unit: string;
-  weight_unit: string;
-  length: string;
-  width: string;
-  height: string;
-  weight: string;
-  color: string;
-  size: string;
-};
-
-export type ProductCategoryInfoForEditScreen = {
-  category_id: string;
-  subcategory_id: string;
-  category_label: string;
-  subcategory_label: string;
-};
-
-export type ProductsPage = {
-  products: unknown[];
-  page: number;
-  hasMore: boolean;
-  nextPage: number;
-};
-
-// ---------------------------------------------------------------------------
-// EP1 — Paginated product list
-// ---------------------------------------------------------------------------
-
 /**
- * Returns a page of the seller's products mapped to the shape expected by
- * buildProductListPagedResponse / formatProductNavItem.
+ * Returns a page of the seller's products for the product list screen.
  */
 export async function getSellerProductsPageByFlowToken(
   flowToken: string,
   page: number,
   pageSize: number,
-): Promise<ProductsPage> {
+): Promise<{ products: unknown[]; page: number; hasMore: boolean; nextPage: number }> {
   const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
   const safePageSize = Number.isFinite(pageSize) && pageSize > 0
     ? Math.min(5, Math.floor(pageSize))
@@ -222,72 +93,13 @@ export async function getSellerProductsPageByFlowToken(
   return response;
 }
 
-// ---------------------------------------------------------------------------
-// EP2+3+4 — Load full product for the edit flow (photos + info + category)
-// ---------------------------------------------------------------------------
-
 /**
- * Fetches photos, edit-info, and category-info in parallel and merges them
- * into the ProductForEdit shape used by the handler.
- *
- * @param productId  WooCommerce product ID as string.
- * @param flowToken  Seller's flow token (required for ownership check).
+ * Loads product photos for the edit screen.
  */
-export async function loadProductForEdit(
-  productId: string,
-  flowToken: string,
-): Promise<ProductForEdit | null> {
-  const pid = normText(productId);
-  const tok = normText(flowToken);
-  if (!pid || !tok) return null;
-
-  const cached = await getCachedUpdateProductForEdit(tok, pid);
-  if (cached) {
-    return cached as ProductForEdit;
-  }
-
-  const [photos, editInfo, catInfo] = await Promise.all([
-    fetchProductPhotosByFlowToken(tok, pid),
-    fetchProductEditInfoByFlowToken(tok, pid),
-    fetchProductCategoryInfoByFlowToken(tok, pid),
-  ]);
-
-  if (!editInfo) return null;
-
-  const imageGallery = photos?.image_urls ?? [];
-
-  const merged = {
-    name: editInfo.product_name,
-    general_price_tnd: editInfo.regular_tnd,
-    promo_price_tnd: editInfo.sale_tnd,
-    general_price_euro: editInfo.regular_eur,
-    promo_price_euro: editInfo.sale_eur,
-    stock_quantity: editInfo.stock,
-    dim_unit: editInfo.dim_unit,
-    weight_unit: editInfo.weight_unit,
-    length: editInfo.length,
-    width: editInfo.width,
-    height: editInfo.height,
-    weight: editInfo.weight,
-    color: editInfo.color,
-    size: editInfo.size,
-    categories: catInfo?.category_slug ? [catInfo.category_slug] : [],
-    category_id: catInfo?.category_slug ?? "",
-    subcategory_id: catInfo?.subcategory_slug ?? "",
-    category_label: catInfo?.category_label ?? "",
-    subcategory_label: catInfo?.subcategory_label ?? "",
-    image_gallery: imageGallery,
-    image_src: imageGallery[0] ?? "",
-  };
-
-  await setCachedUpdateProductForEdit(tok, pid, merged);
-  return merged;
-}
-
 export async function loadProductPhotosForEditScreen(
   productId: string,
   flowToken: string,
-): Promise<ProductPhotosForEditScreen | null> {
+): Promise<{ product_name: string; image_gallery: string[]; image_src: string } | null> {
   const pid = normText(productId);
   const tok = normText(flowToken);
   if (!pid || !tok) return null;
@@ -297,7 +109,7 @@ export async function loadProductPhotosForEditScreen(
     return {
       product_name: normText(cached.product_name),
       image_gallery: Array.isArray(cached.image_gallery)
-        ? cached.image_gallery.map((value) => normText(value)).filter(Boolean)
+        ? (cached.image_gallery as string[]).map((v) => normText(v)).filter(Boolean)
         : [],
       image_src: normText(cached.image_src),
     };
@@ -308,20 +120,38 @@ export async function loadProductPhotosForEditScreen(
     if (!photos) return null;
 
     const imageGallery = Array.isArray(photos.image_urls) ? photos.image_urls : [];
-    const value: ProductPhotosForEditScreen = {
+    const result = {
       product_name: photos.product_name,
       image_gallery: imageGallery,
       image_src: imageGallery[0] ?? "",
     };
-    await setCachedUpdateProductPhotos(tok, pid, value as unknown as Record<string, unknown>);
-    return value;
+    await setCachedUpdateProductPhotos(tok, pid, result as any);
+    return result;
   });
 }
 
+/**
+ * Loads product edit info (pricing, dimensions, attributes) for the edit screen.
+ */
 export async function loadProductEditInfoForEditScreen(
   productId: string,
   flowToken: string,
-): Promise<ProductEditInfoForEditScreen | null> {
+): Promise<{
+  product_name: string;
+  regular_tnd: string;
+  sale_tnd: string;
+  regular_eur: string;
+  sale_eur: string;
+  stock: string;
+  dim_unit: string;
+  weight_unit: string;
+  length: string;
+  width: string;
+  height: string;
+  weight: string;
+  color: string;
+  size: string;
+} | null> {
   const pid = normText(productId);
   const tok = normText(flowToken);
   if (!pid || !tok) return null;
@@ -350,10 +180,10 @@ export async function loadProductEditInfoForEditScreen(
     const editInfo = await fetchProductEditInfoByFlowToken(tok, pid);
     if (!editInfo) return null;
 
-    const value: ProductEditInfoForEditScreen = {
+    const result = {
       product_name: editInfo.product_name,
-      regular_tnd: editInfo.regular_tnd,
-      sale_tnd: editInfo.sale_tnd,
+      regular_tnd: editInfo.regular_eur,
+      sale_tnd: editInfo.sale_eur,
       regular_eur: editInfo.regular_eur,
       sale_eur: editInfo.sale_eur,
       stock: String(editInfo.stock ?? ""),
@@ -366,15 +196,23 @@ export async function loadProductEditInfoForEditScreen(
       color: editInfo.color,
       size: editInfo.size,
     };
-    await setCachedUpdateProductEditInfo(tok, pid, value as unknown as Record<string, unknown>);
-    return value;
+    await setCachedUpdateProductEditInfo(tok, pid, result as any);
+    return result;
   });
 }
 
+/**
+ * Loads product category and subcategory info for the edit screen.
+ */
 export async function loadProductCategoryInfoForEditScreen(
   productId: string,
   flowToken: string,
-): Promise<ProductCategoryInfoForEditScreen | null> {
+): Promise<{
+  category_id: string;
+  subcategory_id: string;
+  category_label: string;
+  subcategory_label: string;
+} | null> {
   const pid = normText(productId);
   const tok = normText(flowToken);
   if (!pid || !tok) return null;
@@ -393,21 +231,20 @@ export async function loadProductCategoryInfoForEditScreen(
     const cat = await fetchProductCategoryInfoByFlowToken(tok, pid);
     if (!cat) return null;
 
-    const value: ProductCategoryInfoForEditScreen = {
+    const result = {
       category_id: cat.category_slug,
       subcategory_id: cat.subcategory_slug,
       category_label: cat.category_label || cat.category_name,
       subcategory_label: cat.subcategory_label || cat.subcategory_name,
     };
-    await setCachedUpdateProductCategoryInfo(tok, pid, value as unknown as Record<string, unknown>);
-    return value;
+    await setCachedUpdateProductCategoryInfo(tok, pid, result as any);
+    return result;
   });
 }
 
-// ---------------------------------------------------------------------------
-// Lazy subcategory loader (reuses add-product category repo)
-// ---------------------------------------------------------------------------
-
+/**
+ * Loads subcategories for a category.
+ */
 export async function loadSubcategoriesForCategory(
   categoryId: string,
 ): Promise<Array<{ id: string; title: string; description: string }>> {
@@ -419,10 +256,9 @@ export async function loadSubcategoriesForCategory(
   }));
 }
 
-// ---------------------------------------------------------------------------
-// Prefetch: warm up categories list on INIT / NAVIGATE
-// ---------------------------------------------------------------------------
-
+/**
+ * Prefetches categories for the update product flow.
+ */
 export async function prefetchUpdateProductData(): Promise<Record<string, unknown>> {
   try {
     const categories = await fetchAllProductCategories();
@@ -432,77 +268,68 @@ export async function prefetchUpdateProductData(): Promise<Record<string, unknow
   }
 }
 
-// ---------------------------------------------------------------------------
-// EP5 — Apply update
-// ---------------------------------------------------------------------------
-
+/**
+ * Updates a product with the given changes.
+ * Maps handler state keys → plugin payload keys.
+ */
 export async function updateProductNow(
   productId: string,
   flowToken: string,
-  data: Record<string, unknown>,
+  data: Record<string, any>,
 ): Promise<boolean> {
   const pid = normText(productId);
   const tok = normText(flowToken);
   if (!pid || !tok) return false;
 
-  // Map handler state keys → PHP endpoint keys
-  const payload: Record<string, unknown> = {
-    name:               data.product_name,
-    regular_tnd:        data.prix_regulier_tnd,
-    sale_tnd:           data.prix_promo_tnd,
-    regular_eur:        data.prix_regulier_eur,
-    sale_eur:           data.prix_promo_eur,
-    stock:              data.quantite,
-    length:             data.longueur,
-    width:              data.largeur,
-    height:             data.profondeur,
-    dim_unit:           data.unite_dimension,
-    weight:             data.valeur_poids,
-    weight_unit:        data.unite_poids,
-    color:              data.couleur,
-    size:               data.taille,
-    category_id:        data.product_category,
-    category_label:     data.product_category_label,
-    subcategory_id:     data.product_subcategory,
-    subcategory_label:  data.product_subcategory_label,
+  // Map handler state -> repository update state.
+  const stateForUpdate = {
+    product_id: pid,
+    product_name: data.product_name,
+    prix_regulier_tnd: Number(data.prix_regulier_tnd) || 0,
+    prix_promo_tnd: Number(data.prix_promo_tnd) || 0,
+    prix_regulier_eur: Number(data.prix_regulier_eur) || 0,
+    prix_promo_eur: Number(data.prix_promo_eur) || 0,
+    quantite: String(data.quantite ?? ""),
+    longueur: Number(data.longueur) || undefined,
+    largeur: Number(data.largeur) || undefined,
+    profondeur: Number(data.profondeur) || undefined,
+    unite_dimension: data.unite_dimension,
+    valeur_poids: Number(data.valeur_poids) || undefined,
+    unite_poids: data.unite_poids,
+    couleur: data.couleur,
+    taille: data.taille,
+    product_category: data.product_category,
+    product_subcategory: data.product_subcategory,
+    images: Array.isArray(data.images) ? data.images : [],
   };
 
-  // Only attach images when the seller explicitly replaced them
-  if (data.photos_modifiees && Array.isArray(data.images_base64)) {
-    payload.images = data.images_base64;
+  const changedFields = new Set<string>([
+    "product_name",
+    "prix_regulier_tnd",
+    "prix_promo_tnd",
+    "prix_regulier_eur",
+    "prix_promo_eur",
+    "quantite",
+    "longueur",
+    "largeur",
+    "profondeur",
+    "unite_dimension",
+    "valeur_poids",
+    "unite_poids",
+    "couleur",
+    "taille",
+    "product_category",
+    "product_subcategory",
+  ]);
+  if (data.photos_modified && Array.isArray(data.images) && data.images.length > 0) {
+    changedFields.add("images");
   }
 
-  const submitKey = `submit:${tok}:${pid}:${stableSerialize(payload)}`;
-  const cachedSuccessUntil = submitSuccessCache.get(submitKey) ?? 0;
-  if (cachedSuccessUntil > Date.now()) {
-    return true;
-  }
+  const result = await saveProductUpdate(tok, stateForUpdate as any, changedFields);
+  if (!result.ok) return false;
 
-  const inflight = submitInflight.get(submitKey);
-  if (inflight) {
-    return inflight;
-  }
-
-  const run = (async (): Promise<boolean> => {
-    const updated = await persistProductUpdate(tok, pid, payload);
-    let ok = updated;
-
-    if (!ok) {
-      // If plugin update timed out but was committed, verify by reading latest values.
-      ok = await verifyPersistedUpdate(tok, pid, payload);
-    }
-
-    if (ok) {
-      submitSuccessCache.set(submitKey, Date.now() + SUBMIT_SUCCESS_TTL_MS);
-      await invalidateUpdateProductsByToken(tok);
-      await invalidateUpdateProductForEdit(tok, pid);
-    }
-
-    return ok;
-  })().finally(() => {
-    submitInflight.delete(submitKey);
-  });
-
-  submitInflight.set(submitKey, run);
-  return run;
+  await invalidateUpdateProductsByToken(tok);
+  await invalidateUpdateProductForEdit(tok, pid);
+  return true;
 }
+

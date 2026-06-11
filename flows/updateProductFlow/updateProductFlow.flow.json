@@ -1,0 +1,185 @@
+{
+  "version": "7.3",
+  "data_api_version": "3.0",
+  "routing_model": {
+    "WELCOME": [
+      "PRODUCT_LIST"
+    ],
+    "PRODUCT_LIST": [
+      "PRODUCT_LIST",
+      "SCREEN_PHOTOS"
+    ],
+    "SCREEN_PHOTOS": [
+      "SCREEN_EDIT_PHOTOS",
+      "SCREEN_EDIT_INFO"
+    ],
+    "SCREEN_EDIT_PHOTOS": [
+      "SCREEN_EDIT_INFO"
+    ],
+    "SCREEN_EDIT_INFO": [
+      "SCREEN_CATEGORY_INFO"
+    ],
+    "SCREEN_CATEGORY_INFO": [
+      "SCREEN_EDIT_CATEGORY",
+      "SCREEN_SUMMARY"
+    ],
+    "SCREEN_EDIT_CATEGORY": [
+      "SCREEN_EDIT_SUBCATEGORY"
+    ],
+    "SCREEN_EDIT_SUBCATEGORY": [
+      "SCREEN_SUMMARY"
+    ],
+    "SCREEN_SUMMARY": [
+      "SUCCESS"
+    ]
+  },
+  "screens": [
+    {
+      "id": "WELCOME",
+      "title": "Modifier un produit",
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Modifier un produit"
+          },
+          {
+            "type": "TextBody",
+            "text": "Chargez votre liste de produits pour commencer la modification."
+          },
+          {
+            "type": "Footer",
+            "label": "Charger les produits",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {
+                "cmd": "load_products",
+                "page": 1
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "PRODUCT_LIST",
+      "title": "Produits",
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextBody",
+            "text": "Liste paginee de produits chargee dynamiquement depuis le backend."
+          }
+        ]
+      }
+    },
+    {
+      "id": "SCREEN_PHOTOS",
+      "title": "Photos actuelles",
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextBody",
+            "text": "Afficher les photos existantes et choisir de modifier ou ignorer."
+          }
+        ]
+      }
+    },
+    {
+      "id": "SCREEN_EDIT_PHOTOS",
+      "title": "Modifier les photos",
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextBody",
+            "text": "Uploader de nouvelles photos puis sauvegarder."
+          }
+        ]
+      }
+    },
+    {
+      "id": "SCREEN_EDIT_INFO",
+      "title": "Modifier les informations",
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextBody",
+            "text": "Modifier prix, dimensions, poids, attributs et quantite."
+          }
+        ]
+      }
+    },
+    {
+      "id": "SCREEN_CATEGORY_INFO",
+      "title": "Categorie",
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextBody",
+            "text": "Afficher categorie/sous-categorie actuelle et proposer modification."
+          }
+        ]
+      }
+    },
+    {
+      "id": "SCREEN_EDIT_CATEGORY",
+      "title": "Modifier categorie",
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextBody",
+            "text": "Choisir une categorie puis charger les sous-categories."
+          }
+        ]
+      }
+    },
+    {
+      "id": "SCREEN_EDIT_SUBCATEGORY",
+      "title": "Modifier sous-categorie",
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextBody",
+            "text": "Choisir une sous-categorie puis aller au resume."
+          }
+        ]
+      }
+    },
+    {
+      "id": "SCREEN_SUMMARY",
+      "title": "Resume",
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextBody",
+            "text": "Recapitulatif final avant soumission de la mise a jour."
+          }
+        ]
+      }
+    },
+    {
+      "id": "SUCCESS",
+      "title": "Succes",
+      "terminal": true,
+      "success": true,
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Mise a jour terminee"
+          }
+        ]
+      }
+    }
+  ]
+}

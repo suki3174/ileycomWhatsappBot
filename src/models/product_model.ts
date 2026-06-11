@@ -163,6 +163,36 @@ export interface AddProductState {
   product_subcategory?: string;
   product_subcategory_label?: string;
   subcategories?: Record<string, SubCategory[]>;
+  subcategoriesByCategory?: Record<string, SubCategory[]>;
+}
+
+/**
+ * Update product state: extends AddProductState with update-specific fields.
+ * Keyed by product_id instead of flow token to support product-centric tracking.
+ */
+export interface UpdateProductState extends AddProductState {
+  product_id: string; // Required identifier for updates
+  existing_product?: Product; // Pre-update state for comparison
+  changed_fields?: Set<string>; // Track which fields user modified
+  update_status?: "updating" | "updated" | "error"; // Submission state
+  update_submitted_at?: number; // Timestamp to prevent double-submit
+  photos_modified?: boolean; // Flag if images were replaced
+  // Internal tracking fields for load state
+  edit_info_loaded_for?: string; // product_id of last loaded edit info
+  photos_loaded_for?: string; // product_id of last loaded photos
+  category_info_loaded_for?: string; // product_id of last loaded category
+}
+
+/**
+ * Result from product update operation via plugin.
+ * Structured error handling with field-level validation support.
+ */
+export interface UpdateProductResult {
+  ok: boolean;
+  productId?: string;
+  errorCode?: string;
+  errorMessage?: string;
+  fieldErrors?: Array<{ field: string; code: string; message: string }>;
 }
 
 

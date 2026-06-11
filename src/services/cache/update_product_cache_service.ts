@@ -1,6 +1,9 @@
+import type { UpdateProductState } from "@/models/product_model";
 import { ensureRedisConnected, getRedisPrefix } from "@/lib/redis/client";
 import { normToken } from "@/utils/core_utils";
+import { normText } from "@/utils/data_parser";
 
+const UPDATE_PRODUCT_STATE_TTL_SEC = 30 * 60;
 const UPDATE_PRODUCT_LIST_TTL_SEC = 120;
 const UPDATE_PRODUCT_DETAIL_TTL_SEC = 180;
 
@@ -25,7 +28,7 @@ function isUpdateProductCacheDebugEnabled(): boolean {
 
 function cacheLog(event: string, details: Record<string, unknown>): void {
   if (!isUpdateProductCacheDebugEnabled()) return;
-  console.log("[modify-product-cache]", event, details);
+  console.log("[update-product-cache]", event, details);
 }
 
 async function getRedisOrNull() {
@@ -35,6 +38,10 @@ async function getRedisOrNull() {
   } catch {
     return null;
   }
+}
+
+function keyUpdateProductState(productId: string): string {
+  return `${getRedisPrefix()}:update-product:state:${productId}`;
 }
 
 function keyUpdateProductsPage(token: string, page: number, pageSize: number): string {
@@ -96,6 +103,17 @@ async function writeJson<T>(key: string, value: T, ttlSec: number): Promise<void
   cacheLog("write", { key, ttlSec });
 }
 
+async function deleteKey(key: string): Promise<void> {
+  const redis = await getRedisOrNull();
+  if (!redis) {
+    cacheLog("skip-delete-redis-unavailable", { key });
+    return;
+  }
+
+  const deleted = await redis.del(key);
+  cacheLog("invalidate", { key, deleted });
+}
+
 async function deleteByPrefix(prefix: string): Promise<void> {
   const redis = await getRedisOrNull();
   if (!redis) {
@@ -121,6 +139,43 @@ async function deleteByPrefix(prefix: string): Promise<void> {
 
   cacheLog("invalidate-prefix", { prefix, deleted });
 }
+
+/**
+ * Gets product-scoped update state.
+ * Keyed by product_id instead of token for update-specific tracking.
+ */
+export async function getUpdateProductStateCache(
+  productId: string,
+): Promise<UpdateProductState | undefined> {
+  const normalized = normText(productId);
+  if (!normalized) return undefined;
+  return readJson<UpdateProductState>(keyUpdateProductState(normalized));
+}
+
+/**
+ * Writes product-scoped update state.
+ */
+export async function writeUpdateProductStateCache(
+  productId: string,
+  state: UpdateProductState,
+): Promise<void> {
+  const normalized = normText(productId);
+  if (!normalized) return;
+  await writeJson(keyUpdateProductState(normalized), state, UPDATE_PRODUCT_STATE_TTL_SEC);
+}
+
+/**
+ * Clears product-scoped update state.
+ */
+export async function clearUpdateProductStateCache(productId: string): Promise<void> {
+  const normalized = normText(productId);
+  if (!normalized) return;
+  await deleteKey(keyUpdateProductState(normalized));
+}
+
+// ============================================================================
+// SCREEN-LEVEL CACHING (existing functionality for update product screens)
+// ============================================================================
 
 export async function getCachedUpdateProductsPage(
   token: string,

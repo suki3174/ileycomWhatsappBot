@@ -60,7 +60,7 @@ export async function POST(req:NextRequest) {
             type: "template",
             mode: "published",
             template: {
-              name: "updateproductflow_message",
+              name: "modify_product_flow_local",
               language: { code: "fr" },
               components: [
                 {
