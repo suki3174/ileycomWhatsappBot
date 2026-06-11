@@ -29,6 +29,10 @@ const DEFAULT_CATEGORIES: ProductCategory[] = [
 ];
 
 
+/**
+ * Parses plugin category payloads into the flow-friendly category shape.
+ * It validates required fields and enforces a max list size for UI safety.
+ */
 function extractCategories(payload: Record<string, unknown> | undefined): ProductCategory[] {
   const data = asRecord(payload?.data);
   if (!data || !Array.isArray(data.categories)) return [];
@@ -46,6 +50,10 @@ function extractCategories(payload: Record<string, unknown> | undefined): Produc
   return mapped.slice(0, MAX_FLOW_CATEGORIES);
 }
 
+/**
+ * Parses plugin subcategory payloads into the flow subcategory shape.
+ * Parent linkage is preserved using plugin data or request fallback.
+ */
 function extractSubcategories(
   payload: Record<string, unknown> | undefined,
   parentId: string,
@@ -72,6 +80,10 @@ function extractSubcategories(
   return mapped.slice(0, MAX_FLOW_CATEGORIES);
 }
 
+/**
+ * Returns subcategories for a given category, preferring Redis cache first.
+ * On cache miss, it calls the plugin endpoint and stores successful results.
+ */
 export async function fetchSubCategoriesByCategory(categoryId: string): Promise<SubCategory[]> {
   const normalizedCategoryId = normText(categoryId);
   if (!normalizedCategoryId) return [];
@@ -110,6 +122,10 @@ export async function fetchSubCategoriesByCategory(categoryId: string): Promise<
   }
 }
 
+/**
+ * Returns top-level product categories from cache or plugin.
+ * If plugin access fails, it falls back to a minimal default list.
+ */
 export async function fetchAllProductCategories(): Promise<ProductCategory[]> {
   const cached = await getAddProductCategoriesCache();
   if (Array.isArray(cached) && cached.length > 0) {

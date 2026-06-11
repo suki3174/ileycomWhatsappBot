@@ -1,0 +1,1300 @@
+{
+  "version": "7.3",
+  "data_api_version": "3.0",
+  "routing_model": {
+    "WELCOME": [
+      "SCREEN_PHOTO_CAMERA",
+      "SCREEN_PHOTO_GALLERY"
+    ],
+    "SCREEN_PHOTO_CHOICE": [
+      "SCREEN_PHOTO_CAMERA",
+      "SCREEN_PHOTO_GALLERY"
+    ],
+    "SCREEN_PHOTO_CAMERA": [
+      "SCREEN_NAME"
+    ],
+    "SCREEN_PHOTO_GALLERY": [
+      "SCREEN_NAME"
+    ],
+    "SCREEN_NAME": [
+      "SCREEN_CATEGORY"
+    ],
+    "SCREEN_CATEGORY": [
+      "SCREEN_SUBCATEGORY"
+    ],
+    "SCREEN_SUBCATEGORY": [
+      "SCREEN_PRICE_TND"
+    ],
+    "SCREEN_PRICE_TND": [
+      "SCREEN_PRICE_EUR"
+    ],
+    "SCREEN_PRICE_EUR": [
+      "SCREEN_DETAILS"
+    ],
+    "SCREEN_DETAILS": [
+      "SCREEN_QUANTITY"
+    ],
+    "SCREEN_QUANTITY": [
+      "SCREEN_SUMMARY"
+    ],
+    "SCREEN_SUMMARY": [
+      "SUCCESS"
+    ]
+  },
+  "screens": [
+    {
+      "id": "WELCOME",
+      "title": "Bienvenue",
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Ajouter un produit"
+          },
+          {
+            "type": "TextBody",
+            "text": "Comment souhaitez-vous ajouter les photos de votre produit ?"
+          },
+          {
+            "type": "Form",
+            "name": "welcome_photo_choice_form",
+            "children": [
+              {
+                "type": "RadioButtonsGroup",
+                "name": "photo_source",
+                "label": "Source des photos",
+                "required": true,
+                "data-source": [
+                  {
+                    "id": "camera",
+                    "title": "📷 Prendre une photo"
+                  },
+                  {
+                    "id": "gallery",
+                    "title": "🖼️ Choisir depuis la galerie"
+                  }
+                ]
+              },
+              {
+                "type": "Footer",
+                "label": "Continuer",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "photo_source": "${form.photo_source}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "SCREEN_PHOTO_CHOICE",
+      "title": "Ajouter une photo",
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Ajouter un produit"
+          },
+          {
+            "type": "TextBody",
+            "text": "Comment souhaitez-vous ajouter les photos de votre produit ?"
+          },
+          {
+            "type": "Form",
+            "name": "photo_choice_form",
+            "children": [
+              {
+                "type": "RadioButtonsGroup",
+                "name": "photo_source",
+                "label": "Source des photos",
+                "required": true,
+                "data-source": [
+                  {
+                    "id": "camera",
+                    "title": "📷 Prendre une photo"
+                  },
+                  {
+                    "id": "gallery",
+                    "title": "🖼️ Choisir depuis la galerie"
+                  }
+                ]
+              },
+              {
+                "type": "Footer",
+                "label": "Continuer",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "photo_source": "${form.photo_source}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "SCREEN_PHOTO_CAMERA",
+      "title": "Prendre une photo",
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "📷 Prendre une photo"
+          },
+          {
+            "type": "TextBody",
+            "text": "Prenez une ou plusieurs photos de votre produit avec l'appareil photo."
+          },
+          {
+            "type": "Form",
+            "name": "photos_camera_form",
+            "children": [
+              {
+                "type": "PhotoPicker",
+                "name": "product_photos",
+                "label": "Photo(s) du produit",
+                "description": "Prenez une photo avec votre appareil",
+                "photo-source": "camera",
+                "min-uploaded-photos": 1,
+                "max-uploaded-photos": 10,
+                "max-file-size-kb": 25600
+              },
+              {
+                "type": "Footer",
+                "label": "Continuer",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "images": "${form.product_photos}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "SCREEN_PHOTO_GALLERY",
+      "title": "Choisir depuis la galerie",
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "🖼️ Choisir depuis la galerie"
+          },
+          {
+            "type": "TextBody",
+            "text": "Sélectionnez une ou plusieurs photos de votre produit depuis votre galerie."
+          },
+          {
+            "type": "Form",
+            "name": "photos_gallery_form",
+            "children": [
+              {
+                "type": "PhotoPicker",
+                "name": "product_photos",
+                "label": "Photo(s) du produit",
+                "description": "Sélectionnez depuis votre galerie",
+                "photo-source": "gallery",
+                "min-uploaded-photos": 1,
+                "max-uploaded-photos": 10,
+                "max-file-size-kb": 25600
+              },
+              {
+                "type": "Footer",
+                "label": "Continuer",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "images": "${form.product_photos}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "SCREEN_NAME",
+      "title": "Nom du produit",
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Nom du produit"
+          },
+          {
+            "type": "TextBody",
+            "text": "Donnez un nom clair et precis a votre produit."
+          },
+          {
+            "type": "Form",
+            "name": "product_name_form",
+            "children": [
+              {
+                "type": "TextInput",
+                "name": "product_name",
+                "label": "Nom du produit",
+                "input-type": "text",
+                "required": true,
+                "min-chars": 3,
+                "max-chars": 80,
+                "helper-text": "Ex: Robe d'ete fleurie, Montre connectee..."
+              },
+              {
+                "type": "Footer",
+                "label": "Continuer",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "product_name": "${form.product_name}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "SCREEN_CATEGORY",
+      "title": "Catégorie",
+      "data": {
+        "categories": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          "__example__": [
+            {
+              "id": "mode",
+              "title": "Mode & Vêtements"
+            },
+            {
+              "id": "electronique",
+              "title": "Électronique"
+            },
+            {
+              "id": "maison",
+              "title": "Maison & Décoration"
+            },
+            {
+              "id": "beaute",
+              "title": "Beauté & Santé"
+            },
+            {
+              "id": "sport",
+              "title": "Sport & Loisirs"
+            },
+            {
+              "id": "alimentaire",
+              "title": "Alimentaire"
+            },
+            {
+              "id": "jouets",
+              "title": "Jouets & Enfants"
+            },
+            {
+              "id": "auto",
+              "title": "Auto & Moto"
+            },
+            {
+              "id": "livres",
+              "title": "Livres & Papeterie"
+            },
+            {
+              "id": "autre",
+              "title": "Autre"
+            }
+          ]
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Catégorie du produit"
+          },
+          {
+            "type": "TextBody",
+            "text": "Choisissez la catégorie principale de votre produit."
+          },
+          {
+            "type": "Form",
+            "name": "categorie_form",
+            "children": [
+              {
+                "type": "Dropdown",
+                "name": "product_category",
+                "label": "Catégorie",
+                "data-source": "${data.categories}",
+                "required": true,
+                "on-select-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "cmd": "load_subcategories",
+                    "product_category": "${form.product_category}"
+                  }
+                }
+              },
+              {
+                "type": "Footer",
+                "label": "Continuer",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "product_category": "${form.product_category}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "SCREEN_SUBCATEGORY",
+      "title": "Sous-catégorie",
+      "data": {
+        "parent_category_label": {
+          "type": "string",
+          "__example__": "Mode & Vêtements"
+        },
+        "subcategories": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              }
+            }
+          },
+          "__example__": [
+            {
+              "id": "robes",
+              "title": "Robes",
+              "description": "Mode & Vêtements > Robes"
+            },
+            {
+              "id": "hauts",
+              "title": "Hauts & T-shirts",
+              "description": "Mode & Vêtements > Hauts & T-shirts"
+            },
+            {
+              "id": "pantalons",
+              "title": "Pantalons & Jeans",
+              "description": "Mode & Vêtements > Pantalons & Jeans"
+            },
+            {
+              "id": "chaussures",
+              "title": "Chaussures",
+              "description": "Mode & Vêtements > Chaussures"
+            },
+            {
+              "id": "accessoires",
+              "title": "Autres accessoires",
+              "description": "Mode & Vêtements > Autres accessoires"
+            }
+          ]
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Sous-catégorie"
+          },
+          {
+            "type": "TextBody",
+            "text": "`'Catégorie sélectionnée : ' ${data.parent_category_label}`"
+          },
+          {
+            "type": "TextCaption",
+            "text": "Choisissez la sous-catégorie la plus précise pour votre produit."
+          },
+          {
+            "type": "Form",
+            "name": "subcategorie_form",
+            "children": [
+              {
+                "type": "Dropdown",
+                "name": "product_subcategory",
+                "label": "Sous-catégorie",
+                "data-source": "${data.subcategories}",
+                "required": true
+              },
+              {
+                "type": "Footer",
+                "label": "Continuer",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "product_subcategory": "${form.product_subcategory}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "SCREEN_PRICE_TND",
+      "title": "Prix en TND",
+      "data": {
+        "gain_tnd": {
+          "type": "string",
+          "__example__": "25"
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Prix en TND"
+          },
+          {
+            "type": "Form",
+            "name": "price_tnd_form",
+            "children": [
+              {
+                "type": "TextInput",
+                "name": "prix_regulier_tnd",
+                "label": "Prix régulier",
+                "input-type": "number",
+                "required": true,
+                "helper-text": "Prix normal de vente en dinars tunisiens"
+              },
+              {
+                "type": "TextInput",
+                "name": "prix_promo_tnd",
+                "label": "Prix promo",
+                "input-type": "number",
+                "required": false,
+                "helper-text": "Doit être inférieur au prix régulier (laisser vide si aucun)"
+              },
+              {
+                "type": "If",
+                "condition": "(${form.prix_promo_tnd} > 0) && (${form.prix_promo_tnd} >= ${form.prix_regulier_tnd})",
+                "then": [
+                  {
+                    "type": "TextBody",
+                    "text": "⚠️ Le prix promo doit être inférieur au prix régulier.",
+                    "font-weight": "bold"
+                  }
+                ]
+              },
+              {
+                "type": "EmbeddedLink",
+                "text": "Calculer gain",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "cmd": "calculate_gain_tnd",
+                    "prix_regulier_tnd": "${form.prix_regulier_tnd}",
+                    "prix_promo_tnd": "${form.prix_promo_tnd}"
+                  }
+                }
+              },
+              {
+                "type": "If",
+                "condition": "${data.gain_tnd}!=''",
+                "then": [
+                  {
+                    "type": "TextBody",
+                    "text": "`'💰 Gain net: ' ${data.gain_tnd} ' TND'`"
+                  }
+                ]
+              },
+              {
+                "type": "TextCaption",
+                "text": "📊 Commission ILEY'COM: 22.61%"
+              },
+              {
+                "type": "Footer",
+                "label": "Continuer",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "prix_regulier_tnd": "${form.prix_regulier_tnd}",
+                    "prix_promo_tnd": "${form.prix_promo_tnd}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "SCREEN_PRICE_EUR",
+      "title": "Prix en EUR",
+      "data": {
+        "prix_regulier_eur_init": {
+          "type": "string",
+          "__example__": "100"
+        },
+        "prix_promo_eur_init": {
+          "type": "string",
+          "__example__": "50"
+        },
+        "gain_eur": {
+          "type": "string",
+          "__example__": "25"
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "💶 Prix en EUR"
+          },
+          {
+            "type": "TextCaption",
+            "text": "(Auto-calculé)"
+          },
+          {
+            "type": "TextCaption",
+            "text": "💱 Conversion: EUR = (TND / 3.358) + 9€"
+          },
+          {
+            "type": "Form",
+            "name": "price_eur_form",
+            "children": [
+              {
+                "type": "TextInput",
+                "name": "prix_regulier_eur",
+                "label": "`${data.prix_regulier_eur_init} ' €'`",
+                "input-type": "number",
+                "helper-text": "Prix normal de vente en euros"
+              },
+              {
+                "type": "TextInput",
+                "name": "prix_promo_eur",
+                "label": "`${data.prix_promo_eur_init} ' €'`",
+                "input-type": "number",
+                "required": false,
+                "helper-text": "Doit être inférieur au prix régulier EUR (laisser vide si aucun)"
+              },
+              {
+                "type": "If",
+                "condition": "(${form.prix_promo_eur} > 0) && (${form.prix_promo_eur} >= ${form.prix_regulier_eur})",
+                "then": [
+                  {
+                    "type": "TextBody",
+                    "text": "⚠️ Le prix promo doit être inférieur au prix régulier.",
+                    "font-weight": "bold"
+                  }
+                ]
+              },
+              {
+                "type": "EmbeddedLink",
+                "text": "Calculer gain",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "cmd": "calculate_gain_eur",
+                    "prix_regulier_eur": "${form.prix_regulier_eur}",
+                    "prix_promo_eur": "${form.prix_promo_eur}"
+                  }
+                }
+              },
+              {
+                "type": "If",
+                "condition": "${data.gain_eur}!=''",
+                "then": [
+                  {
+                    "type": "TextBody",
+                    "text": "`'💰 Gain net: ' ${data.gain_eur} ' €'`"
+                  }
+                ]
+              },
+              {
+                "type": "TextCaption",
+                "text": "📊 Commission ILEY'COM: 22.61%"
+              },
+              {
+                "type": "Footer",
+                "label": "Continuer",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "prix_regulier_eur": "${form.prix_regulier_eur}",
+                    "prix_promo_eur": "${form.prix_promo_eur}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "SCREEN_DETAILS",
+      "title": "Details du produit",
+      "data": {},
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Details du produit"
+          },
+          {
+            "type": "Form",
+            "name": "details_form",
+            "children": [
+              {
+                "type": "TextSubheading",
+                "text": "📐 Dimensions (optionnel)"
+              },
+              {
+                "type": "TextInput",
+                "name": "longueur",
+                "label": "Longueur",
+                "input-type": "number",
+                "required": false
+              },
+              {
+                "type": "TextInput",
+                "name": "largeur",
+                "label": "Largeur",
+                "input-type": "number",
+                "required": false
+              },
+              {
+                "type": "TextInput",
+                "name": "profondeur",
+                "label": "Profondeur",
+                "input-type": "number",
+                "required": false
+              },
+              {
+                "type": "Dropdown",
+                "name": "unite_dimension",
+                "label": "Unite",
+                "required": false,
+                "data-source": [
+                  {
+                    "id": "mm",
+                    "title": "mm"
+                  },
+                  {
+                    "id": "cm",
+                    "title": "cm"
+                  },
+                  {
+                    "id": "m",
+                    "title": "m"
+                  },
+                  {
+                    "id": "in",
+                    "title": "in"
+                  }
+                ]
+              },
+              {
+                "type": "TextSubheading",
+                "text": "⚖️ Poids ou volume (optionnel)"
+              },
+              {
+                "type": "TextInput",
+                "name": "valeur_poids",
+                "label": "Valeur",
+                "input-type": "number",
+                "required": false
+              },
+              {
+                "type": "Dropdown",
+                "name": "unite_poids",
+                "label": "Unite",
+                "required": false,
+                "data-source": [
+                  {
+                    "id": "mg",
+                    "title": "mg"
+                  },
+                  {
+                    "id": "g",
+                    "title": "g"
+                  },
+                  {
+                    "id": "kg",
+                    "title": "kg"
+                  },
+                  {
+                    "id": "ml",
+                    "title": "ml"
+                  },
+                  {
+                    "id": "l",
+                    "title": "l"
+                  }
+                ]
+              },
+              {
+                "type": "TextSubheading",
+                "text": "🎨 Couleur (optionnel)"
+              },
+              {
+                "type": "TextInput",
+                "name": "couleur",
+                "label": "Couleur",
+                "input-type": "text",
+                "required": false,
+                "max-chars": 50,
+                "helper-text": "Ex: Rouge, Bleu, Noir..."
+              },
+              {
+                "type": "TextSubheading",
+                "text": "📏 Taille (optionnel)"
+              },
+              {
+                "type": "TextInput",
+                "name": "taille",
+                "label": "Taille",
+                "input-type": "text",
+                "required": false,
+                "max-chars": 50,
+                "helper-text": "S, M, XL, 42, 44..."
+              },
+              {
+                "type": "Footer",
+                "label": "Continuer",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "longueur": "${form.longueur}",
+                    "largeur": "${form.largeur}",
+                    "profondeur": "${form.profondeur}",
+                    "unite_dimension": "${form.unite_dimension}",
+                    "valeur_poids": "${form.valeur_poids}",
+                    "unite_poids": "${form.unite_poids}",
+                    "couleur": "${form.couleur}",
+                    "taille": "${form.taille}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "SCREEN_QUANTITY",
+      "title": "Quantite en stock",
+      "data": {},
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Quantite en stock"
+          },
+          {
+            "type": "TextBody",
+            "text": "Nombre d'unites disponibles"
+          },
+          {
+            "type": "TextBody",
+            "text": "Rapide:"
+          },
+          {
+            "type": "ChipsSelector",
+            "name": "quantite_chips",
+            "label": "Selection rapide",
+            "required": false,
+            "max-selected-items": 1,
+            "data-source": [
+              {
+                "id": "1",
+                "title": "1"
+              },
+              {
+                "id": "2",
+                "title": "2"
+              },
+              {
+                "id": "3",
+                "title": "3"
+              },
+              {
+                "id": "4",
+                "title": "4"
+              },
+              {
+                "id": "5",
+                "title": "5"
+              },
+              {
+                "id": "10",
+                "title": "10"
+              },
+              {
+                "id": "20",
+                "title": "20"
+              },
+              {
+                "id": "50",
+                "title": "50"
+              },
+              {
+                "id": "100",
+                "title": "100"
+              }
+            ]
+          },
+          {
+            "type": "TextInput",
+            "name": "quantite_manuelle",
+            "label": "Saisir une quantite",
+            "input-type": "number",
+            "required": false,
+            "helper-text": "Entrez un nombre si non present dans la liste ci-dessus"
+          },
+          {
+            "type": "Footer",
+            "label": "Continuer",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {
+                "quantite_chips": "${form.quantite_chips}",
+                "quantite_manuelle": "${form.quantite_manuelle}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "SCREEN_SUMMARY",
+      "title": "Recapitulatif",
+      "data": {
+        "images": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "src": {
+                "type": "string"
+              },
+              "alt-text": {
+                "type": "string"
+              }
+            }
+          },
+          "__example__": [
+            {
+              "src": "iVBORw0KGgo...",
+              "alt-text": "Photo 1"
+            },
+            {
+              "src": "iVBORw0KGgo...",
+              "alt-text": "Photo 2"
+            }
+          ]
+        },
+        "images_2": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "src": {
+                "type": "string"
+              },
+              "alt-text": {
+                "type": "string"
+              }
+            }
+          },
+          "__example__": [
+            {
+              "src": "iVBORw0KGgo...",
+              "alt-text": "Photo 3"
+            }
+          ]
+        },
+        "show_carousel_2": {
+          "type": "boolean",
+          "__example__": true
+        },
+        "product_name": {
+          "type": "string",
+          "__example__": "Robe d'ete fleurie"
+        },
+        "product_category": {
+          "type": "string",
+          "__example__": "Mode & Vêtements"
+        },
+        "product_subcategory": {
+          "type": "string",
+          "__example__": "Mode & Vêtements > Robes"
+        },
+        "prix_regulier_tnd": {
+          "type": "string",
+          "__example__": "100"
+        },
+        "prix_promo_tnd": {
+          "type": "string",
+          "__example__": "0"
+        },
+        "prix_regulier_eur": {
+          "type": "string",
+          "__example__": "38"
+        },
+        "prix_promo_eur": {
+          "type": "string",
+          "__example__": "0"
+        },
+        "longueur": {
+          "type": "string",
+          "__example__": "20"
+        },
+        "largeur": {
+          "type": "string",
+          "__example__": "15"
+        },
+        "profondeur": {
+          "type": "string",
+          "__example__": "10"
+        },
+        "longueur_label": {
+          "type": "string",
+          "__example__": "Longueur : 20 cm"
+        },
+        "largeur_label": {
+          "type": "string",
+          "__example__": "Largeur : non mentionnée"
+        },
+        "profondeur_label": {
+          "type": "string",
+          "__example__": "Profondeur : 10 cm"
+        },
+        "unite_dimension": {
+          "type": "string",
+          "__example__": "cm"
+        },
+        "show_dimensions": {
+          "type": "boolean",
+          "__example__": true
+        },
+        "valeur_poids": {
+          "type": "string",
+          "__example__": "0"
+        },
+        "unite_poids": {
+          "type": "string",
+          "__example__": "kg"
+        },
+        "couleur": {
+          "type": "string",
+          "__example__": ""
+        },
+        "taille": {
+          "type": "string",
+          "__example__": ""
+        },
+        "quantite": {
+          "type": "string",
+          "__example__": "5"
+        },
+        "error_message": {
+          "type": "string",
+          "__example__": " erreur"
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "✅ Recapitulatif du produit"
+          },
+          {
+            "type": "TextBody",
+            "text": "Vérifiez les informations avant de soumettre."
+          },
+          {
+            "type": "TextSubheading",
+            "text": "🖼️ Photos"
+          },
+          {
+            "type": "ImageCarousel",
+            "scale-type": "cover",
+            "images": "${data.images}"
+          },
+          {
+            "type": "ImageCarousel",
+            "scale-type": "cover",
+            "images": "${data.images_2}",
+            "visible": "${data.show_carousel_2}"
+          },
+          {
+            "type": "TextCaption",
+            "text": "Seulement les premières photos sont affichées, consultez seller app pour voir toutes les photos."
+          },
+          {
+            "type": "TextSubheading",
+            "text": "🏷️ Nom"
+          },
+          {
+            "type": "TextBody",
+            "text": "${data.product_name}"
+          },
+          {
+            "type": "TextSubheading",
+            "text": "📂 Catégorie"
+          },
+          {
+            "type": "TextBody",
+            "text": "${data.product_category}"
+          },
+          {
+            "type": "TextSubheading",
+            "text": "📁 Sous-catégorie"
+          },
+          {
+            "type": "TextBody",
+            "text": "${data.product_subcategory}"
+          },
+          {
+            "type": "TextSubheading",
+            "text": "Prix TND"
+          },
+          {
+            "type": "TextBody",
+            "text": "`'Prix régulier: ' ${data.prix_regulier_tnd} ' TND'`"
+          },
+          {
+            "type": "If",
+            "condition": "${data.prix_promo_tnd}!=''",
+            "then": [
+              {
+                "type": "TextBody",
+                "text": "`'Prix promo: ' ${data.prix_promo_tnd} ' TND'`"
+              }
+            ],
+            "else": [
+              {
+                "type": "TextBody",
+                "text": "Aucun prix promo TND.",
+                "visible": true
+              }
+            ]
+          },
+          {
+            "type": "TextSubheading",
+            "text": "💶 Prix EUR"
+          },
+          {
+            "type": "TextBody",
+            "text": "`'Prix régulier: ' ${data.prix_regulier_eur} ' EUR'`"
+          },
+          {
+            "type": "If",
+            "condition": "${data.prix_promo_eur} !=''",
+            "then": [
+              {
+                "type": "TextBody",
+                "text": "`'Prix promo: ' ${data.prix_promo_eur} ' EUR'`"
+              }
+            ],
+            "else": [
+              {
+                "type": "TextBody",
+                "text": "Aucun prix promo EUR.",
+                "visible": true
+              }
+            ]
+          },
+          {
+            "type": "TextSubheading",
+            "text": "📐 Dimensions"
+          },
+          {
+            "type": "TextBody",
+            "text": "${data.longueur_label}"
+          },
+          {
+            "type": "If",
+            "condition": "${data.largeur_label} != ''",
+            "then": [
+              {
+                "type": "TextBody",
+                "text": "${data.largeur_label}"
+              }
+            ]
+          },
+          {
+            "type": "If",
+            "condition": "${data.profondeur_label} != ''",
+            "then": [
+              {
+                "type": "TextBody",
+                "text": "${data.profondeur_label}"
+              }
+            ]
+          },
+          {
+            "type": "If",
+            "condition": "${data.valeur_poids} !=''",
+            "then": [
+              {
+                "type": "TextSubheading",
+                "text": "⚖️ Poids / Volume"
+              },
+              {
+                "type": "TextBody",
+                "text": "`${data.valeur_poids} ' ' ${data.unite_poids}`"
+              }
+            ],
+            "else": [
+              {
+                "type": "TextBody",
+                "text": "Pas de poids.",
+                "visible": true
+              }
+            ]
+          },
+          {
+            "type": "If",
+            "condition": "${data.couleur} != ''",
+            "then": [
+              {
+                "type": "TextSubheading",
+                "text": "🎨 Couleur"
+              },
+              {
+                "type": "TextBody",
+                "text": "${data.couleur}"
+              }
+            ],
+            "else": [
+              {
+                "type": "TextBody",
+                "text": "Pas de couleur.",
+                "visible": true
+              }
+            ]
+          },
+          {
+            "type": "If",
+            "condition": "${data.taille} != ''",
+            "then": [
+              {
+                "type": "TextSubheading",
+                "text": "📏 Taille"
+              },
+              {
+                "type": "TextBody",
+                "text": "${data.taille}"
+              }
+            ],
+            "else": [
+              {
+                "type": "TextBody",
+                "text": "Pas de taille.",
+                "visible": true
+              }
+            ]
+          },
+          {
+            "type": "TextSubheading",
+            "text": "📦 Quantité en stock"
+          },
+          {
+            "type": "TextBody",
+            "text": "`${data.quantite} ' unités'`"
+          },
+          {
+            "type": "TextSubheading",
+            "text": "${data.error_message}",
+            "visible": "`${data.error_message}!=''`"
+          },
+          {
+            "type": "Footer",
+            "label": "Soumettre le produit",
+            "enabled": "`${data.error_message}==''`",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {
+                "product_name": "${data.product_name}",
+                "product_category": "${data.product_category}",
+                "product_subcategory": "${data.product_subcategory}",
+                "prix_regulier_tnd": "${data.prix_regulier_tnd}",
+                "prix_promo_tnd": "${data.prix_promo_tnd}",
+                "prix_regulier_eur": "${data.prix_regulier_eur}",
+                "prix_promo_eur": "${data.prix_promo_eur}",
+                "longueur": "${data.longueur}",
+                "largeur": "${data.largeur}",
+                "profondeur": "${data.profondeur}",
+                "unite_dimension": "${data.unite_dimension}",
+                "valeur_poids": "${data.valeur_poids}",
+                "unite_poids": "${data.unite_poids}",
+                "couleur": "${data.couleur}",
+                "taille": "${data.taille}",
+                "quantite": "${data.quantite}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "SUCCESS",
+      "title": "Succès",
+      "terminal": true,
+      "success": true,
+      "data": {},
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Succès"
+          },
+          {
+            "type": "Footer",
+            "label": "Fermer",
+            "on-click-action": {
+              "name": "complete",
+              "payload": {}
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

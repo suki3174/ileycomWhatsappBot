@@ -1,7 +1,6 @@
 ﻿import type { AddProductState } from "@/models/product_model";
 import {
   saveProductDraft,
-  markProductConfirmed,
   type CreateProductResult,
 } from "@/repositories/addProduct/add_product_repo";
 import { findSellerByTokenOrPhone } from "@/services/auth_service";
@@ -14,6 +13,10 @@ import {
 import { convertTndPricesViaPlugin } from "@/repositories/addProduct/pricing_repo";
 import { normToken } from "@/utils/core_utils";
 
+/**
+ * Persists a product draft through the repository layer using the flow token.
+ * It derives a seller-specific SKU prefix from seller name when available.
+ */
 export async function persistDraftProduct(
   flowToken: string,
   state: AddProductState,
@@ -43,18 +46,24 @@ export async function persistDraftProduct(
   return saveProductDraft(token, state, quantity, sellerAbbr);
 }
 
-export async function confirmProduct(productId: string): Promise<void> {
-  await markProductConfirmed(productId);
-}
-
+/**
+ * Returns cached or plugin-fetched product categories.
+ */
 export async function getProductCategoriesCached(): Promise<ProductCategory[]> {
   return fetchAllProductCategories();
 }
+
+/**
+ * Returns cached or plugin-fetched subcategories for a parent category.
+ */
 export async function getSubcategoriesByCategoryCached(categoryId: string): Promise<SubCategory[]> {
   return fetchSubCategoriesByCategory(categoryId);
 }
 
 
+/**
+ * Converts TND pricing to EUR via plugin conversion service.
+ */
 export async function convertTndPricesToEur(
   regularTnd: number,
   promoTnd: number,

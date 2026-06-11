@@ -11,11 +11,19 @@ export interface PricingConversionResult {
   promoEur: number;
 }
 
+/**
+ * Normalizes any numeric input into a safe finite number.
+ * This protects cache keys and plugin payloads from NaN/Infinity values.
+ */
 function toFiniteNumber(value: unknown): number {
   const num = Number(value);
   return Number.isFinite(num) ? num : 0;
 }
 
+/**
+ * Uses local conversion logic when plugin conversion is unavailable.
+ * This keeps price flows responsive even during plugin/network outages.
+ */
 function fallbackConvert(regularTnd: number, promoTnd: number): PricingConversionResult {
   return {
     regularEur: regularTnd > 0 ? convertTndToEur(regularTnd) : 0,
@@ -23,6 +31,10 @@ function fallbackConvert(regularTnd: number, promoTnd: number): PricingConversio
   };
 }
 
+/**
+ * Converts TND prices to EUR through the plugin endpoint, then caches the result.
+ * If the plugin fails or returns malformed data, it falls back to local conversion.
+ */
 export async function convertTndPricesViaPlugin(
   regularTnd: number,
   promoTnd: number,

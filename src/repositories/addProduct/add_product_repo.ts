@@ -9,14 +9,6 @@ import {
   normText,
 } from "@/utils/data_parser";
 
-interface StoredProduct {
-  id: string;
-  flowToken: string;
-  state: AddProductState & { quantity: number };
-  createdAt: number;
-  confirmed: boolean;
-}
-
 export interface CreateProductResult {
   ok: boolean;
   productId?: string;
@@ -27,6 +19,10 @@ export interface CreateProductResult {
 
 const ADD_PRODUCT_TIMEOUT_MS = Math.max(PLUGIN_TIMEOUT_MS, 20_000);
 
+/**
+ * Builds the plugin create-product payload from flow draft state.
+ * Includes a deterministic idempotency key to prevent duplicate inserts.
+ */
 function buildCreatePayload(
   flowToken: string,
   state: AddProductState,
@@ -89,6 +85,10 @@ function buildCreatePayload(
   };
 }
 
+/**
+ * Extracts product_id from a successful plugin response.
+ * Throws a typed error message when plugin returns explicit failure fields.
+ */
 function extractProductId(payload: Record<string, unknown> | undefined): string {
   const success = payload?.success;
   if (success === false) {
@@ -103,6 +103,10 @@ function extractProductId(payload: Record<string, unknown> | undefined): string 
   return productId;
 }
 
+/**
+ * Creates a draft product in the plugin using flow token and state snapshot.
+ * Maps plugin failures to structured error fields for flow-level reporting.
+ */
 export async function saveProductDraft(
   flowToken: string,
   state: AddProductState,
@@ -181,15 +185,5 @@ export async function saveProductDraft(
   }
 }
 
-export async function markProductConfirmed(
-  _productId: string,
-): Promise<void> {
-  // Product is immediately created in plugin; no local confirmation persistence.
-}
 
-export async function getStoredProduct(
-  _productId: string,
-): Promise<StoredProduct | undefined> {
-  return undefined;
-}
 

@@ -112,15 +112,37 @@ const DEFAULT_SUBCATEGORIES: Record<
 
 const CAROUSEL_SIZE = 3;
 
-function previewLabels(
-  items: Array<{ id: string; title: string; description?: string }>,
-  max = 8,
-): Array<{ id: string; title: string; description?: string }> {
-  return items.slice(0, max).map((item) => ({
-    id: item.id,
-    title: item.title,
-    ...(item.description ? { description: item.description } : {}),
-  }));
+function isDefaultCategorySet(categories: Array<{ id: string; title: string }>): boolean {
+  if (categories.length !== DEFAULT_CATEGORIES.length) return false;
+  const expected = new Set(DEFAULT_CATEGORIES.map((c) => c.id));
+  for (const category of categories) {
+    if (!expected.has(category.id)) return false;
+  }
+  return true;
+}
+
+function maskFlowToken(token?: string): string {
+  if (!token) return "missing";
+  if (token.length <= 8) return token;
+  return `...${token.slice(-8)}`;
+}
+
+function summarizeFlowData(data: Record<string, any>) {
+  return {
+    keys: Object.keys(data),
+    error: data.error ?? "",
+    error_message: data.error_message ?? "",
+    cmd: data.cmd ?? "",
+    photo_source: data.photo_source ?? "",
+    product_category: data.product_category ?? "",
+    product_subcategory: data.product_subcategory ?? "",
+    image_count: Array.isArray(data.images) ? data.images.length : 0,
+    quantity_chip_count: Array.isArray(data.quantite_chips)
+      ? data.quantite_chips.length
+      : data.quantite_chips
+        ? 1
+        : 0,
+  };
 }
 
 /**
@@ -160,6 +182,63 @@ function toFlowSubcategories(items: SubCategory[]): Array<{ id: string; title: s
     .filter((s) => s.id.length > 0 && s.title.length > 0);
 }
 
+/**
+ * Formats one dimension line for the summary screen.
+ */
+function formatDimensionLabel(label: string, value?: number, unit?: string): string {
+  if (!value || value <= 0) {
+    return `${label} : non mentionnée`;
+  }
+
+  const suffix = String(unit || "").trim();
+  return suffix ? `${label} : ${value} ${suffix}` : `${label} : ${value}`;
+}
+
+/**
+ * Builds the SCREEN_SUMMARY payload from cached draft state.
+ */
+function buildSummaryData(
+  current: Awaited<ReturnType<typeof getAddProductState>>,
+  quantity: number,
+  errorMessage = "",
+) {
+  const rawImages: string[] = current?.images ?? [];
+  const images = buildCarousel(rawImages, 0);
+  const showCarousel2 = rawImages.length > CAROUSEL_SIZE;
+  const images2 = showCarousel2 ? buildCarousel(rawImages, CAROUSEL_SIZE) : [];
+  const uniteDimension = current?.unite_dimension ?? "";
+  const longueur = current?.longueur ? String(current.longueur) : "";
+  const largeur = current?.largeur ? String(current.largeur) : "";
+  const profondeur = current?.profondeur ? String(current.profondeur) : "";
+
+  return {
+    images,
+    images_2: images2,
+    show_carousel_2: showCarousel2,
+    product_name: current?.product_name ?? "",
+    product_category: current?.product_category_label ?? current?.product_category ?? "",
+    product_subcategory: current?.product_subcategory_label ?? current?.product_subcategory ?? "",
+    prix_regulier_tnd: current?.prix_regulier_tnd ? String(current.prix_regulier_tnd) : "",
+    prix_promo_tnd: current?.prix_promo_tnd ? String(current.prix_promo_tnd) : "",
+    prix_regulier_eur: current?.prix_regulier_eur ? String(current.prix_regulier_eur) : "",
+    prix_promo_eur: current?.prix_promo_eur ? String(current.prix_promo_eur) : "",
+    longueur,
+    largeur,
+    profondeur,
+    longueur_label: formatDimensionLabel("Longueur", current?.longueur, uniteDimension),
+    largeur_label: formatDimensionLabel("Largeur", current?.largeur, uniteDimension),
+    profondeur_label: formatDimensionLabel("Profondeur", current?.profondeur, uniteDimension),
+    unite_dimension: uniteDimension,
+    show_dimensions: Boolean(current?.longueur || current?.largeur || current?.profondeur),
+    valeur_poids: current?.valeur_poids ? String(current.valeur_poids) : "",
+    unite_poids: current?.unite_poids ?? "",
+    couleur: current?.couleur ?? "",
+    taille: current?.taille ?? "",
+    quantite: String(quantity),
+    error_message: errorMessage,
+  };
+}
+
 
 
 
@@ -167,12 +246,40 @@ function toFlowSubcategories(items: SubCategory[]): Array<{ id: string; title: s
 // ─── Screen handlers ──────────────────────────────────────────────────────────
 
 /**
- * SCREEN_PHOTO → decrypt & compress images → SCREEN_NAME
+ * SCREEN_PHOTO_CHOICE → routes the user to camera or gallery capture screens.
+ */
+async function handlePhotoChoice(parsed: FlowRequest): Promise<FlowResponse> {
+  const data = parsed.data || {};
+  const photoSource = String(data.photo_source ?? "").trim().toLowerCase();
+
+  console.info("[AddProductFlow] handlePhotoChoice", {
+    photoSource,
+    data: summarizeFlowData(data),
+  });
+
+  if (photoSource === "camera") {
+    return { screen: "SCREEN_PHOTO_CAMERA", data: {} };
+  }
+
+  if (photoSource === "gallery") {
+    return { screen: "SCREEN_PHOTO_GALLERY", data: {} };
+  }
+
+  return { screen: "SCREEN_PHOTO_CHOICE", data: {} };
+}
+
+/**
+ * SCREEN_PHOTO_CAMERA / SCREEN_PHOTO_GALLERY → decrypt & compress images → SCREEN_NAME
  */
 async function handlePhoto(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
   const data = parsed.data || {};
   const raw = Array.isArray(data.images) ? data.images : [];
+
+  console.info("[AddProductFlow] handlePhoto:start", {
+    token: maskFlowToken(token),
+    rawImageCount: raw.length,
+  });
 
   const images = (
     await Promise.all(
@@ -197,6 +304,11 @@ async function handlePhoto(parsed: FlowRequest): Promise<FlowResponse> {
 
   await updateAddProductState(token, { images });
 
+  console.info("[AddProductFlow] handlePhoto:done", {
+    token: maskFlowToken(token),
+    storedImageCount: images.length,
+  });
+
   return { screen: "SCREEN_NAME", data: {} };
 }
 
@@ -208,29 +320,37 @@ async function handleSaveName(parsed: FlowRequest): Promise<FlowResponse> {
   const data = parsed.data || {};
 
   const productName = String(data.product_name ?? "").trim();
+  console.info("[AddProductFlow] handleSaveName", {
+    token: maskFlowToken(token),
+    productName,
+  });
   await updateAddProductState(token, { product_name: productName });
 
-  // Prefer categories cached during INIT; re-fetch only as a last resort
+  // Categories should come from plugin endpoint; use defaults only when plugin fails.
   const state = await getAddProductState(token);
   let categories =
     Array.isArray(state?.categories) && state.categories.length > 0
       ? state.categories
-      : DEFAULT_CATEGORIES;
+      : [];
 
-  if (categories === DEFAULT_CATEGORIES) {
+  const shouldRefreshFromPlugin = categories.length === 0 || isDefaultCategorySet(categories);
+
+  if (shouldRefreshFromPlugin) {
     try {
       const fromService = await getProductCategoriesCached();
       if (Array.isArray(fromService) && fromService.length > 0) {
         categories = fromService;
-        await updateAddProductState(token, { categories });
       }
-    } catch { /* keep defaults */ }
+    } catch {
+      // keep fallback below
+    }
   }
 
-  console.log("AddProduct categories payload", {
-    count: categories.length,
-    sample: previewLabels(categories),
-  });
+  if (categories.length === 0) {
+    categories = DEFAULT_CATEGORIES;
+  }
+
+  await updateAddProductState(token, { categories });
 
   return { screen: "SCREEN_CATEGORY", data: { categories } };
 }
@@ -245,6 +365,11 @@ async function handleSaveCategory(parsed: FlowRequest): Promise<FlowResponse> {
 
   const categoryId    = String(data.product_category ?? "").trim();
   const state         = await getAddProductState(token);
+
+  console.info("[AddProductFlow] handleSaveCategory", {
+    token: maskFlowToken(token),
+    categoryId,
+  });
 
   // Resolve the human-readable label for the selected category
   const allCategories: Array<{ id: string; title: string }> =
@@ -272,13 +397,6 @@ async function handleSaveCategory(parsed: FlowRequest): Promise<FlowResponse> {
     },
   });
 
-  console.log("AddProduct subcategories payload", {
-    categoryId,
-    categoryLabel,
-    count: flowSubcategories.length,
-    sample: previewLabels(flowSubcategories),
-  });
-
   return {
     screen: "SCREEN_SUBCATEGORY",
     data: {
@@ -297,6 +415,12 @@ async function handleSaveSubcategory(parsed: FlowRequest): Promise<FlowResponse>
 
   const subcategoryId = String(data.product_subcategory ?? "").trim();
   const state         = await getAddProductState(token);
+
+  console.info("[AddProductFlow] handleSaveSubcategory", {
+    token: maskFlowToken(token),
+    subcategoryId,
+    categoryId: state?.product_category ?? "",
+  });
 
   // Build the human-readable breadcrumb label from the cached subcategories map
   const categoryId    = state?.product_category ?? "";
@@ -329,6 +453,12 @@ async function handleCalculateGainTnd(parsed: FlowRequest): Promise<FlowResponse
   const sellingPrice = computeSellingPrice(prixRegulierTnd, prixPromoTnd);
   const gainTnd      = formatGainTnd(sellingPrice);
 
+  console.info("[AddProductFlow] handleCalculateGainTnd", {
+    prixRegulierTnd,
+    prixPromoTnd,
+    gainTnd,
+  });
+
   return { screen: "SCREEN_PRICE_TND", data: { gain_tnd: gainTnd } };
 }
 
@@ -341,6 +471,12 @@ async function handleSavePriceTnd(parsed: FlowRequest): Promise<FlowResponse> {
 
   const prixRegulierTnd = parsePrice(data.prix_regulier_tnd);
   const prixPromoTnd    = parsePrice(data.prix_promo_tnd);
+
+  console.info("[AddProductFlow] handleSavePriceTnd", {
+    token: maskFlowToken(token),
+    prixRegulierTnd,
+    prixPromoTnd,
+  });
 
   if (hasInvalidPromoPrice(prixRegulierTnd, prixPromoTnd)) {
     return { screen: "SCREEN_PRICE_TND", data: { gain_tnd: "" } };
@@ -375,6 +511,11 @@ async function handleCalculateGainEur(parsed: FlowRequest): Promise<FlowResponse
   const data  = parsed.data || {};
   const state = (await getAddProductState(token)) || undefined;
 
+  console.info("[AddProductFlow] handleCalculateGainEur:start", {
+    token: maskFlowToken(token),
+    data: summarizeFlowData(data),
+  });
+
   let prixRegulierEur = parsePrice(data.prix_regulier_eur);
   let prixPromoEur    = parsePrice(data.prix_promo_eur);
 
@@ -395,6 +536,13 @@ async function handleCalculateGainEur(parsed: FlowRequest): Promise<FlowResponse
   const sellingPrice = computeSellingPrice(prixRegulierEur, prixPromoEur);
   const gainEur      = formatGainEur(sellingPrice);
 
+  console.info("[AddProductFlow] handleCalculateGainEur:done", {
+    token: maskFlowToken(token),
+    prixRegulierEur,
+    prixPromoEur,
+    gainEur,
+  });
+
   return {
     screen: "SCREEN_PRICE_EUR",
     data: {
@@ -414,6 +562,11 @@ async function handleSavePriceEur(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
   const data  = parsed.data || {};
   const state = (await getAddProductState(token)) || undefined;
+
+  console.info("[AddProductFlow] handleSavePriceEur:start", {
+    token: maskFlowToken(token),
+    data: summarizeFlowData(data),
+  });
 
   let prixRegulierEur = parsePrice(data.prix_regulier_eur);
   let prixPromoEur    = parsePrice(data.prix_promo_eur);
@@ -445,6 +598,12 @@ async function handleSavePriceEur(parsed: FlowRequest): Promise<FlowResponse> {
     prix_promo_eur:    prixPromoEur,
   });
 
+  console.info("[AddProductFlow] handleSavePriceEur:done", {
+    token: maskFlowToken(token),
+    prixRegulierEur,
+    prixPromoEur,
+  });
+
   return { screen: "SCREEN_DETAILS", data: {} };
 }
 
@@ -454,6 +613,11 @@ async function handleSavePriceEur(parsed: FlowRequest): Promise<FlowResponse> {
 async function handleSaveDetails(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
   const data  = parsed.data || {};
+
+  console.info("[AddProductFlow] handleSaveDetails", {
+    token: maskFlowToken(token),
+    data: summarizeFlowData(data),
+  });
 
   await updateAddProductState(token, {
     longueur:        toNumber(data.longueur, 0),
@@ -478,8 +642,11 @@ async function handleSaveQuantity(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
   const data  = parsed.data || {};
 
-  const chips = Array.isArray(data.quantite_chips) ? (data.quantite_chips as string[]) : [];
-  let quantity = chips[0] ? parseInt(chips[0], 10) : NaN;
+  const rawChips = data.quantite_chips;
+  const chipValue = Array.isArray(rawChips)
+    ? String(rawChips[0] ?? "").trim()
+    : String(rawChips ?? "").trim();
+  let quantity = chipValue ? parseInt(chipValue, 10) : NaN;
   if (!Number.isFinite(quantity) || quantity <= 0) {
     const manual = toNumber(data.quantite_manuelle, 0);
     quantity = manual > 0 ? manual : 1;
@@ -487,39 +654,15 @@ async function handleSaveQuantity(parsed: FlowRequest): Promise<FlowResponse> {
 
   const current = await updateAddProductState(token, { quantite: String(quantity) });
 
-  const rawImages: string[] = current.images ?? [];
-  const carousel1   = buildCarousel(rawImages, 0);
-  const showCarousel2 = rawImages.length > CAROUSEL_SIZE;
-  const carousel2   = showCarousel2 ? buildCarousel(rawImages, CAROUSEL_SIZE) : [];
+  console.info("[AddProductFlow] handleSaveQuantity", {
+    token: maskFlowToken(token),
+    quantity,
+    imageCount: current?.images?.length ?? 0,
+  });
 
   return {
     screen: "SCREEN_SUMMARY",
-    data: {
-      images:          carousel1,
-      images_2:        carousel2,
-      show_carousel_2: showCarousel2,
-
-      product_name:         current.product_name         ?? "",
-      product_category:      current.product_category_label ?? current.product_category ?? "",
-      product_subcategory: current.product_subcategory_label ?? current.product_subcategory ?? "",
-
-      prix_regulier_tnd: current.prix_regulier_tnd ? String(current.prix_regulier_tnd) : "",
-      prix_promo_tnd:    current.prix_promo_tnd    ? String(current.prix_promo_tnd)    : "",
-      prix_regulier_eur: current.prix_regulier_eur ? String(current.prix_regulier_eur) : "",
-      prix_promo_eur:    current.prix_promo_eur    ? String(current.prix_promo_eur)    : "",
-
-      longueur:        current.longueur    ? String(current.longueur)    : "",
-      largeur:         current.largeur     ? String(current.largeur)     : "",
-      profondeur:      current.profondeur  ? String(current.profondeur)  : "",
-      unite_dimension: current.unite_dimension ?? "",
-
-      valeur_poids: current.valeur_poids ? String(current.valeur_poids) : "",
-      unite_poids:  current.unite_poids  ?? "",
-
-      couleur:  current.couleur  ?? "",
-      taille:   current.taille   ?? "",
-      quantite: String(quantity),
-    },
+    data: buildSummaryData(current, quantity),
   };
 }
 
@@ -533,6 +676,13 @@ async function handleSubmitSummary(parsed: FlowRequest): Promise<FlowResponse> {
 
   const quantity = parseInt(String(current.quantite ?? "1"), 10);
 
+  console.info("[AddProductFlow] handleSubmitSummary:start", {
+    token: maskFlowToken(token),
+    quantity,
+    submit_status: current.submit_status ?? "",
+    product_id: current.product_id ?? "",
+  });
+
   // Guard: skip if already submitted (e.g. user double-taps the footer)
   if (current.submitted_at && current.product_id) {
     console.info("Product already submitted, skipping duplicate insert:", current.product_id);
@@ -544,9 +694,7 @@ async function handleSubmitSummary(parsed: FlowRequest): Promise<FlowResponse> {
     console.info("Product submission already in progress, skipping duplicate request");
     return {
       screen: "SCREEN_SUMMARY",
-      data: {
-        error_message: "Création du produit en cours. Veuillez patienter...",
-      },
+      data: buildSummaryData(current, quantity, "Création du produit en cours. Veuillez patienter..."),
     };
   }
 
@@ -557,6 +705,13 @@ async function handleSubmitSummary(parsed: FlowRequest): Promise<FlowResponse> {
   });
 
   const createResult = await persistDraftProduct(token, current, quantity);
+
+  console.info("[AddProductFlow] handleSubmitSummary:result", {
+    token: maskFlowToken(token),
+    ok: createResult.ok,
+    errorCode: createResult.errorCode ?? "",
+    productId: createResult.productId ?? "",
+  });
 
   if (!createResult.ok) {
     console.error(
@@ -574,10 +729,11 @@ async function handleSubmitSummary(parsed: FlowRequest): Promise<FlowResponse> {
     // Stay on the summary screen and surface the error
     return {
       screen: "SCREEN_SUMMARY",
-      data: {
-        
-        error_message: createResult.errorMessage ?? "Une erreur est survenue. Veuillez réessayer.",
-      },
+      data: buildSummaryData(
+        { ...current, submit_status: "error" },
+        quantity,
+        createResult.errorMessage ?? "Une erreur est survenue. Veuillez réessayer.",
+      ),
     };
   }
 
@@ -621,8 +777,18 @@ export async function handleAddProductFlow(
   const screen = parsed.screen || "";
   const data   = parsed.data   || {};
   const token = getFlowToken(parsed);
+
+  console.info("[AddProductFlow] dispatch:start", {
+    action,
+    screen,
+    token: maskFlowToken(token),
+    version: parsed.version ?? "",
+    data: summarizeFlowData(data),
+  });
+
     if (!token) {
       void sendAuthFlowOnce({ phone: token, source: "meta-flow:add-product:missing-token" });
+    console.warn("[AddProductFlow] dispatch:missing-token", { action, screen });
     return {
       screen: "WELCOME",
       data: { error_msg: "Seller not found" },
@@ -631,6 +797,13 @@ export async function handleAddProductFlow(
 
     const auth = await validateSellerFlowAccess(token);
     if (!auth.ok || !auth.seller) {
+      console.warn("[AddProductFlow] dispatch:auth-failed", {
+        action,
+        screen,
+        reason: auth.reason,
+        phone: auth.phone || "",
+        token: maskFlowToken(token),
+      });
       void sendAuthFlowOnce({
         phone: auth.phone || token,
         seller: auth.seller,
@@ -649,14 +822,30 @@ export async function handleAddProductFlow(
     }
 
   // ── INIT ──────────────────────────────────────────────────────────────────
-  if (action === "INIT") {
+  if (action === "INIT" || action === "NAVIGATE") {
+    console.info("[AddProductFlow] dispatch:init", {
+      action,
+      token: maskFlowToken(token),
+      error: data.error ?? "",
+      error_message: data.error_message ?? "",
+    });
     
     if (token) {
 
-      // Keep INIT fast and deterministic; categories/subcategories are loaded on-demand.
+      // Load categories from plugin endpoint on INIT so seller sees live taxonomy.
+      let categories = DEFAULT_CATEGORIES;
+      try {
+        const pluginCategories = await getProductCategoriesCached();
+        if (Array.isArray(pluginCategories) && pluginCategories.length > 0) {
+          categories = pluginCategories;
+        }
+      } catch {
+        // Keep default categories as a safe fallback.
+      }
+
       // Reset submission state for new product flow
       await updateAddProductState(token, {
-        categories: DEFAULT_CATEGORIES,
+        categories,
         subcategories: {},
         submitted_at: undefined,
         submit_status: undefined,
@@ -667,7 +856,7 @@ export async function handleAddProductFlow(
     }
     
 
-    return { screen: "SCREEN_PHOTO", data: {} };
+    return { screen: "WELCOME", data: {} };
   }
 
   
@@ -675,6 +864,13 @@ export async function handleAddProductFlow(
   // ── DATA_EXCHANGE ─────────────────────────────────────────────────────────
   if (action === "DATA_EXCHANGE") {
     const cmd = String(data.cmd || "").toLowerCase();
+
+    console.info("[AddProductFlow] dispatch:data-exchange", {
+      screen,
+      cmd,
+      token: maskFlowToken(token),
+      data: summarizeFlowData(data),
+    });
 
     if (!screen) {
       // Recover gracefully from client transition glitches.
@@ -686,6 +882,11 @@ export async function handleAddProductFlow(
           : await getProductCategoriesCached().catch(() => DEFAULT_CATEGORIES);
 
       const categoryFromRequest = String(data.product_category ?? "").trim();
+      console.warn("[AddProductFlow] dispatch:empty-screen", {
+        token: maskFlowToken(token),
+        categoryFromRequest,
+        data: summarizeFlowData(data),
+      });
       if (categoryFromRequest) {
         const categoryLabel =
           categories.find((c) => c.id === categoryFromRequest)?.title ?? categoryFromRequest;
@@ -697,12 +898,6 @@ export async function handleAddProductFlow(
 
         const subcategories = await resolveSubcategories(token, categoryFromRequest);
         const flowSubcategories = toFlowSubcategories(subcategories);
-        console.log("AddProduct empty-screen recovery to subcategories", {
-          categoryFromRequest,
-          categoryLabel,
-          count: flowSubcategories.length,
-          sample: previewLabels(flowSubcategories),
-        });
         return {
           screen: "SCREEN_SUBCATEGORY",
           data: {
@@ -716,7 +911,14 @@ export async function handleAddProductFlow(
     }
 
     switch (screen) {
-      case "SCREEN_PHOTO":
+      case "WELCOME":
+        return handlePhotoChoice(parsed);
+
+      case "SCREEN_PHOTO_CHOICE":
+        return handlePhotoChoice(parsed);
+
+      case "SCREEN_PHOTO_CAMERA":
+      case "SCREEN_PHOTO_GALLERY":
         return handlePhoto(parsed);
 
       case "SCREEN_NAME":
@@ -748,7 +950,14 @@ export async function handleAddProductFlow(
     }
   }
 
-  return { screen: "SCREEN_PHOTO", data: {} };
+  console.warn("[AddProductFlow] dispatch:fallback", {
+    action,
+    screen,
+    token: maskFlowToken(token),
+    data: summarizeFlowData(data),
+  });
+
+  return { screen: "SCREEN_PHOTO_CHOICE", data: {} };
 }
 
 export default handleAddProductFlow;

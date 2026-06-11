@@ -4,16 +4,16 @@ import { handleAddProductFlow } from "@/handlers/seller/addProductFlow_handler";
 import type { FlowRequest } from "@/models/flowRequest";
 import type { FlowResponse } from "@/models/flowResponse";
 
+/**
+ * Decrypts, routes, and re-encrypts add-product flow callback payloads from Meta.
+ */
 export async function POST(req: NextRequest) {
   try {
-    console.log("AddProduct Flow POST received", {
-      url: req.url,
-      host: req.headers.get("host"),
-      forwarded: req.headers.get("x-forwarded-for"),
-    });
-
     const body = await req.json();
-    console.log("AddProduct Flow POST body keys:", Object.keys(body));
+
+    console.info("[AddProductFlow][meta] request:received", {
+      bodyKeys: body && typeof body === "object" ? Object.keys(body) : [],
+    });
 
     let parsed: FlowRequest;
     let aesKey: Buffer;
@@ -23,12 +23,6 @@ export async function POST(req: NextRequest) {
       parsed = dec.parsed;
       aesKey = dec.aesKey;
       iv = dec.iv;
-      console.log("Decrypted add-product flow payload:", {
-        action: parsed.action,
-        version: parsed.version,
-        flow_token: parsed?.data?.flow_token ?? parsed?.flow_token,
-        screen: parsed.screen,
-      });
     } catch (deErr: unknown) {
       const err =
         typeof deErr === "object" && deErr !== null && "message" in deErr
@@ -44,20 +38,29 @@ export async function POST(req: NextRequest) {
 
     let resp: FlowResponse | { data: { status: string } };
     if (parsed.action === "ping" || parsed.action === "PING") {
+      console.info("[AddProductFlow][meta] request:ping", {
+        action: parsed.action,
+      });
       resp = { data: { status: "active" } };
     } else {
+      console.info("[AddProductFlow][meta] request:decrypted", {
+        action: parsed.action ?? "",
+        screen: parsed.screen ?? "",
+        version: parsed.version ?? "",
+        dataKeys: parsed.data ? Object.keys(parsed.data) : [],
+      });
       const flowResponse = await handleAddProductFlow(parsed);
       if (!flowResponse) {
         return new Response("No content", { status: 200 });
       }
+      console.info("[AddProductFlow][meta] response:flow", {
+        screen: flowResponse.screen,
+        dataKeys: flowResponse.data ? Object.keys(flowResponse.data) : [],
+      });
       resp = {
         screen: flowResponse.screen,
         data: flowResponse.data,
       };
-      console.log("Add-product flow response prepared:", {
-        screen: flowResponse.screen,
-        data: flowResponse.data,
-      });
     }
 
     const encoded = encryptFlowResponse(resp, aesKey, iv);
@@ -82,13 +85,10 @@ export async function POST(req: NextRequest) {
   }
 }
 
-export async function GET(req: Request) {
-  console.log(
-    "AddProduct Flow GET ping from",
-    req.headers instanceof Headers
-      ? req.headers.get("x-forwarded-for")
-      : "unknown",
-  );
+/**
+ * Simple health endpoint used by Meta callback validation and smoke tests.
+ */
+export async function GET(_req: Request) {
   return new Response("Add-product flow endpoint active", { status: 200 });
 }
 

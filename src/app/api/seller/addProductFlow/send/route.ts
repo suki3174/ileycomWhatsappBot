@@ -3,7 +3,12 @@ import { normalizeSellerPhone } from "@/utils/seller_auth_helpers";
 import { Seller } from "@/models/seller_model";
 import { validateSellerFlowDispatch } from "@/services/auth_service";
 import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
+import { clearAddProductState, updateAddProductState } from "@/repositories/addProduct/add_product_cache";
+import { getProductCategoriesCached } from "@/services/add_product_service";
 
+/**
+ * Sends the add-product flow template to the seller after auth dispatch checks.
+ */
 export async function POST(req: NextRequest) {
   const body = await req.json();
   const seller: Seller = body.seller;
@@ -34,6 +39,24 @@ export async function POST(req: NextRequest) {
       );
     }
     const token = auth.token;
+
+    // Prime add-product state at send-time so category screen uses live plugin taxonomy.
+    await clearAddProductState(token);
+    try {
+      const categories = await getProductCategoriesCached();
+      await updateAddProductState(token, {
+        categories: Array.isArray(categories) ? categories : [],
+        subcategories: {},
+      });
+      console.info("[AddProductFlow][send] primed categories", {
+        tokenSuffix: token.length > 8 ? token.slice(-8) : token,
+        count: Array.isArray(categories) ? categories.length : 0,
+      });
+    } catch (err) {
+      console.warn("[AddProductFlow][send] category prewarm failed", err);
+      await updateAddProductState(token, { subcategories: {} });
+    }
+
     const recipient = sellerPhone;
     const response = await fetch(
       `https://graph.facebook.com/v19.0/${process.env.PHONE_NUMBER_ID}/messages`,
@@ -49,7 +72,7 @@ export async function POST(req: NextRequest) {
           type: "template",
           mode: "published",
           template: {
-            name: "addproductflow_message_template",
+            name: "add_product_flow_local",
             language: { code: "fr" },
             components: [
               {
@@ -80,4 +103,9 @@ export async function POST(req: NextRequest) {
   }
 
 }
+
+/**
+ * Add-product send route does not expose a GET operation.
+ * This API is intentionally write-only to dispatch template launches.
+ */
 
