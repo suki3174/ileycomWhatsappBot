@@ -146,7 +146,7 @@ function extractDataObject(
 export async function findOrdersBySellerFlowToken(
   flowToken: string,
 ): Promise<Order[]> {
-  const token = normToken(flowToken);
+  const token = normToken(String(flowToken || ""));
   if (!token) return [];
 
   try {
@@ -185,7 +185,7 @@ export async function findOrdersBySellerFlowToken(
 export async function findOrderStatusCountersByFlowToken(
   flowToken: string,
 ): Promise<OrderStatusCounters> {
-  const token = normToken(flowToken);
+  const token = normToken(String(flowToken || ""));
   if (!token) {
     return { total: 0, completed: 0, in_delivery: 0, to_deliver: 0, pending: 0, cancelled: 0, refunded: 0, anomaly: 0 };
   }
@@ -232,14 +232,20 @@ export async function findOrderStatusCountersByFlowToken(
  */
 export async function findOrderById(
   orderId: string,
+  flowToken?: string,
 ): Promise<Order | undefined> {
   const oid = normText(orderId);
   if (!oid) return undefined;
+  const token = normToken(String(flowToken || ""));
+  if (!token) {
+    console.error("plugin order/by-id missing flow token", { orderId: oid });
+    return undefined;
+  }
 
   try {
     const res = await pluginPostWithRetry(
       "/seller/order/by-id",
-      { order_id: oid },
+      { order_id: oid, flow_token: token },
       { timeoutMs: ORDER_DETAIL_TIMEOUT_MS, retries: 0, retryDelayMs: 250 },
     );
 
@@ -360,14 +366,20 @@ export async function findOrderSummariesPageByFlowToken(
  */
 export async function findOrderArticlesByOrderId(
   orderId: string,
+  flowToken?: string,
 ): Promise<OrderArticle[]> {
   const oid = normText(orderId);
   if (!oid) return [];
+  const token = normToken(String(flowToken || ""));
+  if (!token) {
+    console.error("plugin order/articles/by-id missing flow token", { orderId: oid });
+    return [];
+  }
 
   try {
     const res = await pluginPostWithRetry(
       "/seller/order/articles/by-id",
-      { order_id: oid },
+      { order_id: oid, flow_token: token },
       { timeoutMs: Math.max(PLUGIN_TIMEOUT_MS, 10000), retries: 0, retryDelayMs: 250 },
     );
 
@@ -401,9 +413,15 @@ export async function findOrderArticlesPageByOrderId(
   orderId: string,
   page = 1,
   limit = 3,
+  flowToken?: string,
 ): Promise<OrderArticlesPage> {
   const oid = normText(orderId);
   if (!oid) {
+    return { articles: [], page: 1, limit: Math.max(1, limit), hasMore: false, total: 0 };
+  }
+
+  const token = normToken(String(flowToken || ""));
+  if (!token) {
     return { articles: [], page: 1, limit: Math.max(1, limit), hasMore: false, total: 0 };
   }
 
@@ -415,7 +433,7 @@ export async function findOrderArticlesPageByOrderId(
   try {
     const res = await pluginPostWithRetry(
       "/seller/order/articles/by-id",
-      { order_id: oid, page: safePage, limit: safeLimit },
+      { order_id: oid, flow_token: token, page: safePage, limit: safeLimit },
       { timeoutMs: Math.max(PLUGIN_TIMEOUT_MS, 10000), retries: 0, retryDelayMs: 250 },
     );
 

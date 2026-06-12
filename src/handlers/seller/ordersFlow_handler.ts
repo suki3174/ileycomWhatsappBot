@@ -416,7 +416,11 @@ export async function handleOrdersFlow(
   }
 
   if (action === "INIT" || action === "NAVIGATE") {
-    return { screen: "WELCOME_SCREEN", data: {} };
+    return handleOrderStatus({
+      ...parsed,
+      screen: "ORDER_STATUS",
+      data: parsed.data || {},
+    });
   }
 
   if (action === "DATA_EXCHANGE") {

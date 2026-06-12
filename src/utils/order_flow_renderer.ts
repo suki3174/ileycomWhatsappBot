@@ -15,6 +15,10 @@ export function formatOrderListItem(order: Order) {
       ? order.articles_count
       : order.articles.length;
   const metadata = `${order.created_at} · ${articlesCount} article${articlesCount > 1 ? "s" : ""}`;
+  const totalLabel = Number.isFinite(Number(order.total))
+    ? Number(order.total).toLocaleString("fr-FR", { maximumFractionDigits: 2 })
+    : String(order.total ?? "");
+  const statusLabel = String(order.tags?.[0] || "").trim();
 
   // Enforce WhatsApp NavigationList character limits
   const title = String(order.reference ?? "").slice(0, 30);
@@ -30,8 +34,8 @@ export function formatOrderListItem(order: Order) {
   return {
     id: String(order.id),
     "main-content": { title, description, metadata: safeMetadata },
-    end: { title: endTitle, metadata: endMetadata },
-    tags: safeTags,
+    end: { title: totalLabel.slice(0, 10), metadata: endMetadata },
+    tags: statusLabel ? [statusLabel] : safeTags,
     "on-click-action": {
       name: "data_exchange",
       payload: { order_id: String(order.id), cmd: "order_details" },
@@ -52,22 +56,28 @@ export function formatOrderDetail(order: Order) {
       ? order.articles_count
       : order.articles.length;
   const articlesTotal = order.subtotal;
+  const statusLabel = order.tags[0] ? `Statut : ${order.tags[0]}` : "Statut : —";
+  const paymentLabel = `Paiement : ${order.payment_method || "—"}`;
+  const transactionLabel = `Transaction : ${order.transaction_id || "—"}`;
+  const noteLabel = `Note client : ${order.customer_note || "—"}`;
+  const subtotalLabel = `Sous-total : ${order.subtotal} ${order.currency}`;
+  const shippingLabel = `Livraison : ${order.shipping_cost} ${order.currency}`;
+  const totalLabel = `Total : ${order.total} ${order.currency}`;
 
   return {
     order_id: order.id,
     order_ref: order.reference,
     order_date: order.created_at,
-    status: order.tags[0] ? `✅ Commande ${order.tags[0].toLowerCase()}` : "",
-    total: `${order.total} ${order.currency}`,
-    payment_method: order.payment_method,
-    transaction_id: order.transaction_id || "N/A",
-    customer_note: order.customer_note,
+    status_line: statusLabel,
+    payment_line: paymentLabel,
+    transaction_line: transactionLabel,
+    note_line: noteLabel,
     articles_summary: `${articlesCount} article${articlesCount > 1 ? "s" : ""} — ${articlesTotal} ${order.currency}`,
     billing_info: order.billing_info,
     shipping_info: order.shipping_info,
-    subtotal: `${order.subtotal} ${order.currency}`,
-    shipping_cost: `${order.shipping_cost} ${order.currency}`,
-    total_summary: `${order.total} ${order.currency}`,
+    subtotal_line: subtotalLabel,
+    shipping_line: shippingLabel,
+    total_line: totalLabel,
   };
 }
 
@@ -102,10 +112,8 @@ export async function formatOrderArticlesServerPage(
   return {
     order_id: orderId,
     order_ref: orderRef,
-    current_page: safePage,
     next_page: hasMore ? safePage + 1 : safePage,
     prev_page: hasPrev ? safePage - 1 : safePage,
-    total_pages: totalPages,
     has_next: hasMore,
     has_prev: hasPrev,
     page_label: `Page ${safePage} / ${totalPages}`,
@@ -142,10 +150,10 @@ export function buildPaginationItems(
 
   if (currentPage > 1) {
     items.push({
-      id: `fetch_prev_${currentPage - 1}`,
+      id: "nav_prev",
       "main-content": {
         title: "⬅️ Page Précédente",
-        metadata: `Page 2 ${currentPage - 1}`,
+        metadata: `Page ${currentPage - 1}`,
       },
       "on-click-action": {
         name: "data_exchange",
@@ -162,7 +170,7 @@ export function buildPaginationItems(
   if (hasMore) {
     const targetNext = nextPage && nextPage > 0 ? nextPage : currentPage + 1;
     items.push({
-      id: `fetch_more_${targetNext}`,
+      id: "nav_next",
       "main-content": {
         title: "Page Suivante ➡️",
         metadata: `Page ${targetNext}`,

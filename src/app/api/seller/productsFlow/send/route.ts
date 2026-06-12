@@ -34,10 +34,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "seller.phone is required in request body" }, { status: 400 });
   }
 
+  console.log("[productsFlow/send] Request accepted", {
+    sellerPhone,
+    rawSenderPhone,
+    sellerName: String(seller.name || ""),
+  });
+
 
   try {
     const auth = await validateSellerFlowDispatch(sellerPhone);
     if (!auth.ok || !auth.seller) {
+      console.log("[productsFlow/send] Auth blocked send", {
+        sellerPhone,
+        reason: auth.reason,
+        hasSeller: Boolean(auth.seller),
+      });
       await sendAuthFlowOnce({
         phone: sellerPhone,
         seller: auth.seller || seller,
@@ -52,6 +63,10 @@ export async function POST(req: NextRequest) {
     }
     const token = auth.token;
     const recipient = rawSenderPhone || sellerPhone;
+    console.log("[productsFlow/send] Sending Meta template", {
+      recipient,
+      tokenPreview: String(token || "").slice(0, 24),
+    });
 
     const response = await fetch(
       `https://graph.facebook.com/v19.0/${process.env.PHONE_NUMBER_ID}/messages`,
@@ -91,6 +106,11 @@ export async function POST(req: NextRequest) {
     );
 
     const data = await response.json();
+    console.log("[productsFlow/send] Meta response", {
+      status: response.status,
+      recipient,
+      data,
+    });
     return NextResponse.json({ seller: seller.name, recipient, status: response.status, data });
 
   } catch (error) {

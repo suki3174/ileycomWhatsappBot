@@ -33,6 +33,11 @@ import { normText } from "@/utils/data_parser";
 
 const inflightFetches = new Map<string, Promise<unknown>>();
 
+/**
+ * Deduplicates concurrent async fetches keyed by logical resource identifiers
+ * (token + product + screen type). This prevents burst navigation from issuing
+ * duplicate plugin requests while guaranteeing all callers await one promise.
+ */
 function withInFlightDedup<T>(key: string, task: () => Promise<T>): Promise<T> {
   const existing = inflightFetches.get(key) as Promise<T> | undefined;
   if (existing) return existing;
@@ -45,7 +50,9 @@ function withInFlightDedup<T>(key: string, task: () => Promise<T>): Promise<T> {
 }
 
 /**
- * Returns a page of the seller's products for the product list screen.
+ * Returns a paginated product list for PRODUCT_LIST by first consulting cache,
+ * then fetching from plugin repository on miss, and finally shaping data into
+ * renderer-friendly fields used by the shared product list UI component.
  */
 export async function getSellerProductsPageByFlowToken(
   flowToken: string,
@@ -94,7 +101,9 @@ export async function getSellerProductsPageByFlowToken(
 }
 
 /**
- * Loads product photos for the edit screen.
+ * Loads editable product photos for SCREEN_PHOTOS/SCREEN_SUMMARY. It applies a
+ * cache-first strategy, then in-flight deduped repository fetch, and normalizes
+ * image arrays so downstream carousel builders can rely on stable string values.
  */
 export async function loadProductPhotosForEditScreen(
   productId: string,
@@ -131,7 +140,9 @@ export async function loadProductPhotosForEditScreen(
 }
 
 /**
- * Loads product edit info (pricing, dimensions, attributes) for the edit screen.
+ * Loads editable product information for SCREEN_EDIT_INFO, including pricing,
+ * stock, dimensions, weight, and attributes. The method guarantees deterministic
+ * shape by normalizing repository fields and stringifying nullable primitives.
  */
 export async function loadProductEditInfoForEditScreen(
   productId: string,
@@ -202,7 +213,9 @@ export async function loadProductEditInfoForEditScreen(
 }
 
 /**
- * Loads product category and subcategory info for the edit screen.
+ * Loads category/subcategory metadata for category edit screens with cache-first
+ * behavior. Returned labels are resolved to display-ready values consumed by the
+ * handler when building SCREEN_CATEGORY_INFO and summary recap blocks.
  */
 export async function loadProductCategoryInfoForEditScreen(
   productId: string,
@@ -243,7 +256,9 @@ export async function loadProductCategoryInfoForEditScreen(
 }
 
 /**
- * Loads subcategories for a category.
+ * Fetches subcategories for a selected category and maps them into the flow UI
+ * option format {id,title,description}. This is used by SCREEN_EDIT_CATEGORY to
+ * feed SCREEN_EDIT_SUBCATEGORY with human-friendly picker values.
  */
 export async function loadSubcategoriesForCategory(
   categoryId: string,
@@ -257,7 +272,9 @@ export async function loadSubcategoriesForCategory(
 }
 
 /**
- * Prefetches categories for the update product flow.
+ * Prefetches top-level categories to reduce latency when users open category
+ * editing screens. Failures are deliberately softened into empty lists so flow
+ * navigation remains available and handler-level fallbacks can still proceed.
  */
 export async function prefetchUpdateProductData(): Promise<Record<string, unknown>> {
   try {
@@ -269,8 +286,9 @@ export async function prefetchUpdateProductData(): Promise<Record<string, unknow
 }
 
 /**
- * Updates a product with the given changes.
- * Maps handler state keys → plugin payload keys.
+ * Orchestrates final update submit from handler state into repository contract:
+ * it normalizes numeric/text fields, computes changed-field hints, dispatches
+ * the plugin update request, and invalidates update-flow caches on success.
  */
 export async function updateProductNow(
   productId: string,

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { handleIncomingMessage } from "@/handlers/seller/menu_handler";
+import { handleIncomingMessage, isMenuTrigger } from "@/handlers/seller/menu_handler";
 import { isSupportedSellerPhone, normalizeSellerPhone } from "@/utils/seller_auth_helpers";
 
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
@@ -18,13 +18,16 @@ export async function GET(request: Request) {
   return new NextResponse("Verification failed", { status: 403 });
 }
 
-const MENU_TRIGGERS = new Set([
-  "Voir mes commandes",
-  "Voir mes produits",
-  "Modifier un produit",
-]);
+type WebhookMessage = {
+  text?: { body?: string };
+  button?: { text?: string };
+  interactive?: {
+    button_reply?: { title?: string };
+    list_reply?: { title?: string };
+  };
+};
 
-function extractMenuTrigger(message: Record<string, any> | undefined): string {
+function extractMenuTrigger(message: WebhookMessage | undefined): string {
   if (!message || typeof message !== "object") return "";
 
   const textBody = message?.text?.body;
@@ -39,7 +42,7 @@ function extractMenuTrigger(message: Record<string, any> | undefined): string {
   if (typeof interactiveTitle === "string" && interactiveTitle.trim()) {
     return interactiveTitle.trim();
   }
-
+  
   return "";
 }
 
@@ -49,6 +52,7 @@ export async function POST(request: Request) {
     const entry = body?.entry?.[0];                    
     const changes = entry?.changes?.[0];             
     const value = changes?.value;
+    const statuses = Array.isArray(value?.statuses) ? value.statuses : [];
     const messages = value?.messages;                  
     const message = messages?.[0];                     
     const messageBody = extractMenuTrigger(message); 
@@ -59,6 +63,30 @@ export async function POST(request: Request) {
     const messageTimestamp = String(message?.timestamp || "").trim();
     const messageType = message?.type;               
 
+    if (statuses.length > 0) {
+      for (const status of statuses) {
+        console.log("[webhook] Delivery status", {
+          id: String(status?.id || ""),
+          recipient_id: String(status?.recipient_id || ""),
+          status: String(status?.status || ""),
+          timestamp: String(status?.timestamp || ""),
+          conversation: status?.conversation,
+          pricing: status?.pricing,
+          errors: status?.errors,
+        });
+      }
+    }
+
+    console.log("[webhook] Incoming message", {
+      messageType,
+      senderPhoneRaw,
+      senderPhone,
+      isSupportedPhone,
+      messageBody,
+      messageId,
+      messageTimestamp,
+      isMenuTrigger: isMenuTrigger(messageBody),
+    });
 
     if (messageBody && senderPhoneRaw) {
         if (!isSupportedPhone) {
@@ -66,16 +94,31 @@ export async function POST(request: Request) {
           return NextResponse.json({ status: "ok" });
         }
 
-        if (MENU_TRIGGERS.has(messageBody.trim())) {
+        if (isMenuTrigger(messageBody)) {
           // Acknowledge webhook quickly; process trigger asynchronously to avoid
           // Meta retries that can duplicate flow sends.
           void handleIncomingMessage(senderPhone, messageBody, {
             messageId,
             messageTimestamp,
+          }).then((result) => {
+            console.log("[webhook] Menu dispatch result", result);
+          }).catch((error) => {
+            console.error("[webhook] Async handleIncomingMessage failed", {
+              error,
+              senderPhone,
+              messageBody,
+              messageId,
+            });
           });
         } else {
           console.log(`[webhook] Ignored message: "${messageBody}" (type=${messageType})`);
         }
+    } else {
+      console.log("[webhook] Missing trigger or sender", {
+        hasMessageBody: Boolean(messageBody),
+        hasSenderPhone: Boolean(senderPhoneRaw),
+        messageType,
+      });
     }
     
   } catch (err) {

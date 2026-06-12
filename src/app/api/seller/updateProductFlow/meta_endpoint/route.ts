@@ -4,6 +4,12 @@ import { handleUpdateProductFlow } from "@/handlers/seller/updateProductFlow_han
 import type { FlowRequest } from "@/models/flowRequest";
 import type { FlowResponse } from "@/models/flowResponse";
 
+/**
+ * Handles encrypted WhatsApp Flow callbacks for update-product execution.
+ * The function decrypts payloads, responds to health pings, dispatches runtime
+ * actions to the update flow handler, and re-encrypts the resulting screen data
+ * to satisfy Meta's secure flow transport contract.
+ */
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -44,6 +50,10 @@ export async function POST(req: NextRequest) {
   }
 }
 
+/**
+ * Lightweight health probe used by deployment and manual smoke checks to verify
+ * the update-product callback route is reachable before encrypted flow traffic.
+ */
 export async function GET() {
   return new Response("Update product flow endpoint active", { status: 200 });
 }

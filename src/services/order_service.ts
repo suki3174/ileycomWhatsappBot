@@ -85,7 +85,7 @@ export async function getOrderById(
   const cached = await getOrderDetailCache(orderId, token);
   if (cached) return cached;
 
-  const fresh = await findOrderById(orderId);
+  const fresh = await findOrderById(orderId, token);
   if (fresh) {
     await writeOrderDetailCache(orderId, fresh, token);
   }
@@ -98,8 +98,9 @@ export async function getOrderById(
  */
 export async function getOrderArticles(
   orderId: string,
+  token?: string,
 ): Promise<OrderArticle[]> {
-  return findOrderArticlesByOrderId(orderId);
+  return findOrderArticlesByOrderId(orderId, token);
 }
 
 /**
@@ -114,7 +115,7 @@ export async function getOrderArticlesPage(
   const cached = await getOrderArticlesPageCache(orderId, page, limit, token);
   if (cached) return cached;
 
-  const fresh = await findOrderArticlesPageByOrderId(orderId, page, limit);
+  const fresh = await findOrderArticlesPageByOrderId(orderId, page, limit, token);
   await writeOrderArticlesPageCache(orderId, page, limit, fresh, token);
   return fresh;
 }

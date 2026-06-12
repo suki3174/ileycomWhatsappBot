@@ -35,16 +35,31 @@ import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
 
 const CAROUSEL_SIZE = 3;
 
+/**
+ * Normalizes unknown values into a safe trimmed string for downstream flow state
+ * handling. This helper is used at virtually every screen transition to prevent
+ * null/undefined values from leaking into payloads sent back to WhatsApp.
+ */
 function asTrimmed(value: unknown): string {
   return String(value ?? "").trim();
 }
 
+/**
+ * Merges incremental form submissions by preserving the previous non-empty value
+ * when the current screen sends an empty string. This keeps partial edits stable
+ * across screens where not all fields are re-sent on each footer submission.
+ */
 function keepOldIfBlank(nextValue: unknown, previousValue: unknown): string {
   const next = asTrimmed(nextValue);
   if (next !== "") return next;
   return asTrimmed(previousValue);
 }
 
+/**
+ * Converts optional text fields into canonical empty-or-value form by dropping
+ * placeholder-like markers (n/a, null, undefined). It is used before persisting
+ * state so summary/render screens do not show technical placeholder values.
+ */
 function normalizeOptionalValue(value: unknown): string {
   const normalized = asTrimmed(value);
   if (!normalized) return "";
@@ -57,6 +72,12 @@ function normalizeOptionalValue(value: unknown): string {
   return normalized;
 }
 
+/**
+ * Ensures pricing, dimension, and attribute edit info is loaded for the selected
+ * product and cached in flow state. The function short-circuits when the product
+ * is already hydrated, otherwise fetches plugin-backed details and maps them to
+ * handler state keys consumed by SCREEN_EDIT_INFO.
+ */
 async function ensureEditInfoInState(token: string, productId: string): Promise<void> {
   if (!productId) return;
 
@@ -88,6 +109,11 @@ async function ensureEditInfoInState(token: string, productId: string): Promise<
   });
 }
 
+/**
+ * Ensures category/subcategory context is present in flow state for the current
+ * product. This avoids repeated plugin calls while navigating category screens
+ * and guarantees labels are available for recap and summary rendering.
+ */
 async function ensureCategoryInfoInState(token: string, productId: string): Promise<void> {
   if (!productId) return;
 
@@ -132,6 +158,11 @@ async function ensureCategoryInfoInState(token: string, productId: string): Prom
 //   return splitCarousels(objs);
 // }
 
+/**
+ * Loads seller products for PRODUCT_LIST using paginated service data and shared
+ * list rendering utilities. The resulting click payloads are rewritten from the
+ * generic details command to update-flow specific load_product_for_edit routing.
+ */
 async function handleLoadProducts(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
   const rawData = parsed.data || {};
@@ -158,6 +189,11 @@ async function handleLoadProducts(parsed: FlowRequest): Promise<FlowResponse> {
   return response;
 }
 
+/**
+ * Initializes edit state for the selected product by loading photos, resetting
+ * stale values, and preparing SCREEN_PHOTOS payload carousels. Invalid or nav
+ * pseudo IDs fall back to product list reload to keep flow navigation resilient.
+ */
 async function handleLoadProductForEdit(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
   const data = parsed.data || {};
@@ -240,12 +276,21 @@ async function handleLoadProductForEdit(parsed: FlowRequest): Promise<FlowRespon
   };
 }
 
+/**
+ * Routes from SCREEN_PHOTOS to SCREEN_EDIT_PHOTOS while preserving product id.
+ * This is a pure screen transition helper with no state mutation.
+ */
 async function handleGoEditPhotos(parsed: FlowRequest): Promise<FlowResponse> {
   const data = parsed.data || {};
   const productId = String(data.product_id ?? "").trim();
   return { screen: "SCREEN_EDIT_PHOTOS", data: { product_id: productId } };
 }
 
+/**
+ * Persists newly uploaded photos by decrypting WhatsApp media objects (or direct
+ * base64 fallback), converting them to flow-ready base64 images, and marking the
+ * product as photos_modified. After storage it advances to SCREEN_EDIT_INFO.
+ */
 async function handleSavePhotos(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
   const data = parsed.data || {};
@@ -282,6 +327,10 @@ async function handleSavePhotos(parsed: FlowRequest): Promise<FlowResponse> {
   return buildEditInfoScreen(token, productId);
 }
 
+/**
+ * Skips photo replacement and proceeds to edit-info stage while reusing the same
+ * product context. This keeps the flow fast for users who only edit metadata.
+ */
 async function handleSkipPhotos(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
   const data = parsed.data || {};
@@ -289,6 +338,11 @@ async function handleSkipPhotos(parsed: FlowRequest): Promise<FlowResponse> {
   return buildEditInfoScreen(token, productId);
 }
 
+/**
+ * Shapes SCREEN_EDIT_INFO response data with *_init fields expected by flow JSON.
+ * It centralizes defaulting/label formatting so all edit-info responses remain
+ * consistent for both validation errors and happy-path transitions.
+ */
 function buildEditInfoPayload(state: any, productId: string, errorMessage = "") {
   return {
     product_id: productId,
@@ -310,6 +364,11 @@ function buildEditInfoPayload(state: any, productId: string, errorMessage = "") 
   };
 }
 
+/**
+ * Builds SCREEN_EDIT_INFO by first ensuring plugin-backed edit details are loaded
+ * in state, then serializing through buildEditInfoPayload. This function is used
+ * by both initial load and validation-error loops.
+ */
 async function buildEditInfoScreen(token: string, productId: string, errorMessage = ""): Promise<FlowResponse> {
   await ensureEditInfoInState(token, productId);
   const state = ((await getUpdateProductState(token)) || {}) as UpdateProductState;
@@ -319,6 +378,11 @@ async function buildEditInfoScreen(token: string, productId: string, errorMessag
   };
 }
 
+/**
+ * Validates and saves mutable product info (name, prices, dimensions, attributes,
+ * quantity). It enforces pricing rules, performs EUR auto-conversion fallback,
+ * persists normalized values, and advances to category-info stage.
+ */
 async function handleSaveInfoAndContinue(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
   const data = parsed.data || {};
@@ -401,6 +465,11 @@ async function handleSaveInfoAndContinue(parsed: FlowRequest): Promise<FlowRespo
   };
 }
 
+/**
+ * Loads editable category options and opens SCREEN_EDIT_CATEGORY with preselected
+ * category. If categories are absent in state, it prefetches from service and
+ * caches them for subsequent category/subcategory interactions.
+ */
 async function handleGoEditCategory(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
   const data = parsed.data || {};
@@ -436,6 +505,11 @@ async function handleGoEditCategory(parsed: FlowRequest): Promise<FlowResponse> 
   };
 }
 
+/**
+ * Loads subcategories for the chosen category and returns SCREEN_EDIT_SUBCATEGORY.
+ * The selected category metadata is first persisted, then subcategory lists are
+ * reused from state cache or fetched lazily when missing.
+ */
 async function handleLoadSubcategories(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
   const data = parsed.data || {};
@@ -476,6 +550,11 @@ async function handleLoadSubcategories(parsed: FlowRequest): Promise<FlowRespons
   };
 }
 
+/**
+ * Persists category selection and immediately delegates to subcategory loading so
+ * users continue in one action. This function bridges footer submit behavior in
+ * SCREEN_EDIT_CATEGORY to the load_subcategories command path.
+ */
 async function handleSaveCategoryAndContinue(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
   const data = parsed.data || {};
@@ -499,6 +578,11 @@ async function handleSaveCategoryAndContinue(parsed: FlowRequest): Promise<FlowR
   });
 }
 
+/**
+ * Saves selected subcategory label/id and transitions to summary rendering. Label
+ * resolution scans cached subcategory lists so recap screens display human text
+ * rather than raw slug values.
+ */
 async function handleSaveSubcategoryAndContinue(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
   const data = parsed.data || {};
@@ -522,6 +606,10 @@ async function handleSaveSubcategoryAndContinue(parsed: FlowRequest): Promise<Fl
   return buildSummaryScreen(token, productId);
 }
 
+/**
+ * Skips category editing and directly builds summary from current state, useful
+ * when sellers keep existing category taxonomy.
+ */
 async function handleSkipCategory(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
   const data = parsed.data || {};
@@ -529,6 +617,11 @@ async function handleSkipCategory(parsed: FlowRequest): Promise<FlowResponse> {
   return buildSummaryScreen(token, productId);
 }
 
+/**
+ * Builds the final SCREEN_SUMMARY payload by combining state values and resolved
+ * image carousels. If local images are absent it reloads product photos to keep
+ * summary robust even after cache evictions or partial navigation paths.
+ */
 async function buildSummaryScreen(token: string, productId: string): Promise<FlowResponse> {
   const state = ((await getUpdateProductState(token)) || {}) as UpdateProductState;
 
@@ -581,6 +674,11 @@ async function buildSummaryScreen(token: string, productId: string): Promise<Flo
   };
 }
 
+/**
+ * Executes final submit orchestration: idempotency guards, required price checks,
+ * state transition to submitting, plugin update dispatch, error fallback routing,
+ * and success side effects (cache invalidation + menu dispatch).
+ */
 async function handleSubmitUpdate(parsed: FlowRequest): Promise<FlowResponse> {
   const token = getFlowToken(parsed);
   const data = parsed.data || {};
@@ -664,6 +762,11 @@ async function handleSubmitUpdate(parsed: FlowRequest): Promise<FlowResponse> {
   return { screen: "SUCCESS", data: {} };
 }
 
+/**
+ * Main update-product state machine entry. It validates auth first, handles INIT
+ * and DATA_EXCHANGE actions, and dispatches by screen/cmd to the corresponding
+ * handler function while preserving WhatsApp Flow response contract.
+ */
 export async function handleUpdateProductFlow(parsed: FlowRequest): Promise<FlowResponse | null> {
   const action = String(parsed.action || "").toUpperCase();
   const screen = parsed.screen || "";

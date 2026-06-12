@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
           mode: "published",
           template: {
             name: "orders_flow_local",
-            language: { code: "fr" },
+            language: { code: "en" },
             components: [
               {
                 type: "button",

@@ -1,4 +1,4 @@
-﻿import { Product } from "@/models/product_model";
+import { Product } from "@/models/product_model";
 import { findProductsBySellerFlowToken } from "@/repositories/products/product_repo";
 import { normToken } from "@/utils/core_utils";
 
@@ -13,15 +13,3 @@ export async function getProductsForToken(token: string): Promise<Product[]> {
   if (!normalized) return [];
   return await findProductsBySellerFlowToken(normalized);
 }
-
-
-
-
-
-
-
-
-
-
-
-
