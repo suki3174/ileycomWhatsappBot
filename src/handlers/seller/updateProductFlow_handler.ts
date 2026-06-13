@@ -28,10 +28,10 @@ import {
   updateProductNow,
 } from "@/services/update_product_service";
 import { decryptWhatsAppMedia } from "@/utils/flow_crypto";
-import { sendMenu } from "@/services/menu_service";
 import { validateSellerFlowAccess } from "@/services/auth_service";
 import { invalidateProductsListByTokenCache } from "@/services/cache/products_cache_service";
 import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
+import { dispatchFlowLifecycleMenu } from "@/services/flow_lifecycle_service";
 
 const CAROUSEL_SIZE = 3;
 
@@ -758,7 +758,11 @@ async function handleSubmitUpdate(parsed: FlowRequest): Promise<FlowResponse> {
   await updateUpdateProductState(token, { submit_status: "submitted" });
   
   void invalidateProductsListByTokenCache(token);
-  void sendMenu(token);
+  dispatchFlowLifecycleMenu({
+    flowTokenOrPhone: token,
+    source: "success",
+    flow: "update-product",
+  });
   return { screen: "SUCCESS", data: {} };
 }
 

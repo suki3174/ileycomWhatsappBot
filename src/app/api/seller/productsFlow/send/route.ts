@@ -3,6 +3,7 @@ import { normalizeSellerPhone } from "@/utils/seller_auth_helpers";
 import { Seller } from "@/models/seller_model";
 import { validateSellerFlowDispatch } from "@/services/auth_service";
 import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
+import { dispatchFlowLifecycleMenu } from "@/services/flow_lifecycle_service";
 
 /*
 This endpoint launches the products WhatsApp flow template for a seller. It validates
@@ -111,6 +112,13 @@ export async function POST(req: NextRequest) {
       recipient,
       data,
     });
+    if (response.ok) {
+      dispatchFlowLifecycleMenu({
+        flowTokenOrPhone: token,
+        source: "open-proxy",
+        flow: "products",
+      });
+    }
     return NextResponse.json({ seller: seller.name, recipient, status: response.status, data });
 
   } catch (error) {

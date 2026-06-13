@@ -8,13 +8,9 @@ import { getSellerPhoneCandidates, isSupportedSellerPhone, normalizeSellerPhone 
 import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
 
 const NORMALIZED_TRIGGER_TO_ENDPOINT: Record<string, string> = {
-  "voir mes commandes": "/api/seller/ordersFlow/send",
   "voir mes commandes1": "/api/seller/ordersFlow/send",
-  "voir mes produits": "/api/seller/productsFlow/send",
   "voir mes produits1": "/api/seller/productsFlow/send",
-  "modifier un produit": "/api/seller/updateProductFlow/send",
   "modifier un produit1": "/api/seller/updateProductFlow/send",
-  "creer un produit": "/api/seller/addProductFlow/send",
   "creer un produit1": "/api/seller/addProductFlow/send",
 };
 
@@ -24,7 +20,10 @@ function normalizeTrigger(raw: string): string {
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\s+/g, " ");
+    // Remove symbols/emojis so quick-reply labels like "↩ voir mes produits1" still match.
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export function isMenuTrigger(raw: string): boolean {

@@ -23,12 +23,12 @@ import {
 import { buildCarousel, toCarouselBase64FromBase64 } from "@/utils/image_processor";
 import { SubCategory } from "@/models/category_model";
 import { decryptWhatsAppMedia } from "@/utils/flow_crypto";
-import { sendMenu } from "@/services/menu_service";
 import { invalidateProductsListByTokenCache } from "@/services/cache/products_cache_service";
 import { validateSellerFlowAccess } from "@/services/auth_service";
 import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
 import { triggerProductOptimization } from "@/services/ai_optimization_service";
 import { findSellerByTokenOrPhone } from "@/services/auth_service";
+import { dispatchFlowLifecycleMenu } from "@/services/flow_lifecycle_service";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -746,7 +746,11 @@ async function handleSubmitSummary(parsed: FlowRequest): Promise<FlowResponse> {
   });
 
   await invalidateProductsListByTokenCache(token);
-  await sendMenu(token);
+  dispatchFlowLifecycleMenu({
+    flowTokenOrPhone: token,
+    source: "success",
+    flow: "add-product",
+  });
 
   // Trigger AI optimization for the newly created product (DoD requirement)
   // This is fire-and-forget - non-blocking to ensure immediate SUCCESS response

@@ -1,5 +1,4 @@
-﻿import { generateFlowtoken, normalizeSellerPhone } from "@/utils/seller_auth_helpers";
-import { getSellerByPhone, prepareSellerState } from "@/services/auth_service";
+﻿import { normalizeSellerPhone } from "@/utils/seller_auth_helpers";
 import { NextRequest, NextResponse } from "next/server";
 
 
@@ -11,10 +10,6 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "phone is required in request body" }, { status: 400 });
     }
     try {
-        const sellerFromState = await getSellerByPhone(phone);
-        const persistedToken = String(sellerFromState?.flow_token || "").trim();
-        const token = persistedToken || generateFlowtoken(phone);
-        if (!persistedToken) await prepareSellerState(token);
         const recipient = phone
 
         const response = await fetch(
@@ -31,21 +26,8 @@ export async function POST(req: NextRequest) {
                     type: "template",
                     mode: "published",
                     template: {
-                        name: "menu_template1",
+                        name: "menu_local",
                         language: { code: "fr" },
-                        components: [
-                            {
-                                type: "button",
-                                sub_type: "flow",
-                                index: "0",
-                                parameters: [
-                                    {
-                                        type: "action",
-                                        action: { flow_token: token },
-                                    },
-                                ],
-                            },
-                        ],
                     },
                 }),
             }

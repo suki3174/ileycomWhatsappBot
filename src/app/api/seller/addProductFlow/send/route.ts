@@ -5,6 +5,7 @@ import { validateSellerFlowDispatch } from "@/services/auth_service";
 import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
 import { clearAddProductState, updateAddProductState } from "@/repositories/addProduct/add_product_cache";
 import { getProductCategoriesCached } from "@/services/add_product_service";
+import { dispatchFlowLifecycleMenu } from "@/services/flow_lifecycle_service";
 
 /**
  * Sends the add-product flow template to the seller after auth dispatch checks.
@@ -95,6 +96,13 @@ export async function POST(req: NextRequest) {
     );
 
     const data = await response.json();
+    if (response.ok) {
+      dispatchFlowLifecycleMenu({
+        flowTokenOrPhone: token,
+        source: "open-proxy",
+        flow: "add-product",
+      });
+    }
     return NextResponse.json({ seller: seller.name, recipient, status: response.status, data });
 
   } catch (error) {

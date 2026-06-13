@@ -5,6 +5,7 @@ import { Seller } from "@/models/seller_model";
 import { NextRequest, NextResponse } from "next/server";
 import { validateSellerFlowDispatch } from "@/services/auth_service";
 import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
+import { dispatchFlowLifecycleMenu } from "@/services/flow_lifecycle_service";
 
 export async function POST(req:NextRequest) { 
   let body: Record<string, unknown> = {};
@@ -82,6 +83,13 @@ export async function POST(req:NextRequest) {
         },
       );
       const data = await response.json();
+      if (response.ok) {
+        dispatchFlowLifecycleMenu({
+          flowTokenOrPhone: token,
+          source: "open-proxy",
+          flow: "update-product",
+        });
+      }
       return NextResponse.json({
         seller: seller.name,
         recipient,

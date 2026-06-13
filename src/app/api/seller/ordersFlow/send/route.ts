@@ -3,6 +3,7 @@ import { normalizeSellerPhone } from "@/utils/seller_auth_helpers";
 import { Seller } from "@/models/seller_model";
 import { validateSellerFlowDispatch } from "@/services/auth_service";
 import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
+import { dispatchFlowLifecycleMenu } from "@/services/flow_lifecycle_service";
 
 /**
  * Sends the orders flow template to the seller after auth dispatch checks.
@@ -76,6 +77,13 @@ export async function POST(req: NextRequest) {
     );
 
     const data = await response.json();
+    if (response.ok) {
+      dispatchFlowLifecycleMenu({
+        flowTokenOrPhone: token,
+        source: "open-proxy",
+        flow: "orders",
+      });
+    }
     return NextResponse.json({ seller: seller.name, recipient, status: response.status, data });
   } catch (error) {
     console.error(`Error sending to ${seller.name}:`, error);

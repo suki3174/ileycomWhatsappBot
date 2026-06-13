@@ -23,7 +23,7 @@ import {
 import { buildOrderListResponse, formatOrderDetail, formatOrderArticlesServerPage } from "@/utils/order_flow_renderer";
 import { validateSellerFlowAccess } from "@/services/auth_service";
 import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
-import { sendMenu } from "@/services/menu_service";
+import { dispatchFlowLifecycleMenu } from "@/services/flow_lifecycle_service";
 
 const ORDER_LIST_PAGE_SIZE = 5;
 const ORDER_ARTICLES_PAGE_SIZE = 3;
@@ -249,7 +249,11 @@ async function handleOrderDetail(parsed: FlowRequest): Promise<FlowResponse> {
 
   // User tapped "Fermer"
   if (data.confirm_action) {
-    void sendMenu(token);
+    dispatchFlowLifecycleMenu({
+      flowTokenOrPhone: token,
+      source: "success",
+      flow: "orders",
+    });
     return { screen: "SUCCESS", data: { message: "Action terminée avec succès !" } };
   }
 
@@ -319,7 +323,11 @@ async function handleOrderArticles(
 
   // User tapped "Fermer"
   if (data.confirm_action) {
-    void sendMenu(token);
+    dispatchFlowLifecycleMenu({
+      flowTokenOrPhone: token,
+      source: "success",
+      flow: "orders",
+    });
     return { screen: "SUCCESS", data: { message: "Action terminée avec succès !" } };
   }
 

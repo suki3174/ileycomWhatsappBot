@@ -33,6 +33,7 @@ import {
 } from "@/utils/product_flow_renderer";
 import { sendAuthFlowOnce } from "@/services/auth_flow_guard_service";
 import { getFlowToken } from "@/utils/core_utils";
+import { dispatchFlowLifecycleMenu } from "@/services/flow_lifecycle_service";
 
 
 
@@ -360,10 +361,20 @@ export async function handleProductsFlow(
       case "PRODUCT_LIST":
         return handleProductList(effectiveParsed);
       case "PRODUCT_DETAIL_SIMPLE":
+        dispatchFlowLifecycleMenu({
+          flowTokenOrPhone: effectiveToken,
+          source: "success",
+          flow: "products",
+        });
         return { screen: "SUCCESS", data: {} };
       case "PRODUCT_DETAIL_VARIABLE":
         return handleVariationDetail(effectiveParsed);
       case "VARIATION_DETAIL":
+        dispatchFlowLifecycleMenu({
+          flowTokenOrPhone: effectiveToken,
+          source: "success",
+          flow: "products",
+        });
         return { screen: "SUCCESS", data: {} };
 
       default:
